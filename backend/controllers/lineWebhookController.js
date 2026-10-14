@@ -10,6 +10,10 @@ const { replyText, replyConfirmationCard, getImageBuffer } = require('../service
 
 const SUMMARY_COMMANDS = new Set(['summary', 'สรุป']);
 
+function log(...args) {
+  console.log('[line-webhook]', ...args);
+}
+
 function toTransactionDateISO(dateStr) {
   if (dateStr) {
     const d = new Date(`${dateStr}T12:00:00Z`);
@@ -30,6 +34,17 @@ function getBillingCycleRange(billingCycleStartDay) {
   return { startISO: start.toISOString(), endISO: end.toISOString() };
 }
 
+// follow only fires the first time someone adds the bot as a friend -- if this Official
+// Account was already friended before the webhook existed, follow never fires again, and
+// the user would otherwise have no row (and thus no categories) when they message the bot.
+// Idempotent: a no-op update for a user who already exists.
+async function ensureUserExists(lineUserId) {
+  const { data: existing } = await supabase.from('users').select('line_user_id').eq('line_user_id', lineUserId).maybeSingle();
+  if (existing) return;
+  log('provisioning previously-unseen user on first message', lineUserId);
+  await upsertUser({ lineUserId, displayName: null, pictureUrl: null });
+}
+
 // Falls back to the user's "Others" preset category when nothing matched during parsing,
 // so the confirm flow never dead-ends just because the AI couldn't pick a category.
 async function resolveCategory(lineUserId, suggestedCategoryId, suggestedCategoryName) {
@@ -44,13 +59,16 @@ async function resolveCategory(lineUserId, suggestedCategoryId, suggestedCategor
 async function handleFollow(event) {
   const lineUserId = event.source?.userId;
   if (!lineUserId) return;
+  log('follow: start', lineUserId);
 
   await upsertUser({ lineUserId, displayName: null, pictureUrl: null });
+  log('follow: user upserted', lineUserId);
 
   await replyText(
     event.replyToken,
     "Thanks for adding me! Send a photo of a receipt, or just text me something like \"coffee 120\", and I'll log it as an expense. Text \"summary\" anytime for your current period's totals."
   );
+  log('follow: reply sent', lineUserId);
 }
 
 async function handleSummaryCommand(event, lineUserId) {
@@ -90,24 +108,30 @@ async function handleTextMessage(event) {
   const lineUserId = event.source?.userId;
   const text = event.message.text?.trim() || '';
   if (!lineUserId) return;
+  log('text: start', lineUserId, JSON.stringify(text));
 
   if (SUMMARY_COMMANDS.has(text.toLowerCase())) {
     return handleSummaryCommand(event, lineUserId);
   }
 
+  await ensureUserExists(lineUserId);
   const parsed = await parseExpenseText(lineUserId, text);
+  log('text: parsed', lineUserId, JSON.stringify(parsed));
 
   if (!parsed.isExpense) {
     await replyText(
       event.replyToken,
       "Sorry, I couldn't find an expense in that message. Try something like \"coffee 120\", send a receipt photo, or text \"summary\" for your current totals."
     );
+    log('text: reply sent (not an expense)', lineUserId);
     return;
   }
 
   const category = await resolveCategory(lineUserId, parsed.suggestedCategoryId, parsed.suggestedCategoryName);
+  log('text: category resolved', lineUserId, JSON.stringify(category));
   if (!category) {
     await replyText(event.replyToken, "I couldn't find a category to file this under. Please set up categories in the app first.");
+    log('text: reply sent (no category)', lineUserId);
     return;
   }
 
@@ -120,6 +144,7 @@ async function handleTextMessage(event) {
     transactionDate,
     slipHash: null,
   });
+  log('text: pending created', lineUserId, token);
 
   await replyConfirmationCard(event.replyToken, {
     title: 'Log this expense?',
@@ -131,27 +156,36 @@ async function handleTextMessage(event) {
     confirmData: `action=confirm&token=${token}`,
     cancelData: `action=cancel&token=${token}`,
   });
+  log('text: confirmation card sent', lineUserId, token);
 }
 
 async function handleImageMessage(event) {
   const lineUserId = event.source?.userId;
   if (!lineUserId) return;
+  log('image: start', lineUserId, event.message.id);
 
+  await ensureUserExists(lineUserId);
   const imageBuffer = await getImageBuffer(event.message.id);
+  log('image: downloaded', lineUserId, `${imageBuffer.length} bytes`);
   const slipHash = crypto.createHash('sha256').update(imageBuffer).digest('hex');
 
   const existing = await findDuplicateBySlipHash(lineUserId, slipHash);
+  log('image: duplicate check done', lineUserId, existing ? 'DUPLICATE' : 'new');
   if (existing) {
     await replyText(event.replyToken, 'This receipt has already been recorded.');
+    log('image: reply sent (duplicate)', lineUserId);
     return;
   }
 
   const imageBase64 = imageBuffer.toString('base64');
   const extracted = await extractReceiptFromImage(lineUserId, imageBase64);
+  log('image: extracted', lineUserId, JSON.stringify(extracted));
 
   const category = await resolveCategory(lineUserId, extracted.suggested_category_id, extracted.suggested_category_name);
+  log('image: category resolved', lineUserId, JSON.stringify(category));
   if (!category) {
     await replyText(event.replyToken, "I couldn't find a category to file this under. Please set up categories in the app first.");
+    log('image: reply sent (no category)', lineUserId);
     return;
   }
 
@@ -164,6 +198,7 @@ async function handleImageMessage(event) {
     transactionDate,
     slipHash,
   });
+  log('image: pending created', lineUserId, token);
 
   await replyConfirmationCard(event.replyToken, {
     title: 'Log this receipt?',
@@ -176,12 +211,14 @@ async function handleImageMessage(event) {
     confirmData: `action=confirm&token=${token}`,
     cancelData: `action=cancel&token=${token}`,
   });
+  log('image: confirmation card sent', lineUserId, token);
 }
 
 async function handlePostback(event) {
   const params = new URLSearchParams(event.postback.data);
   const action = params.get('action');
   const token = params.get('token');
+  log('postback: start', action, token);
   if (!token) return;
 
   const data = pending.get(token);
@@ -243,18 +280,21 @@ async function handleEvent(event) {
 const lineWebhookController = {
   async webhook(req, res) {
     const events = req.body.events || [];
+    log('received', events.length, 'event(s):', events.map((e) => e.type).join(', ') || '(none)');
 
-    // Ack LINE's retry-sensitive webhook immediately after processing; errors in one
-    // event must not block the others or crash the request.
+    // Errors in one event must not block the others or crash the request.
     await Promise.all(
       events.map((event) =>
-        handleEvent(event).catch((error) => {
-          console.error('Error handling LINE event:', event.type, error);
-        })
+        handleEvent(event)
+          .then(() => log('event handled OK:', event.type))
+          .catch((error) => {
+            console.error('[line-webhook] event FAILED:', event.type, error);
+          })
       )
     );
 
     res.status(200).end();
+    log('responded 200');
   },
 };
 

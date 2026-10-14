@@ -2,7 +2,7 @@ const OpenAI = require('openai');
 const supabase = require('../config/supabase');
 const { fetchExpenseCategories, matchCategoryByName } = require('./categoryMatch');
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, timeout: 20000 });
 
 // Returns the existing transaction row if this slip_hash was already recorded for this user, else null.
 // Shared by the REST OCR endpoint and the LINE Bot image-message handler.

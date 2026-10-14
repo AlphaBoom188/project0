@@ -1,7 +1,7 @@
 const OpenAI = require('openai');
 const { fetchExpenseCategories, matchCategoryByName } = require('./categoryMatch');
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, timeout: 20000 });
 
 // Parses a free-text chat message (e.g. "coffee 120") into a candidate expense.
 // Returns isExpense: false when the message isn't a parseable expense entry.

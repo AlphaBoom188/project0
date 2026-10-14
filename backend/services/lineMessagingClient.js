@@ -8,12 +8,22 @@ const blobClient = new line.messagingApi.MessagingApiBlobClient({
   channelAccessToken: process.env.LINE_MESSAGING_CHANNEL_ACCESS_TOKEN,
 });
 
+// The SDK's HTTP client exposes no timeout option, so a hung upstream call could
+// otherwise block a webhook request indefinitely. Bound every outbound call here.
+function withTimeout(promise, ms, label) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 async function replyText(replyToken, text) {
-  await client.replyMessage({ replyToken, messages: [{ type: 'text', text }] });
+  await withTimeout(client.replyMessage({ replyToken, messages: [{ type: 'text', text }] }), 10000, 'replyMessage');
 }
 
 async function pushText(to, text) {
-  await client.pushMessage({ to, messages: [{ type: 'text', text }] });
+  await withTimeout(client.pushMessage({ to, messages: [{ type: 'text', text }] }), 10000, 'pushMessage');
 }
 
 // Confirm/Cancel card for a parsed-but-unsaved transaction.
@@ -61,11 +71,11 @@ function buildConfirmationFlex({ title, rows, confirmData, cancelData }) {
 }
 
 async function replyConfirmationCard(replyToken, options) {
-  await client.replyMessage({ replyToken, messages: [buildConfirmationFlex(options)] });
+  await withTimeout(client.replyMessage({ replyToken, messages: [buildConfirmationFlex(options)] }), 10000, 'replyMessage');
 }
 
 async function getImageBuffer(messageId) {
-  const stream = await blobClient.getMessageContent(messageId);
+  const stream = await withTimeout(blobClient.getMessageContent(messageId), 10000, 'getMessageContent');
   const chunks = [];
   for await (const chunk of stream) {
     chunks.push(chunk);
