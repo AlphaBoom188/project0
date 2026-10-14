@@ -95,13 +95,24 @@ class APIService {
         performRequest(endpoint: endpoint, completion: completion)
     }
     
-    func createTransaction(lineUserId: String, categoryId: String, amount: Double, type: String, description: String? = nil, transactionDate: String, completion: @escaping (Result<TransactionResponse, Error>) -> Void) {
-        let body: [String: Any] = ["category_id": categoryId, "amount": amount, "type": type, "transaction_date": transactionDate]
+    func createTransaction(lineUserId: String, categoryId: String, amount: Double, type: String, description: String? = nil, slipHash: String? = nil, transactionDate: String, completion: @escaping (Result<TransactionResponse, Error>) -> Void) {
+        var body: [String: Any] = ["category_id": categoryId, "amount": amount, "type": type, "transaction_date": transactionDate]
+        if let description = description { body["description"] = description }
+        if let slipHash = slipHash { body["slip_hash"] = slipHash }
         guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else {
             completion(.failure(APIError.encodingError))
             return
         }
         performRequest(endpoint: "/transactions/\(lineUserId)", method: "POST", body: jsonData, completion: completion)
+    }
+
+    func scanReceipt(lineUserId: String, imageBase64: String, slipHash: String, completion: @escaping (Result<OCRScanResponse, Error>) -> Void) {
+        let body: [String: Any] = ["image_base64": imageBase64, "slip_hash": slipHash]
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else {
+            completion(.failure(APIError.encodingError))
+            return
+        }
+        performRequest(endpoint: "/ocr/scan/\(lineUserId)", method: "POST", body: jsonData, completion: completion)
     }
     
     func deleteTransaction(lineUserId: String, transactionId: String, completion: @escaping (Result<DeleteResponse, Error>) -> Void) {
@@ -122,6 +133,22 @@ struct TransactionsResponse: Codable { let success: Bool; let transactions: [Tra
 struct TransactionResponse: Codable { let success: Bool; let transaction: Transaction }
 struct SummaryResponse: Codable { let success: Bool; let summary: [TransactionSummary] }
 struct DeleteResponse: Codable { let success: Bool; let message: String }
+struct OCRScanResponse: Codable { let success: Bool; let duplicate: Bool?; let message: String?; let data: OCRData? }
+struct OCRData: Codable {
+    let amount: Double?
+    let date: String?
+    let merchant: String?
+    let suggestedCategoryId: String?
+    let suggestedCategoryName: String?
+
+    enum CodingKeys: String, CodingKey {
+        case amount
+        case date
+        case merchant
+        case suggestedCategoryId = "suggested_category_id"
+        case suggestedCategoryName = "suggested_category_name"
+    }
+}
 
 enum APIError: Error, LocalizedError {
     case invalidURL, invalidResponse, httpError(Int), noData, encodingError

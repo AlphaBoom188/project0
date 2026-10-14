@@ -20,6 +20,8 @@ cp .env.example .env  # Configure your credentials
 npm start  # Starts server on port 3000
 ```
 
+**Note:** The backend connects to Supabase using `SUPABASE_SERVICE_ROLE_KEY`, not the anon key — it's a trusted server, so it bypasses RLS and enforces per-user access control itself (every query is scoped by `line_user_id` in the controllers). Keep this key secret; never ship it to the iOS app. `OPENAI_API_KEY` must also be set (with billing credits) for the OCR endpoint to work.
+
 **Backend Endpoints:**
 - `GET /` - API status
 - `GET /health` - Database health check
@@ -31,6 +33,7 @@ npm start  # Starts server on port 3000
 - `GET /api/transactions/:line_user_id` - Get transactions
 - `GET /api/line/login-url` - Generate LINE Login URL
 - `GET /api/line/callback` - Handle LINE OAuth callback
+- `POST /api/ocr/scan/:line_user_id` - Scan a receipt image (OpenAI Vision), extract amount/date/merchant/category, and check `slip_hash` for duplicates
 
 ### iOS App (Swift/Xcode)
 
@@ -84,12 +87,14 @@ project0/
 │   │   ├── userController.js    # User management
 │   │   ├── categoryController.js # Category management
 │   │   ├── transactionController.js # Transaction management
-│   │   └── lineController.js    # LINE OAuth
+│   │   ├── lineController.js    # LINE OAuth
+│   │   └── ocrController.js     # Receipt OCR (OpenAI Vision)
 │   ├── routes/                    # API routes
 │   │   ├── userRoutes.js
 │   │   ├── categoryRoutes.js
 │   │   ├── transactionRoutes.js
-│   └── lineRoutes.js
+│   │   ├── lineRoutes.js
+│   └── ocrRoutes.js
 │   ├── supabase/                  # Database migrations
 │   │   └── migrations/
 │   ├── .env.example               # Environment template
@@ -112,8 +117,10 @@ project0/
         │   └── Views/             # SwiftUI views
         │       ├── LoginView.swift
         │       ├── DashboardView.swift
-        │       ├── AddTransactionView.swift
-│   │       └── TransactionListView.swift
+        │       ├── AddTransactionView.swift  # includes receipt scan (camera/library) UI
+        │       ├── TransactionListView.swift
+│   │       └── Components/
+│   │           └── ImagePicker.swift  # UIImagePickerController wrapper (camera + library)
         └── README.md
 ```
 
@@ -203,9 +210,10 @@ project0/
 ✅ LINE Login Integration (OAuth flow)
 ✅ Core Features (Dashboard, Transactions, Categories)
 
-### Phase 2 (Future)
+### Phase 2
 
-- LINE Bot integration
-- LINE MINI App (LIFF)
-- OCR slip scanning
-- AI-powered expense categorization
+✅ **OCR slip scanning** — iOS camera/photo-library capture (`AddTransactionView` + `ImagePicker`) → `POST /api/ocr/scan/:line_user_id` extracts amount/date/merchant/category via OpenAI Vision (`gpt-4o-mini`) → form auto-fills → `slip_hash` (SHA-256, computed client-side) is checked both as a fast pre-check in the OCR endpoint and as a DB-level `UNIQUE` constraint on `transactions.slip_hash`, so the same receipt can't be recorded twice.
+
+- [ ] LINE Bot integration
+- [ ] LINE MINI App (LIFF)
+- [ ] AI-powered expense categorization (beyond the category-matching already done during OCR)

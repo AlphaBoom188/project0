@@ -7,6 +7,7 @@ const userRoutes = require('./routes/userRoutes');
 const categoryRoutes = require('./routes/categoryRoutes');
 const transactionRoutes = require('./routes/transactionRoutes');
 const lineRoutes = require('./routes/lineRoutes');
+const ocrRoutes = require('./routes/ocrRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -37,6 +38,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/line', lineRoutes);
+app.use('/api/ocr', ocrRoutes);
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
