@@ -1,4 +1,5 @@
 const supabase = require('../config/supabase');
+const { upsertUser } = require('../services/userUpsert');
 
 const userController = {
   // Create or update user after LINE Login
@@ -10,53 +11,7 @@ const userController = {
         return res.status(400).json({ error: 'line_user_id is required' });
       }
 
-      // Check if user exists
-      const { data: existingUser, error: fetchError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('line_user_id', line_user_id)
-        .single();
-
-      if (fetchError && fetchError.code !== 'PGRST116') {
-        throw fetchError;
-      }
-
-      let user;
-
-      if (existingUser) {
-        // Update existing user
-        const { data: updatedUser, error: updateError } = await supabase
-          .from('users')
-          .update({
-            display_name: display_name || existingUser.display_name,
-            picture_url: picture_url || existingUser.picture_url,
-          })
-          .eq('line_user_id', line_user_id)
-          .select()
-          .single();
-
-        if (updateError) throw updateError;
-        user = updatedUser;
-      } else {
-        // Create new user
-        const { data: newUser, error: insertError } = await supabase
-          .from('users')
-          .insert({
-            line_user_id,
-            display_name,
-            picture_url,
-          })
-          .select()
-          .single();
-
-        if (insertError) throw insertError;
-        user = newUser;
-
-        // Create preset categories for new user
-        await supabase.rpc('create_preset_categories', {
-          user_line_id: line_user_id,
-        });
-      }
+      const user = await upsertUser({ lineUserId: line_user_id, displayName: display_name, pictureUrl: picture_url });
 
       res.json({ success: true, user });
     } catch (error) {

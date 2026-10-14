@@ -8,11 +8,18 @@ const categoryRoutes = require('./routes/categoryRoutes');
 const transactionRoutes = require('./routes/transactionRoutes');
 const lineRoutes = require('./routes/lineRoutes');
 const ocrRoutes = require('./routes/ocrRoutes');
+const lineWebhookRoutes = require('./routes/lineWebhookRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
+
+// Mounted before express.json(): the LINE webhook middleware verifies the request
+// signature against the raw body itself and would break if the body were already
+// parsed by the time it runs.
+app.use('/api/line', lineWebhookRoutes);
+
 app.use(express.json());
 
 app.get('/', (req, res) => {

@@ -20,7 +20,9 @@ cp .env.example .env  # Configure your credentials
 npm start  # Starts server on port 3000
 ```
 
-**Note:** The backend connects to Supabase using `SUPABASE_SERVICE_ROLE_KEY`, not the anon key — it's a trusted server, so it bypasses RLS and enforces per-user access control itself (every query is scoped by `line_user_id` in the controllers). Keep this key secret; never ship it to the iOS app. `OPENAI_API_KEY` must also be set (with billing credits) for the OCR endpoint to work.
+**Note:** The backend connects to Supabase using `SUPABASE_SERVICE_ROLE_KEY`, not the anon key — it's a trusted server, so it bypasses RLS and enforces per-user access control itself (every query is scoped by `line_user_id` in the controllers). Keep this key secret; never ship it to the iOS app. `OPENAI_API_KEY` must also be set (with billing credits) for the OCR endpoint and LINE Bot text/image parsing to work.
+
+**LINE Bot setup:** Set `LINE_MESSAGING_CHANNEL_ACCESS_TOKEN` in `.env` (issued separately from `LINE_MESSAGING_CHANNEL_SECRET`, in the LINE Developers Console) — required to send reply messages. For local development, the webhook needs a public HTTPS URL (e.g. via `ngrok http 3000`) registered as `https://<your-domain>/api/line/webhook` in the Messaging API channel's webhook settings. The LINE Login channel and the Messaging API channel must be linked (Messaging API channel settings → Linked OA) so `line_user_id` from app login matches `source.userId` from webhook events.
 
 **Backend Endpoints:**
 - `GET /` - API status
@@ -34,6 +36,7 @@ npm start  # Starts server on port 3000
 - `GET /api/line/login-url` - Generate LINE Login URL
 - `GET /api/line/callback` - Handle LINE OAuth callback
 - `POST /api/ocr/scan/:line_user_id` - Scan a receipt image (OpenAI Vision), extract amount/date/merchant/category, and check `slip_hash` for duplicates
+- `POST /api/line/webhook` - LINE Bot webhook (signature-verified). Handles `follow` (provisions the user), text messages (free-text expense parsing, e.g. "coffee 120", plus a "summary"/"สรุป" command), image messages (same OCR pipeline as the REST endpoint), and `postback` (Confirm/Cancel on the resulting Flex card)
 
 ### iOS App (Swift/Xcode)
 
@@ -87,14 +90,24 @@ project0/
 │   │   ├── userController.js    # User management
 │   │   ├── categoryController.js # Category management
 │   │   ├── transactionController.js # Transaction management
-│   │   ├── lineController.js    # LINE OAuth
+│   │   ├── lineController.js    # LINE Login OAuth
+│   │   ├── lineWebhookController.js # LINE Bot webhook (follow/text/image/postback)
 │   │   └── ocrController.js     # Receipt OCR (OpenAI Vision)
 │   ├── routes/                    # API routes
 │   │   ├── userRoutes.js
 │   │   ├── categoryRoutes.js
 │   │   ├── transactionRoutes.js
 │   │   ├── lineRoutes.js
+│   │   ├── lineWebhookRoutes.js  # mounted before express.json() -- needs the raw body
 │   └── ocrRoutes.js
+│   ├── services/                  # Logic shared between REST controllers and the LINE Bot
+│   │   ├── userUpsert.js        # create/update user + preset categories
+│   │   ├── transactionCreate.js # validate category + insert transaction
+│   │   ├── receiptExtraction.js # OpenAI Vision extraction + slip_hash dedup
+│   │   ├── textExpenseParser.js # OpenAI text parsing ("coffee 120")
+│   │   ├── categoryMatch.js     # fetch/match a user's expense categories
+│   │   ├── pendingConfirmations.js # in-memory TTL store for bot Confirm/Cancel
+│   │   └── lineMessagingClient.js  # @line/bot-sdk wrapper + Flex card builder
 │   ├── supabase/                  # Database migrations
 │   │   └── migrations/
 │   ├── .env.example               # Environment template
@@ -214,6 +227,9 @@ project0/
 
 ✅ **OCR slip scanning** — iOS camera/photo-library capture (`AddTransactionView` + `ImagePicker`) → `POST /api/ocr/scan/:line_user_id` extracts amount/date/merchant/category via OpenAI Vision (`gpt-4o-mini`) → form auto-fills → `slip_hash` (SHA-256, computed client-side) is checked both as a fast pre-check in the OCR endpoint and as a DB-level `UNIQUE` constraint on `transactions.slip_hash`, so the same receipt can't be recorded twice.
 
-- [ ] LINE Bot integration
+✅ **LINE Bot webhook** — `POST /api/line/webhook`, signature-verified via `@line/bot-sdk`. `follow` provisions the user; a receipt photo runs through the same Vision extraction + `slip_hash` dedup as the REST OCR endpoint; free text (e.g. "coffee 120") is parsed into an expense via OpenAI; both reply with a Flex confirmation card (Confirm/Cancel postback) before anything is saved — the pending transaction lives in an in-memory, 10-minute-TTL store (`services/pendingConfirmations.js`), not a DB table. A "summary"/"สรุป" text command replies with the current billing-cycle's income/expense/net. Proactive/scheduled push notifications (budget alerts, periodic digests) are intentionally deferred — this pass is reply-based only. Needs `LINE_MESSAGING_CHANNEL_ACCESS_TOKEN` set and a public HTTPS tunnel (e.g. `ngrok http 3000`) registered as the webhook URL to actually receive events from LINE.
+
 - [ ] LINE MINI App (LIFF)
-- [ ] AI-powered expense categorization (beyond the category-matching already done during OCR)
+- [ ] AI-powered expense categorization (beyond the category-matching already done during OCR/text parsing)
+- [ ] Scheduled/proactive LINE push notifications (budget threshold alerts, periodic summaries)
+- [ ] Thumbnail persistence to Supabase Storage for scanned slips (PRD calls for this; `thumbnail_url` exists in the schema but is still unused by both the REST OCR endpoint and the bot)

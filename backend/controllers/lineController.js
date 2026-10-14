@@ -1,5 +1,5 @@
 const axios = require('axios');
-const supabase = require('../config/supabase');
+const { upsertUser } = require('../services/userUpsert');
 
 const lineController = {
   // Generate LINE Login URL
@@ -56,48 +56,7 @@ const lineController = {
       const { userId, displayName, pictureUrl } = profileResponse.data;
 
       // Create or update user in database
-      const { data: existingUser, error: fetchError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('line_user_id', userId)
-        .single();
-
-      let user;
-
-      if (existingUser) {
-        // Update existing user
-        const { data: updatedUser, error: updateError } = await supabase
-          .from('users')
-          .update({
-            display_name: displayName,
-            picture_url: pictureUrl,
-          })
-          .eq('line_user_id', userId)
-          .select()
-          .single();
-
-        if (updateError) throw updateError;
-        user = updatedUser;
-      } else {
-        // Create new user
-        const { data: newUser, error: insertError } = await supabase
-          .from('users')
-          .insert({
-            line_user_id: userId,
-            display_name: displayName,
-            picture_url: pictureUrl,
-          })
-          .select()
-          .single();
-
-        if (insertError) throw insertError;
-        user = newUser;
-
-        // Create preset categories for new user
-        await supabase.rpc('create_preset_categories', {
-          user_line_id: userId,
-        });
-      }
+      const user = await upsertUser({ lineUserId: userId, displayName, pictureUrl });
 
       res.json({
         success: true,

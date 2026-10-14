@@ -1,4 +1,9 @@
 const supabase = require('../config/supabase');
+const {
+  createTransaction: createSharedTransaction,
+  InvalidCategoryError,
+  DuplicateSlipError,
+} = require('../services/transactionCreate');
 
 const transactionController = {
   // Get all transactions for a user
@@ -97,49 +102,25 @@ const transactionController = {
         return res.status(400).json({ error: 'type must be either income or expense' });
       }
 
-      // Verify category belongs to user
-      const { data: category, error: categoryError } = await supabase
-        .from('categories')
-        .select('id')
-        .eq('id', category_id)
-        .eq('line_user_id', line_user_id)
-        .single();
-
-      if (categoryError || !category) {
-        return res.status(400).json({ error: 'Invalid category or category does not belong to user' });
-      }
-
-      const { data: transaction, error } = await supabase
-        .from('transactions')
-        .insert({
-          line_user_id,
-          category_id,
-          amount,
-          type,
-          description: description || null,
-          slip_hash: slip_hash || null,
-          thumbnail_url: thumbnail_url || null,
-          transaction_date,
-        })
-        .select(`
-          *,
-          categories (
-            id,
-            name,
-            type
-          )
-        `)
-        .single();
-
-      if (error) {
-        if (error.code === '23505') {
-          return res.status(409).json({ error: 'Duplicate slip detected. This receipt has already been recorded.' });
-        }
-        throw error;
-      }
+      const transaction = await createSharedTransaction({
+        lineUserId: line_user_id,
+        categoryId: category_id,
+        amount,
+        type,
+        description,
+        slipHash: slip_hash,
+        thumbnailUrl: thumbnail_url,
+        transactionDate: transaction_date,
+      });
 
       res.status(201).json({ success: true, transaction });
     } catch (error) {
+      if (error instanceof InvalidCategoryError) {
+        return res.status(400).json({ error: error.message });
+      }
+      if (error instanceof DuplicateSlipError) {
+        return res.status(409).json({ error: error.message });
+      }
       console.error('Error in createTransaction:', error);
       res.status(500).json({ error: error.message });
     }
