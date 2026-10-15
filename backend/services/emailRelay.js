@@ -25,8 +25,10 @@ async function sendCsvByEmail({ to, subject, filename, csv }) {
         to,
         subject,
         filename,
+        // Field name matches the deployed Apps Script's data.csv_base64 (snake_case,
+        // not csvBase64 -- see docs/APPS_SCRIPT_EMAIL_RELAY.md for the deployed script).
         // UTF-8 BOM prefix so Thai text renders correctly once the attachment is opened.
-        csvBase64: Buffer.from('\uFEFF' + csv, 'utf8').toString('base64'),
+        csv_base64: Buffer.from('\uFEFF' + csv, 'utf8').toString('base64'),
       }),
       signal: controller.signal,
     });

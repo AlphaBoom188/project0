@@ -16,36 +16,49 @@ Script Web App, which sends it through *your* Gmail account via
 // script source isn't private the way an .env file is.
 function doPost(e) {
   try {
-    var payload = JSON.parse(e.postData.contents);
+    var data = JSON.parse(e.postData.contents);
+
     var expectedSecret = PropertiesService.getScriptProperties().getProperty('SHARED_SECRET');
-
-    if (!expectedSecret || payload.secret !== expectedSecret) {
-      return respond({ success: false, error: 'Unauthorized' });
-    }
-    if (!payload.to || !payload.csvBase64) {
-      return respond({ success: false, error: 'to and csvBase64 are required' });
+    if (data.secret !== expectedSecret) {
+      return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'Unauthorized' }))
+        .setMimeType(ContentService.MimeType.JSON);
     }
 
-    var blob = Utilities.newBlob(
-      Utilities.base64Decode(payload.csvBase64),
+    var csvBlob = Utilities.newBlob(
+      Utilities.base64Decode(data.csv_base64),
       'text/csv',
-      payload.filename || 'export.csv'
+      data.filename || 'transactions.csv'
     );
 
-    GmailApp.sendEmail(payload.to, payload.subject || 'Your Expense Export', 'Your requested expense export is attached.', {
-      attachments: [blob],
+    MailApp.sendEmail({
+      to: data.to,
+      subject: data.subject || 'Parnuan - Transaction Report',
+      body: data.body || 'Here is your requested transaction export file.',
+      attachments: [csvBlob]
     });
 
-    return respond({ success: true });
-  } catch (error) {
-    return respond({ success: false, error: error.message });
+    return ContentService.createTextOutput(JSON.stringify({ success: true }))
+      .setMimeType(ContentService.MimeType.JSON);
+
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ success: false, error: err.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
   }
 }
-
-function respond(body) {
-  return ContentService.createTextOutput(JSON.stringify(body)).setMimeType(ContentService.MimeType.JSON);
-}
 ```
+
+**Payload contract** (the exact field names the backend sends and this script
+expects — mismatching these, e.g. `csvBase64` vs `csv_base64`, is the single
+most likely thing to break silently or with a confusing "Argument must not be
+null" error if either side is ever rewritten from scratch):
+
+| Field | Sent by backend (`services/emailRelay.js`) | Read by script (`data.*`) |
+|---|---|---|
+| `secret` | `APPS_SCRIPT_SHARED_SECRET` | `data.secret` |
+| `to` | recipient address | `data.to` |
+| `subject` | `"Your Expense Export"` | `data.subject` |
+| `filename` | `transactions-<line_user_id>.csv` | `data.filename` |
+| `csv_base64` | base64-encoded CSV, BOM-prefixed | `data.csv_base64` |
 
 3. **Project Settings** (gear icon) → **Script Properties** → add a property
    named `SHARED_SECRET` with a long random value you generate yourself. This
@@ -81,3 +94,9 @@ error instead of failing silently.
   Fine for a personal/small-scale tool; not meant for high volume.
 - Redeploying the script (vs. managing versions) changes the Web App URL --
   update `APPS_SCRIPT_EMAIL_WEBHOOK_URL` if that happens.
+- **To update already-deployed code**: use **Deploy → Manage deployments →
+  edit the existing deployment → New version**. Clicking **Deploy → New
+  deployment** instead creates a *second, separate* `/exec` URL — your edits
+  won't take effect at the URL already configured in `.env`, and you'll see
+  confusingly inconsistent behavior (old code still running) until you either
+  update `.env` to the new URL or redo the edit via "Manage deployments".
