@@ -20,6 +20,7 @@ const el = {
   fieldAmount: document.getElementById('field-amount'),
   fieldDescription: document.getElementById('field-description'),
   fieldDate: document.getElementById('field-date'),
+  modalError: document.getElementById('modal-error'),
 };
 
 let lineUserId = null;
@@ -27,6 +28,18 @@ let lineUserId = null;
 function showError(message) {
   el.errorBanner.textContent = message;
   el.errorBanner.hidden = false;
+}
+
+// The modal is a fixed, full-screen overlay, so the top-level error banner would be
+// rendered underneath it and never seen -- errors from inside the modal need their
+// own visible spot instead of (or in addition to) the global banner.
+function showModalError(message) {
+  el.modalError.textContent = message;
+  el.modalError.hidden = false;
+}
+
+function clearModalError() {
+  el.modalError.hidden = true;
 }
 
 async function apiRequest(path, options = {}) {
@@ -140,6 +153,7 @@ function openAddExpenseModal() {
   el.fieldAmount.value = '';
   el.fieldDescription.value = '';
   el.fieldDate.value = new Date().toISOString().slice(0, 10);
+  clearModalError();
   el.addExpenseModal.hidden = false;
 }
 
@@ -151,6 +165,7 @@ async function handleAddExpenseSubmit(event) {
   event.preventDefault();
   const submitButton = event.submitter;
   submitButton.disabled = true;
+  clearModalError();
 
   try {
     await apiRequest(`/transactions/${lineUserId}`, {
@@ -166,7 +181,9 @@ async function handleAddExpenseSubmit(event) {
     closeAddExpenseModal();
     await loadDashboard();
   } catch (error) {
-    showError(error.message);
+    // Shown inside the modal, not the top-level banner -- the modal overlay would
+    // otherwise hide the banner from view while still open.
+    showModalError(error.message);
   } finally {
     submitButton.disabled = false;
   }
