@@ -22,7 +22,10 @@ app.use(cors());
 // parsed by the time it runs.
 app.use('/api/line', lineWebhookRoutes);
 
-app.use(express.json());
+// Default express.json() limit is 100kb -- a base64-encoded receipt photo (even
+// resized client-side to ~1280px JPEG) comfortably exceeds that, causing a 413
+// that's easy to miss in testing with a tiny synthetic image.
+app.use(express.json({ limit: '10mb' }));
 
 app.get('/', (req, res) => {
   res.json({ message: 'Expense Tracker API is running' });

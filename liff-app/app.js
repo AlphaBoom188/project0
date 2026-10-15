@@ -62,13 +62,25 @@ function clearModalError() {
 }
 
 async function apiRequest(path, options = {}) {
-  const response = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
+  let response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      headers: { 'Content-Type': 'application/json' },
+      ...options,
+    });
+  } catch (networkError) {
+    // fetch() itself rejects (no response at all) on a dropped connection, CORS
+    // failure, or offline device -- distinguish this from an HTTP error response
+    // below, since there's no status code to show for it.
+    throw new Error(`Network error: ${networkError.message}`);
+  }
+
+  // A 413 (payload too large) or a 5xx from a proxy in front of the app is often
+  // an HTML error page, not JSON -- always show the status code even when the
+  // body can't be parsed, rather than silently swallowing it into a generic message.
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(body.error || body.message || `Request failed (${response.status})`);
+    throw new Error(`[${response.status}] ${body.error || body.message || response.statusText || 'Request failed'}`);
   }
   return body;
 }
@@ -144,9 +156,9 @@ function escapeHtml(str) {
 }
 
 function renderCategoryOptions(categories) {
-  el.fieldCategory.innerHTML = categories
-    .map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`)
-    .join('');
+  const autoOption = '<option value="">✨ Auto-Categorize (Default)</option>';
+  const categoryOptions = categories.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+  el.fieldCategory.innerHTML = autoOption + categoryOptions;
 }
 
 async function loadDashboard() {
@@ -184,6 +196,7 @@ function openAddExpenseModal() {
   el.fieldAmount.value = '';
   el.fieldDescription.value = '';
   el.fieldDate.value = new Date().toISOString().slice(0, 10);
+  el.fieldCategory.value = ''; // defaults to "Auto-Categorize", not whatever was left selected last time
   clearModalError();
   resetReceiptScanState();
   el.addExpenseModal.hidden = false;
@@ -275,7 +288,10 @@ async function handleAddExpenseSubmit(event) {
     await apiRequest(`/transactions/${lineUserId}`, {
       method: 'POST',
       body: JSON.stringify({
-        category_id: el.fieldCategory.value,
+        // Left empty ("Auto-Categorize"), this key is dropped entirely by
+        // JSON.stringify rather than sent as category_id: "" -- the backend
+        // infers it from the description via services/autoCategorize.js.
+        category_id: el.fieldCategory.value || undefined,
         amount: parseFloat(el.fieldAmount.value),
         type: 'expense',
         description: el.fieldDescription.value || undefined,
