@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Expense Tracker</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="loading">
+    <p>Loading…</p>
+  </div>
+
+  <div id="error-banner" class="error-banner" hidden></div>
+
+  <div id="app" hidden>
+    <header class="header">
+      <img id="profile-picture" class="profile-picture" alt="" />
+      <div>
+        <div class="profile-name" id="profile-name"></div>
+        <div class="period-label" id="period-label"></div>
+      </div>
+    </header>
+
+    <section class="summary-card">
+      <div class="summary-item">
+        <span class="summary-label">Income</span>
+        <span class="summary-value income" id="summary-income">0.00</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-label">Expense</span>
+        <span class="summary-value expense" id="summary-expense">0.00</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-label">Net</span>
+        <span class="summary-value" id="summary-net">0.00</span>
+      </div>
+    </section>
+
+    <button id="add-expense-button" class="primary-button">+ Add Expense</button>
+
+    <section>
+      <h2 class="section-title">Recent Transactions</h2>
+      <ul id="transaction-list" class="transaction-list"></ul>
+      <p id="empty-state" class="empty-state" hidden>No transactions yet.</p>
+    </section>
+  </div>
+
+  <div id="add-expense-modal" class="modal" hidden>
+    <div class="modal-content">
+      <h2 class="section-title">Add Expense</h2>
+      <form id="add-expense-form">
+        <label class="field">
+          Category
+          <select id="field-category" required></select>
+        </label>
+        <label class="field">
+          Amount
+          <input id="field-amount" type="number" inputmode="decimal" step="0.01" min="0.01" required />
+        </label>
+        <label class="field">
+          Description
+          <input id="field-description" type="text" maxlength="200" />
+        </label>
+        <label class="field">
+          Date
+          <input id="field-date" type="date" required />
+        </label>
+        <div class="modal-actions">
+          <button type="button" id="cancel-add-expense" class="secondary-button">Cancel</button>
+          <button type="submit" class="primary-button">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <script src="/liff-config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

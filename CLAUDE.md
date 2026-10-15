@@ -24,6 +24,8 @@ npm start  # Starts server on port 3000
 
 **LINE Bot setup:** Set `LINE_MESSAGING_CHANNEL_ACCESS_TOKEN` in `.env` (issued separately from `LINE_MESSAGING_CHANNEL_SECRET`, in the LINE Developers Console) — required to send reply messages. For local development, the webhook needs a public HTTPS URL (e.g. via `ngrok http 3000`) registered as `https://<your-domain>/api/line/webhook` in the Messaging API channel's webhook settings. The LINE Login channel and the Messaging API channel must be linked (Messaging API channel settings → Linked OA) so `line_user_id` from app login matches `source.userId` from webhook events.
 
+**LIFF setup:** Set `LIFF_ID` in `.env` (create the LIFF app under the Messaging API channel's LIFF tab). Endpoint URL registered in the LINE Developers Console should be `https://<your-domain>/liff/` — same public tunnel as the webhook, no separate hosting needed.
+
 **Backend Endpoints:**
 - `GET /` - API status
 - `GET /health` - Database health check
@@ -71,6 +73,7 @@ xcrun simctl io "iPhone 17 Pro" screenshot screenshot.png
    - 002_create_categories_table.sql
    - 003_create_transactions_table.sql
    - 004_insert_preset_categories.sql
+   - 005_add_user_preferences.sql
 
 ## Project Architecture
 
@@ -141,6 +144,10 @@ project0/
 │   │       └── Components/
 │   │           └── ImagePicker.swift  # UIImagePickerController wrapper (camera + library)
         └── README.md
+└── liff-app/                      # LINE MINI App (LIFF) -- served by the backend at /liff
+    ├── index.html
+    ├── app.js                      # liff.init() -> profile -> dashboard; reuses existing REST API
+    └── style.css
 ```
 
 ### Technology Stack
@@ -241,6 +248,8 @@ project0/
 
 ✅ **User preferences** (migration `005_add_user_preferences.sql`) — `users.notifications_enabled` and `users.thumbnails_enabled`, both default `TRUE`. `services/userPreferences.js` reads them and **fails open to both defaults** if the columns are ever missing, so rollout ordering can't break anything. No settings UI exists yet to actually flip them (DB-only for now, by design) — a real settings screen (iOS or LIFF) is deferred rather than bolting on a bot text command.
 
-- [ ] LINE MINI App (LIFF)
+✅ **LINE MINI App (LIFF)** — `liff-app/` (plain HTML/JS, no build step), served by the backend itself at `/liff` (same server, same tunnel as the webhook — no separate hosting). `liff.init()` → `liff.getProfile()` gets `userId`/`displayName`/`pictureUrl` directly inside LINE's in-app browser, no OAuth redirect needed; provisions via the existing `POST /api/users`. Shows the current billing-cycle summary and recent transactions (with thumbnails), plus a manual "Add Expense" form — all against the existing REST API, no new backend endpoints. Camera/OCR capture inside LIFF is deliberately deferred to a follow-up (LINE's in-app browser camera/file access is more constrained than a native app). Needs `LIFF_ID` set and the LIFF app's Endpoint URL registered to `https://<tunnel>/liff/` in the LINE Developers Console.
+
 - [ ] AI-powered expense categorization (beyond the category-matching already done during OCR/text parsing)
 - [ ] A settings UI (iOS or LIFF) to actually toggle `notifications_enabled`/`thumbnails_enabled`
+- [ ] Camera/OCR receipt capture inside the LIFF app (currently iOS + bot only)

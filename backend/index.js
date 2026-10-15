@@ -1,4 +1,5 @@
 require('dotenv').config();
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const supabase = require('./config/supabase');
@@ -47,6 +48,14 @@ app.use('/api/categories', categoryRoutes);
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/line', lineRoutes);
 app.use('/api/ocr', ocrRoutes);
+
+// LIFF (LINE MINI App) -- static files, plus a tiny dynamic script so the LIFF ID
+// lives in .env like every other credential rather than being hardcoded into a
+// committed static file.
+app.get('/liff-config.js', (req, res) => {
+  res.type('application/javascript').send(`window.LIFF_ID = ${JSON.stringify(process.env.LIFF_ID || '')};`);
+});
+app.use('/liff', express.static(path.join(__dirname, '../liff-app')));
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
