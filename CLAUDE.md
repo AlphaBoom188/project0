@@ -39,7 +39,8 @@ npm start  # Starts server on port 3000
 - `DELETE /api/transactions/:line_user_id/all` - Delete every transaction for a user (irreversible; client must confirm first)
 - `GET /api/transactions/:line_user_id/export` - Export transactions as CSV (UTF-8 BOM), accepts `type`/`category_id`/`start_date`/`end_date` filters
 - `POST /api/transactions/:line_user_id/export/email` - Same filtered export, emailed via the Apps Script relay (501 if not configured)
-- `GET/POST /api/recurring/:line_user_id`, `PUT/DELETE /api/recurring/:line_user_id/:recurring_id` - Recurring expense/income rules
+- `GET/POST /api/recurring/:line_user_id`, `PUT/DELETE /api/recurring/:line_user_id/:recurring_id` - Recurring expense/income rules (now with optional `pay_start_day`/`pay_end_day`)
+- `GET/POST /api/accounts/:line_user_id`, `PUT/DELETE /api/accounts/:line_user_id/:account_id` - Bank/credit card/e-wallet/cash accounts; `POST /api/transactions/:line_user_id` with `type: "transfer"` moves money between two of them
 - `GET /api/line/login-url` - Generate LINE Login URL
 - `GET /api/line/callback` - Handle LINE OAuth callback
 - `POST /api/ocr/scan/:line_user_id` - Scan a receipt image (OpenAI Vision), extract amount/date/merchant/category, and check `slip_hash` for duplicates
@@ -82,6 +83,7 @@ xcrun simctl io "iPhone 17 Pro" screenshot screenshot.png
    - 006_phase3_schema.sql
    - 007_phase4_schema.sql
    - 008_add_user_email.sql
+   - 009_phase2a_accounts_transfers.sql
 
 ## Project Architecture
 
@@ -95,7 +97,8 @@ project0/
 │   ├── DB_SCHEMA.md               # Database Schema
 │   ├── SETUP_GUIDE.md             # Setup Instructions
 │   ├── PHASE_3_SPEC.md            # Phase 3 feature spec (reconciled against actual schema, not applied literally)
-│   └── APPS_SCRIPT_EMAIL_RELAY.md # Script to deploy for the email CSV export feature
+│   ├── APPS_SCRIPT_EMAIL_RELAY.md # Script to deploy for the email CSV export feature
+│   └── phase_2_product_architecture_blueprint.md # Bigger future vision (Google OAuth, shared bills, portfolio tracking) -- reconciled against the actual line_user_id-keyed schema, not applied literally
 ├── backend/                       # Node.js Express API
 │   ├── config/                    # Configuration files
 │   │   └── supabase.js          # Supabase connection
@@ -106,7 +109,8 @@ project0/
 │   │   ├── lineController.js    # LINE Login OAuth
 │   │   ├── lineWebhookController.js # LINE Bot webhook (follow/text/image/postback)
 │   │   ├── ocrController.js     # Receipt OCR (OpenAI Vision)
-│   │   └── recurringController.js # Recurring expense/income rule CRUD
+│   │   ├── recurringController.js # Recurring expense/income rule CRUD
+│   │   └── accountController.js # Accounts/wallets CRUD
 │   ├── routes/                    # API routes
 │   │   ├── userRoutes.js
 │   │   ├── categoryRoutes.js
@@ -114,6 +118,7 @@ project0/
 │   │   ├── lineRoutes.js
 │   │   ├── lineWebhookRoutes.js  # mounted before express.json() -- needs the raw body
 │   │   ├── recurringRoutes.js
+│   │   ├── accountRoutes.js
 │   └── ocrRoutes.js
 │   ├── services/                  # Logic shared between REST controllers and the LINE Bot
 │   │   ├── userUpsert.js        # create/update user + preset categories
@@ -129,7 +134,8 @@ project0/
 │   │   ├── budgetAlert.js       # event-driven budget-threshold check, fires once on crossing
 │   │   ├── autoCategorize.js    # keyword-then-LLM category inference for expenses with no category_id
 │   │   ├── csvExport.js         # shared CSV builder (direct-download + email export)
-│   │   └── emailRelay.js        # POSTs a base64 CSV to the Apps Script email relay
+│   │   ├── emailRelay.js        # POSTs a base64 CSV to the Apps Script email relay
+│   │   └── accountBalance.js    # read-modify-write balance adjustment for transfers/account-attributed tx
 │   ├── jobs/
 │   │   ├── dailyDigest.js       # node-cron, 21:00 Asia/Bangkok, daily income/expense push
 │   │   └── recurringTransactions.js # node-cron, 00:05 Asia/Bangkok, generates due recurring transactions
@@ -304,10 +310,26 @@ Full LIFF rewrite: 5-tab bottom-nav shell, emoji removal, and email CSV export. 
 
 ✅ **รายการ (Transactions) tab** — type filter + date range, re-queries `GET /api/transactions/:id` with those as query params on every change, card-list rendering (reused `renderTransactionList()`, now with an opt-in Payment Method line). Both export buttons live here and pass the exact same filter params through to their respective endpoints.
 
-✅ **Email CSV export** — `email` column on `users` (migration `008_add_user_email.sql`, still needs running), editable in Settings, validated both client- and server-side. `POST /api/transactions/:line_user_id/export/email` (`services/emailRelay.js`) builds the identical filtered CSV (`services/csvExport.js`, shared with the direct-download endpoint so the two export paths can't drift) and POSTs it base64-encoded to a **Google Apps Script Web App** acting as the send relay — see `docs/APPS_SCRIPT_EMAIL_RELAY.md` for the script to deploy and the `APPS_SCRIPT_EMAIL_WEBHOOK_URL`/`APPS_SCRIPT_SHARED_SECRET` env vars (the shared secret isn't optional: an Apps Script Web App's "who has access: Anyone" setting is required for POST triggers, so without a secret check anyone who found the URL could send arbitrary mail through the deploying user's Gmail). Missing webhook URL → clean `501`, not a silent failure or a 500.
+✅ **Email CSV export** — `email` column on `users` (migration `008_add_user_email.sql`), editable in Settings, validated both client- and server-side. `POST /api/transactions/:line_user_id/export/email` (`services/emailRelay.js`) builds the identical filtered CSV (`services/csvExport.js`, shared with the direct-download endpoint so the two export paths can't drift) and POSTs it base64-encoded to a **Google Apps Script Web App** acting as the send relay — see `docs/APPS_SCRIPT_EMAIL_RELAY.md` for the script to deploy and the `APPS_SCRIPT_EMAIL_WEBHOOK_URL`/`APPS_SCRIPT_SHARED_SECRET` env vars (the shared secret isn't optional: an Apps Script Web App's "who has access: Anyone" setting is required for POST triggers, so without a secret check anyone who found the URL could send arbitrary mail through the deploying user's Gmail). Missing webhook URL → clean `501`, not a silent failure or a 500.
 
 ✅ **In-memory response caching** — `apiRequest()` clears a module-level `Map` on every non-`GET` call (simplest-correct for this scale, vs. tracking exactly which keys a given write affects); `cachedGet()` wraps every cacheable read through it. Net effect: first visit to a tab this session does a real fetch, every revisit is instant until something mutates, satisfying both "cache so tab switches are instant" and "lazy-load on first visit" from the same mechanism.
 
 **Verified**: full `line_webhook_harness.js` regression suite 19/19 (shared `transactionCreate` path untouched). New backend coverage (`phase5_backend_test.js`, not committed — ad hoc): category create/update with budget, full recurring-engine lifecycle against the now-applied migration 007 (generates once, advances `next_run_date` by exactly one `frequency` unit, does *not* regenerate on a second run, respects `is_active = false` even when due, pushes a LINE notification), filtered CSV export (confirmed real `ef bb bf` BOM bytes on the wire — a Node `fetch().text()` call silently strips a leading BOM per the WHATWG decoding spec, so that has to be checked via raw bytes, not decoded text), and the email-export endpoint's current state (migration 008 isn't applied yet, so it correctly surfaces a clear "column does not exist" 500 rather than crashing — expected, not a bug). All HTML element IDs cross-checked against `app.js`, zero mismatches; emoji-range regex swept all three files clean.
 
-**Still needs your action**: run migration `008_add_user_email.sql`; deploy the Apps Script from `docs/APPS_SCRIPT_EMAIL_RELAY.md` and set the two env vars for email export to actually send; live phone test of the whole new tab shell (I can't render LINE's in-app browser myself, same constraint as every other LIFF feature).
+Migration 008, the Apps Script relay, and a live phone test of the whole tab shell were all completed and confirmed working after this was written — see Phase "2A" below for the email relay's actual debugging story (the real bug was a field-name mismatch, not auth/deployment/network as it first appeared).
+
+### Phase 2A — Accounts, Transfers, Flexible-Window Recurring
+
+From `docs/phase_2_product_architecture_blueprint.md` — that doc's own migration assumes a `users.id` UUID primary key with Google OAuth as primary auth and `line_user_id` demoted to a linked column, which would require migrating every foreign key in the system (categories, transactions, recurring_transactions) and touching nearly every file in the project. Explicitly decided **not** to do that identity migration; `line_user_id` stays the actual primary key everywhere, and this phase adapts the blueprint's new features to reference it instead of a UUID `users.id`. The blueprint's Phase 2B (dark-mode design system), 2C (shared-bill splitting, dual-channel alerts), Phase 3 (iOS shell), and Phase 4 (investment portfolio tracking) are untouched — each is a standalone effort warranting its own scoping pass.
+
+✅ **Accounts & multi-wallet balances** (migration `009_phase2a_accounts_transfers.sql`) — `accounts` table (`bank`/`credit_card`/`e_wallet`/`cash`), `line_user_id`-keyed, full CRUD at `/api/accounts`. Deletion is blocked while any transaction references the account (`from_account_id` or `to_account_id`), same safety-check pattern as category deletion.
+
+✅ **Transfers** — `transactions.type` now also accepts `'transfer'` (widened the existing CHECK constraint; `services/transactionCreate.js` skips the category requirement entirely for transfers and instead requires both `from_account_id` and `to_account_id`, verified to belong to the user and be different accounts from each other). `from_account_id`/`to_account_id` are also optional on ordinary income/expense transactions, for attributing a normal transaction to an account without making it a transfer.
+
+✅ **Balance tracking** — `services/accountBalance.js` adjusts both sides of a transfer and the relevant side of an account-attributed income/expense. Deliberately a read-modify-write, not an atomic Postgres increment function — acceptable at this app's scale (single user per `line_user_id`, low write concurrency); called out in code as a place to revisit if that assumption ever breaks. Runs *after* the transaction row is committed and is best-effort (logged loudly on failure, doesn't roll back the transaction) — losing a balance update on a rare failure is preferable to losing the transaction record itself.
+
+✅ **Flexible recurring date windows** — `recurring_transactions.pay_start_day`/`pay_end_day` (optional, 1-31), exposed in the LIFF recurring form. Stored as metadata only so far — `jobs/recurringTransactions.js`'s engine still fires purely off `next_run_date`, unchanged. What the window should actually *do* (fire the reminder on the start day but not treat it as overdue until after the end day? something else?) is a real product decision intentionally left for when that behavior is actually built, not guessed at now.
+
+✅ **LIFF UI** — Accounts section folded into the existing หมวด/งบ tab (list with live balances, "+Add Account", "Transfer Between Accounts") rather than a 6th nav tab.
+
+**Verified**: new `accounts_test.js` (ad hoc, not committed) — full account CRUD, a transfer correctly moving money between two account balances, an account-attributed expense/income adjusting the right side, same-account transfer rejected, deletion blocked while in use, pay-window validation (including rejecting a day outside 1-31), and a regression check that a plain expense with no account still works exactly as before. Full `line_webhook_harness.js` suite still 19/19 unaffected (nothing in the shared `transactionCreate` path broke for the LINE Bot). The Supabase PostgREST explicit-FK-disambiguation syntax (`accounts!transactions_from_account_id_fkey`), needed because `transactions` now has two FKs to the same `accounts` table, was guessed from Postgres's default constraint-naming convention and confirmed correct by the passing test rather than inspected directly (no raw catalog access via the JS client).

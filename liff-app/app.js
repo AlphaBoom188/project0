@@ -52,6 +52,27 @@ const el = {
   categoriesEmptyState: document.getElementById('categories-empty-state'),
   addCategoryButton: document.getElementById('add-category-button'),
 
+  // Accounts (also on the Categories & Budgets tab)
+  accountsList: document.getElementById('accounts-list'),
+  accountsEmptyState: document.getElementById('accounts-empty-state'),
+  addAccountButton: document.getElementById('add-account-button'),
+  addTransferButton: document.getElementById('add-transfer-button'),
+  accountModal: document.getElementById('account-modal'),
+  accountForm: document.getElementById('account-form'),
+  cancelAccount: document.getElementById('cancel-account'),
+  accountFieldName: document.getElementById('account-field-name'),
+  accountFieldType: document.getElementById('account-field-type'),
+  accountFieldBalance: document.getElementById('account-field-balance'),
+  accountModalError: document.getElementById('account-modal-error'),
+  transferModal: document.getElementById('transfer-modal'),
+  transferForm: document.getElementById('transfer-form'),
+  cancelTransfer: document.getElementById('cancel-transfer'),
+  transferFieldFrom: document.getElementById('transfer-field-from'),
+  transferFieldTo: document.getElementById('transfer-field-to'),
+  transferFieldAmount: document.getElementById('transfer-field-amount'),
+  transferFieldDate: document.getElementById('transfer-field-date'),
+  transferModalError: document.getElementById('transfer-modal-error'),
+
   // Category modal
   categoryModal: document.getElementById('category-modal'),
   categoryModalTitle: document.getElementById('category-modal-title'),
@@ -96,6 +117,8 @@ const el = {
   recurringFieldDescription: document.getElementById('recurring-field-description'),
   recurringFieldFrequency: document.getElementById('recurring-field-frequency'),
   recurringFieldStartDate: document.getElementById('recurring-field-start-date'),
+  recurringFieldPayStartDay: document.getElementById('recurring-field-pay-start-day'),
+  recurringFieldPayEndDay: document.getElementById('recurring-field-pay-end-day'),
   recurringModalError: document.getElementById('recurring-modal-error'),
 
   // Generic confirm modal
@@ -595,12 +618,129 @@ function setCategoriesTabType(type) {
 }
 
 async function loadCategoriesTab() {
-  const [categoriesResponse, transactionsResponse] = await Promise.all([
+  const [categoriesResponse, transactionsResponse, accountsResponse] = await Promise.all([
     cachedGet(`/categories/${lineUserId}?type=${categoriesTabType}`),
     cachedGet(`/transactions/${lineUserId}?limit=200`),
+    cachedGet(`/accounts/${lineUserId}`),
   ]);
 
   renderCategoriesList(categoriesResponse.categories, transactionsResponse.transactions);
+  renderAccountsList(accountsResponse.accounts);
+}
+
+const ACCOUNT_TYPE_LABELS = { bank: 'Bank', credit_card: 'Credit Card', e_wallet: 'E-Wallet', cash: 'Cash' };
+
+function renderAccountsList(accounts) {
+  el.accountsList.innerHTML = '';
+  el.accountsEmptyState.hidden = accounts.length > 0;
+
+  for (const account of accounts) {
+    const li = document.createElement('li');
+    li.className = 'category-row';
+    li.innerHTML = `
+      <div class="category-row-top">
+        <span class="category-name">${escapeHtml(account.account_name)}</span>
+        <span class="category-budget-label">${parseFloat(account.balance).toFixed(2)}</span>
+      </div>
+      <div class="category-bar-label-row"><span>${ACCOUNT_TYPE_LABELS[account.account_type] || account.account_type}</span></div>
+    `;
+    el.accountsList.appendChild(li);
+  }
+}
+
+async function populateAccountSelects() {
+  const response = await cachedGet(`/accounts/${lineUserId}`);
+  const options = response.accounts.map((a) => `<option value="${a.id}">${escapeHtml(a.account_name)}</option>`).join('');
+  el.transferFieldFrom.innerHTML = options;
+  el.transferFieldTo.innerHTML = options;
+  return response.accounts;
+}
+
+function openAccountModal() {
+  el.accountFieldName.value = '';
+  el.accountFieldType.value = 'bank';
+  el.accountFieldBalance.value = '0';
+  clearModalError(el.accountModalError);
+  el.accountModal.hidden = false;
+}
+
+function closeAccountModal() {
+  el.accountModal.hidden = true;
+}
+
+async function handleAccountSubmit(event) {
+  event.preventDefault();
+  const submitButton = event.submitter;
+  submitButton.disabled = true;
+  clearModalError(el.accountModalError);
+
+  try {
+    await apiRequest(`/accounts/${lineUserId}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        account_name: el.accountFieldName.value,
+        account_type: el.accountFieldType.value,
+        balance: parseFloat(el.accountFieldBalance.value) || 0,
+      }),
+    });
+    closeAccountModal();
+    await loadCategoriesTab();
+  } catch (error) {
+    showModalError(el.accountModalError, error.message);
+  } finally {
+    submitButton.disabled = false;
+  }
+}
+
+async function openTransferModal() {
+  el.transferFieldAmount.value = '';
+  el.transferFieldDate.value = new Date().toISOString().slice(0, 10);
+  clearModalError(el.transferModalError);
+  el.transferModal.hidden = false;
+  try {
+    const accounts = await populateAccountSelects();
+    if (accounts.length < 2) {
+      showModalError(el.transferModalError, 'You need at least two accounts to transfer between.');
+    }
+  } catch (error) {
+    showModalError(el.transferModalError, error.message);
+  }
+}
+
+function closeTransferModal() {
+  el.transferModal.hidden = true;
+}
+
+async function handleTransferSubmit(event) {
+  event.preventDefault();
+  const submitButton = event.submitter;
+  submitButton.disabled = true;
+  clearModalError(el.transferModalError);
+
+  if (el.transferFieldFrom.value === el.transferFieldTo.value) {
+    showModalError(el.transferModalError, 'Choose two different accounts.');
+    submitButton.disabled = false;
+    return;
+  }
+
+  try {
+    await apiRequest(`/transactions/${lineUserId}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        type: 'transfer',
+        from_account_id: el.transferFieldFrom.value,
+        to_account_id: el.transferFieldTo.value,
+        amount: parseFloat(el.transferFieldAmount.value),
+        transaction_date: new Date(`${el.transferFieldDate.value}T12:00:00Z`).toISOString(),
+      }),
+    });
+    closeTransferModal();
+    await loadCategoriesTab();
+  } catch (error) {
+    showModalError(el.transferModalError, error.message);
+  } finally {
+    submitButton.disabled = false;
+  }
 }
 
 function renderCategoriesList(categories, transactions) {
@@ -902,6 +1042,8 @@ async function openRecurringModal() {
   el.recurringFieldDescription.value = '';
   el.recurringFieldFrequency.value = 'monthly';
   el.recurringFieldStartDate.value = new Date().toISOString().slice(0, 10);
+  el.recurringFieldPayStartDay.value = '';
+  el.recurringFieldPayEndDay.value = '';
   clearModalError(el.recurringModalError);
   el.recurringModal.hidden = false;
   try {
@@ -931,6 +1073,8 @@ async function handleRecurringSubmit(event) {
         description: el.recurringFieldDescription.value || undefined,
         frequency: el.recurringFieldFrequency.value,
         start_date: new Date(`${el.recurringFieldStartDate.value}T12:00:00Z`).toISOString(),
+        pay_start_day: el.recurringFieldPayStartDay.value ? parseInt(el.recurringFieldPayStartDay.value, 10) : undefined,
+        pay_end_day: el.recurringFieldPayEndDay.value ? parseInt(el.recurringFieldPayEndDay.value, 10) : undefined,
       }),
     });
     closeRecurringModal();
@@ -1017,6 +1161,13 @@ el.categoriesTypeIncome.addEventListener('click', () => setCategoriesTabType('in
 el.addCategoryButton.addEventListener('click', () => openCategoryModal(null));
 el.cancelCategory.addEventListener('click', closeCategoryModal);
 el.categoryForm.addEventListener('submit', handleCategorySubmit);
+
+el.addAccountButton.addEventListener('click', openAccountModal);
+el.cancelAccount.addEventListener('click', closeAccountModal);
+el.accountForm.addEventListener('submit', handleAccountSubmit);
+el.addTransferButton.addEventListener('click', () => openTransferModal().catch((error) => showError(error.message)));
+el.cancelTransfer.addEventListener('click', closeTransferModal);
+el.transferForm.addEventListener('submit', handleTransferSubmit);
 
 el.txnFilterType.addEventListener('change', () => loadTransactionsTab().catch((error) => showError(error.message)));
 el.txnFilterStart.addEventListener('change', () => loadTransactionsTab().catch((error) => showError(error.message)));

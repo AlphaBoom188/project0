@@ -62,6 +62,15 @@
 
       <!-- หมวด / งบ (Categories & Budgets) -->
       <section id="tab-categories" class="tab-panel" hidden>
+        <h2 class="section-title">Accounts</h2>
+        <ul id="accounts-list" class="categories-list"></ul>
+        <p id="accounts-empty-state" class="empty-state" hidden>No accounts yet.</p>
+        <div class="export-row">
+          <button id="add-account-button" class="link-button">+ Add Account</button>
+          <button id="add-transfer-button" class="link-button">Transfer Between Accounts</button>
+        </div>
+
+        <h2 class="section-title">Categories &amp; Budgets</h2>
         <div class="type-toggle">
           <button type="button" class="type-toggle-button active" id="categories-type-expense" data-type="expense">Expense</button>
           <button type="button" class="type-toggle-button" id="categories-type-income" data-type="income">Income</button>
@@ -207,6 +216,14 @@
           Start date
           <input id="recurring-field-start-date" type="date" required />
         </label>
+        <label class="field">
+          Pay window start day (optional, e.g. rent due 1st-5th)
+          <input id="recurring-field-pay-start-day" type="number" min="1" max="31" />
+        </label>
+        <label class="field">
+          Pay window end day (optional)
+          <input id="recurring-field-pay-end-day" type="number" min="1" max="31" />
+        </label>
         <p id="recurring-modal-error" class="modal-error" hidden></p>
         <div class="modal-actions">
           <button type="button" id="cancel-recurring" class="secondary-button">Cancel</button>
@@ -249,6 +266,65 @@
         <div class="modal-actions">
           <button type="button" id="cancel-add-expense" class="secondary-button">Cancel</button>
           <button type="submit" class="primary-button">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="account-modal" class="modal" hidden>
+    <div class="modal-content">
+      <h2 class="section-title">Add Account</h2>
+      <form id="account-form">
+        <label class="field">
+          Account name
+          <input id="account-field-name" type="text" maxlength="128" required />
+        </label>
+        <label class="field">
+          Type
+          <select id="account-field-type">
+            <option value="bank">Bank</option>
+            <option value="credit_card">Credit Card</option>
+            <option value="e_wallet">E-Wallet</option>
+            <option value="cash">Cash</option>
+          </select>
+        </label>
+        <label class="field">
+          Starting balance
+          <input id="account-field-balance" type="number" inputmode="decimal" step="0.01" value="0" />
+        </label>
+        <p id="account-modal-error" class="modal-error" hidden></p>
+        <div class="modal-actions">
+          <button type="button" id="cancel-account" class="secondary-button">Cancel</button>
+          <button type="submit" class="primary-button">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="transfer-modal" class="modal" hidden>
+    <div class="modal-content">
+      <h2 class="section-title">Transfer Between Accounts</h2>
+      <form id="transfer-form">
+        <label class="field">
+          From
+          <select id="transfer-field-from" required></select>
+        </label>
+        <label class="field">
+          To
+          <select id="transfer-field-to" required></select>
+        </label>
+        <label class="field">
+          Amount
+          <input id="transfer-field-amount" type="number" inputmode="decimal" step="0.01" min="0.01" required />
+        </label>
+        <label class="field">
+          Date
+          <input id="transfer-field-date" type="date" required />
+        </label>
+        <p id="transfer-modal-error" class="modal-error" hidden></p>
+        <div class="modal-actions">
+          <button type="button" id="cancel-transfer" class="secondary-button">Cancel</button>
+          <button type="submit" class="primary-button">Transfer</button>
         </div>
       </form>
     </div>

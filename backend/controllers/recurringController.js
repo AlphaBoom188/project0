@@ -2,6 +2,15 @@ const supabase = require('../config/supabase');
 
 const FREQUENCIES = ['daily', 'weekly', 'monthly', 'yearly'];
 
+function validatePayWindow(payStartDay, payEndDay) {
+  for (const [label, value] of [['pay_start_day', payStartDay], ['pay_end_day', payEndDay]]) {
+    if (value !== undefined && value !== null && (value < 1 || value > 31)) {
+      return `${label} must be between 1 and 31`;
+    }
+  }
+  return null;
+}
+
 const recurringController = {
   // List a user's recurring rules
   async getRecurring(req, res) {
@@ -27,7 +36,7 @@ const recurringController = {
   async createRecurring(req, res) {
     try {
       const { line_user_id } = req.params;
-      const { category_id, amount, type, description, frequency, start_date } = req.body;
+      const { category_id, amount, type, description, frequency, start_date, pay_start_day, pay_end_day } = req.body;
 
       if (!category_id || !amount || !type || !frequency) {
         return res.status(400).json({ error: 'category_id, amount, type, and frequency are required' });
@@ -37,6 +46,10 @@ const recurringController = {
       }
       if (!FREQUENCIES.includes(frequency)) {
         return res.status(400).json({ error: `frequency must be one of: ${FREQUENCIES.join(', ')}` });
+      }
+      const payWindowError = validatePayWindow(pay_start_day, pay_end_day);
+      if (payWindowError) {
+        return res.status(400).json({ error: payWindowError });
       }
 
       const { data: category, error: categoryError } = await supabase
@@ -61,6 +74,8 @@ const recurringController = {
           frequency,
           next_run_date: start_date || new Date().toISOString(),
           is_active: true,
+          pay_start_day: pay_start_day || null,
+          pay_end_day: pay_end_day || null,
         })
         .select('*, categories ( id, name, type )')
         .single();
@@ -78,7 +93,7 @@ const recurringController = {
   async updateRecurring(req, res) {
     try {
       const { line_user_id, recurring_id } = req.params;
-      const { category_id, amount, description, frequency, is_active } = req.body;
+      const { category_id, amount, description, frequency, is_active, pay_start_day, pay_end_day } = req.body;
 
       const updateData = {};
       if (category_id !== undefined) updateData.category_id = category_id;
@@ -91,6 +106,14 @@ const recurringController = {
         updateData.frequency = frequency;
       }
       if (is_active !== undefined) updateData.is_active = Boolean(is_active);
+      if (pay_start_day !== undefined || pay_end_day !== undefined) {
+        const payWindowError = validatePayWindow(pay_start_day, pay_end_day);
+        if (payWindowError) {
+          return res.status(400).json({ error: payWindowError });
+        }
+        if (pay_start_day !== undefined) updateData.pay_start_day = pay_start_day;
+        if (pay_end_day !== undefined) updateData.pay_end_day = pay_end_day;
+      }
 
       const { data: rule, error } = await supabase
         .from('recurring_transactions')

@@ -3,6 +3,7 @@ const {
   createTransaction: createSharedTransaction,
   InvalidCategoryError,
   DuplicateSlipError,
+  InvalidAccountError,
 } = require('../services/transactionCreate');
 const { withSignedThumbnails } = require('../services/signedUrl');
 const { autoCategorize } = require('../services/autoCategorize');
@@ -166,7 +167,7 @@ const transactionController = {
     try {
       const { line_user_id } = req.params;
       let { category_id } = req.body;
-      const { amount, type, description, slip_hash, thumbnail_url, transaction_date } = req.body;
+      const { amount, type, description, slip_hash, thumbnail_url, transaction_date, from_account_id, to_account_id } = req.body;
 
       if (!amount || !type || !transaction_date) {
         return res.status(400).json({
@@ -174,13 +175,14 @@ const transactionController = {
         });
       }
 
-      if (!['income', 'expense'].includes(type)) {
-        return res.status(400).json({ error: 'type must be either income or expense' });
+      if (!['income', 'expense', 'transfer'].includes(type)) {
+        return res.status(400).json({ error: 'type must be income, expense, or transfer' });
       }
 
-      // category_id is normally required, but an expense with a description can be
-      // auto-categorized instead of forcing every caller to pick one explicitly.
-      if (!category_id) {
+      // category_id doesn't apply to transfers (they're not income/expense); for
+      // the other two it's normally required, but an expense with a description
+      // can be auto-categorized instead of forcing every caller to pick one.
+      if (type !== 'transfer' && !category_id) {
         if (type === 'expense' && description) {
           const inferred = await autoCategorize(line_user_id, description);
           category_id = inferred ? inferred.id : null;
@@ -201,11 +203,13 @@ const transactionController = {
         slipHash: slip_hash,
         thumbnailUrl: thumbnail_url,
         transactionDate: transaction_date,
+        fromAccountId: from_account_id,
+        toAccountId: to_account_id,
       });
 
       res.status(201).json({ success: true, transaction: await withSignedThumbnails(transaction) });
     } catch (error) {
-      if (error instanceof InvalidCategoryError) {
+      if (error instanceof InvalidCategoryError || error instanceof InvalidAccountError) {
         return res.status(400).json({ error: error.message });
       }
       if (error instanceof DuplicateSlipError) {

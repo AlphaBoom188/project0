@@ -11,6 +11,7 @@ const lineRoutes = require('./routes/lineRoutes');
 const ocrRoutes = require('./routes/ocrRoutes');
 const lineWebhookRoutes = require('./routes/lineWebhookRoutes');
 const recurringRoutes = require('./routes/recurringRoutes');
+const accountRoutes = require('./routes/accountRoutes');
 const { startDailyDigestJob } = require('./jobs/dailyDigest');
 const { startRecurringTransactionsJob } = require('./jobs/recurringTransactions');
 
@@ -54,6 +55,7 @@ app.use('/api/transactions', transactionRoutes);
 app.use('/api/line', lineRoutes);
 app.use('/api/ocr', ocrRoutes);
 app.use('/api/recurring', recurringRoutes);
+app.use('/api/accounts', accountRoutes);
 
 // LIFF (LINE MINI App) -- static files, plus a tiny dynamic script so the LIFF ID
 // lives in .env like every other credential rather than being hardcoded into a
