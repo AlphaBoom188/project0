@@ -71,6 +71,36 @@ const userController = {
     }
   },
 
+  // Update notification/thumbnail preferences
+  async updatePreferences(req, res) {
+    try {
+      const { line_user_id } = req.params;
+      const { notifications_enabled, thumbnails_enabled } = req.body;
+
+      const updateData = {};
+      if (notifications_enabled !== undefined) updateData.notifications_enabled = Boolean(notifications_enabled);
+      if (thumbnails_enabled !== undefined) updateData.thumbnails_enabled = Boolean(thumbnails_enabled);
+
+      if (Object.keys(updateData).length === 0) {
+        return res.status(400).json({ error: 'At least one of notifications_enabled or thumbnails_enabled is required' });
+      }
+
+      const { data: user, error } = await supabase
+        .from('users')
+        .update(updateData)
+        .eq('line_user_id', line_user_id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      res.json({ success: true, user });
+    } catch (error) {
+      console.error('Error in updatePreferences:', error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+
   // Delete user account
   async deleteUser(req, res) {
     try {

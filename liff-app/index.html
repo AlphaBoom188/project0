@@ -16,40 +16,95 @@
   <div id="app" hidden>
     <header class="header">
       <img id="profile-picture" class="profile-picture" alt="" />
-      <div>
+      <div class="header-text">
         <div class="profile-name" id="profile-name"></div>
         <div class="period-label" id="period-label"></div>
       </div>
+      <button id="settings-button" class="icon-button" aria-label="Settings">⚙️</button>
     </header>
 
-    <section class="summary-card">
-      <div class="summary-item">
-        <span class="summary-label">Income</span>
-        <span class="summary-value income" id="summary-income">0.00</span>
-      </div>
-      <div class="summary-item">
-        <span class="summary-label">Expense</span>
-        <span class="summary-value expense" id="summary-expense">0.00</span>
-      </div>
-      <div class="summary-item">
-        <span class="summary-label">Net</span>
-        <span class="summary-value" id="summary-net">0.00</span>
-      </div>
+    <section id="dashboard-view">
+      <section class="summary-card">
+        <div class="summary-item">
+          <span class="summary-label">Income</span>
+          <span class="summary-value income" id="summary-income">0.00</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">Expense</span>
+          <span class="summary-value expense" id="summary-expense">0.00</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">Net</span>
+          <span class="summary-value" id="summary-net">0.00</span>
+        </div>
+      </section>
+
+      <button id="add-expense-button" class="primary-button">+ Add Expense</button>
+
+      <section>
+        <h2 class="section-title">Recent Transactions</h2>
+        <ul id="transaction-list" class="transaction-list"></ul>
+        <p id="empty-state" class="empty-state" hidden>No transactions yet.</p>
+      </section>
     </section>
 
-    <button id="add-expense-button" class="primary-button">+ Add Expense</button>
+    <section id="settings-view" hidden>
+      <button id="back-to-dashboard" class="secondary-button back-button">← Back</button>
 
-    <section>
-      <h2 class="section-title">Recent Transactions</h2>
-      <ul id="transaction-list" class="transaction-list"></ul>
-      <p id="empty-state" class="empty-state" hidden>No transactions yet.</p>
+      <h2 class="section-title">Preferences</h2>
+      <div class="settings-card">
+        <label class="toggle-row">
+          <span>Notifications</span>
+          <input type="checkbox" id="setting-notifications" />
+        </label>
+        <label class="toggle-row">
+          <span>Save receipt thumbnails</span>
+          <input type="checkbox" id="setting-thumbnails" />
+        </label>
+      </div>
+
+      <h2 class="section-title">Budget Cycle</h2>
+      <div class="settings-card">
+        <label class="field">
+          Cycle start day
+          <input type="number" id="setting-cycle-day" min="1" max="31" />
+        </label>
+        <button id="save-cycle-day" class="secondary-button">Save</button>
+      </div>
+
+      <p id="settings-status" class="settings-status" hidden></p>
+
+      <h2 class="section-title">Danger Zone</h2>
+      <div class="settings-card">
+        <p class="danger-text">Permanently deletes every transaction in your history. This cannot be undone.</p>
+        <button id="clear-history-button" class="danger-button">Clear Transaction History</button>
+      </div>
     </section>
+  </div>
+
+  <div id="confirm-modal" class="modal" hidden>
+    <div class="modal-content">
+      <p id="confirm-message"></p>
+      <div class="modal-actions">
+        <button type="button" id="confirm-cancel" class="secondary-button">Cancel</button>
+        <button type="button" id="confirm-ok" class="danger-button">Delete Everything</button>
+      </div>
+    </div>
   </div>
 
   <div id="add-expense-modal" class="modal" hidden>
     <div class="modal-content">
       <h2 class="section-title">Add Expense</h2>
       <form id="add-expense-form">
+        <div class="receipt-scan-row">
+          <img id="receipt-preview" class="receipt-preview" alt="" hidden />
+          <label class="secondary-button receipt-scan-label">
+            <span id="receipt-scan-label-text">📷 Scan Receipt</span>
+            <input type="file" id="field-receipt-image" accept="image/*" capture="environment" hidden />
+          </label>
+        </div>
+        <p id="scan-status" class="scan-status" hidden></p>
+
         <label class="field">
           Category
           <select id="field-category" required></select>

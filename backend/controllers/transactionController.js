@@ -5,6 +5,7 @@ const {
   DuplicateSlipError,
 } = require('../services/transactionCreate');
 const { withSignedThumbnails } = require('../services/signedUrl');
+const { autoCategorize } = require('../services/autoCategorize');
 
 const transactionController = {
   // Get all transactions for a user
@@ -91,16 +92,31 @@ const transactionController = {
   async createTransaction(req, res) {
     try {
       const { line_user_id } = req.params;
-      const { category_id, amount, type, description, slip_hash, thumbnail_url, transaction_date } = req.body;
+      let { category_id } = req.body;
+      const { amount, type, description, slip_hash, thumbnail_url, transaction_date } = req.body;
 
-      if (!category_id || !amount || !type || !transaction_date) {
+      if (!amount || !type || !transaction_date) {
         return res.status(400).json({
-          error: 'category_id, amount, type, and transaction_date are required',
+          error: 'amount, type, and transaction_date are required',
         });
       }
 
       if (!['income', 'expense'].includes(type)) {
         return res.status(400).json({ error: 'type must be either income or expense' });
+      }
+
+      // category_id is normally required, but an expense with a description can be
+      // auto-categorized instead of forcing every caller to pick one explicitly.
+      if (!category_id) {
+        if (type === 'expense' && description) {
+          const inferred = await autoCategorize(line_user_id, description);
+          category_id = inferred ? inferred.id : null;
+        }
+        if (!category_id) {
+          return res.status(400).json({
+            error: 'category_id is required (or provide a description on an expense so it can be auto-categorized)',
+          });
+        }
       }
 
       const transaction = await createSharedTransaction({
@@ -175,6 +191,26 @@ const transactionController = {
       res.json({ success: true, transaction: await withSignedThumbnails(transaction) });
     } catch (error) {
       console.error('Error in updateTransaction:', error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  // Permanently delete every transaction for a user (Settings -> "Clear Transaction History").
+  // Irreversible; the client is responsible for confirming with the user before calling this.
+  async deleteAllTransactions(req, res) {
+    try {
+      const { line_user_id } = req.params;
+
+      const { error, count } = await supabase
+        .from('transactions')
+        .delete({ count: 'exact' })
+        .eq('line_user_id', line_user_id);
+
+      if (error) throw error;
+
+      res.json({ success: true, deleted_count: count ?? 0 });
+    } catch (error) {
+      console.error('Error in deleteAllTransactions:', error);
       res.status(500).json({ error: error.message });
     }
   },

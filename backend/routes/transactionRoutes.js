@@ -17,6 +17,11 @@ router.post('/:line_user_id', transactionController.createTransaction);
 // PUT /api/transactions/:line_user_id/:transaction_id - Update a transaction
 router.put('/:line_user_id/:transaction_id', transactionController.updateTransaction);
 
+// DELETE /api/transactions/:line_user_id/all - Delete ALL transactions for a user
+// (must be registered before the :transaction_id route below, or "all" would be
+// matched as a transaction_id instead)
+router.delete('/:line_user_id/all', transactionController.deleteAllTransactions);
+
 // DELETE /api/transactions/:line_user_id/:transaction_id - Delete a transaction
 router.delete('/:line_user_id/:transaction_id', transactionController.deleteTransaction);
 

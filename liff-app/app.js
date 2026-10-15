@@ -21,9 +21,28 @@ const el = {
   fieldDescription: document.getElementById('field-description'),
   fieldDate: document.getElementById('field-date'),
   modalError: document.getElementById('modal-error'),
+  fieldReceiptImage: document.getElementById('field-receipt-image'),
+  receiptPreview: document.getElementById('receipt-preview'),
+  scanStatus: document.getElementById('scan-status'),
+  dashboardView: document.getElementById('dashboard-view'),
+  settingsView: document.getElementById('settings-view'),
+  settingsButton: document.getElementById('settings-button'),
+  backToDashboard: document.getElementById('back-to-dashboard'),
+  settingNotifications: document.getElementById('setting-notifications'),
+  settingThumbnails: document.getElementById('setting-thumbnails'),
+  settingCycleDay: document.getElementById('setting-cycle-day'),
+  saveCycleDay: document.getElementById('save-cycle-day'),
+  settingsStatus: document.getElementById('settings-status'),
+  clearHistoryButton: document.getElementById('clear-history-button'),
+  confirmModal: document.getElementById('confirm-modal'),
+  confirmMessage: document.getElementById('confirm-message'),
+  confirmOk: document.getElementById('confirm-ok'),
+  confirmCancel: document.getElementById('confirm-cancel'),
 };
 
 let lineUserId = null;
+let currentUser = null;
+let scannedThumbnailPath = null;
 
 function showError(message) {
   el.errorBanner.textContent = message;
@@ -49,7 +68,7 @@ async function apiRequest(path, options = {}) {
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(body.error || `Request failed (${response.status})`);
+    throw new Error(body.error || body.message || `Request failed (${response.status})`);
   }
   return body;
 }
@@ -136,9 +155,10 @@ async function loadDashboard() {
     apiRequest(`/categories/${lineUserId}?type=expense`),
   ]);
 
+  currentUser = userResponse.user;
   renderCategoryOptions(categoriesResponse.categories);
 
-  const { startISO, endISO } = getBillingCycleRange(userResponse.user.billing_cycle_start_day);
+  const { startISO, endISO } = getBillingCycleRange(currentUser.billing_cycle_start_day);
   const periodLabel = `${formatDate(startISO)} – ${formatDate(endISO)}`;
 
   const transactionsResponse = await apiRequest(
@@ -149,16 +169,100 @@ async function loadDashboard() {
   renderTransactionList(transactionsResponse.transactions);
 }
 
+// ---- Add Expense modal ----
+
+function resetReceiptScanState() {
+  el.fieldReceiptImage.value = '';
+  el.receiptPreview.hidden = true;
+  el.receiptPreview.removeAttribute('src');
+  el.scanStatus.hidden = true;
+  el.scanStatus.classList.remove('scan-error');
+  scannedThumbnailPath = null;
+}
+
 function openAddExpenseModal() {
   el.fieldAmount.value = '';
   el.fieldDescription.value = '';
   el.fieldDate.value = new Date().toISOString().slice(0, 10);
   clearModalError();
+  resetReceiptScanState();
   el.addExpenseModal.hidden = false;
 }
 
 function closeAddExpenseModal() {
   el.addExpenseModal.hidden = true;
+}
+
+// Resizes to roughly match the iOS app's OCR payload (keeps upload size and
+// Vision cost sane) rather than sending a multi-MB camera photo unmodified.
+function resizeImageToJpegBlob(file, maxDimension = 1280, quality = 0.7) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const scale = Math.min(1, maxDimension / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Could not process this image.'))), 'image/jpeg', quality);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('Could not load this image.'));
+    };
+    img.src = objectUrl;
+  });
+}
+
+async function blobToBase64AndHash(blob) {
+  const buffer = await blob.arrayBuffer();
+  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+  const hashHex = Array.from(new Uint8Array(hashBuffer))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+  const base64 = await new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result.split(',')[1]);
+    reader.readAsDataURL(blob);
+  });
+  return { base64, hashHex };
+}
+
+async function handleReceiptFileChange(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  clearModalError();
+  el.scanStatus.hidden = false;
+  el.scanStatus.classList.remove('scan-error');
+  el.scanStatus.textContent = 'Scanning receipt…';
+
+  try {
+    const resizedBlob = await resizeImageToJpegBlob(file);
+    el.receiptPreview.src = URL.createObjectURL(resizedBlob);
+    el.receiptPreview.hidden = false;
+
+    const { base64, hashHex } = await blobToBase64AndHash(resizedBlob);
+
+    const response = await apiRequest(`/ocr/scan/${lineUserId}`, {
+      method: 'POST',
+      body: JSON.stringify({ image_base64: base64, slip_hash: hashHex }),
+    });
+
+    const data = response.data;
+    if (data.amount != null) el.fieldAmount.value = data.amount;
+    if (data.merchant) el.fieldDescription.value = data.merchant;
+    if (data.date) el.fieldDate.value = data.date;
+    if (data.suggested_category_id) el.fieldCategory.value = data.suggested_category_id;
+    scannedThumbnailPath = data.thumbnail_path || null;
+
+    el.scanStatus.textContent = 'Scanned — review the details below before saving.';
+  } catch (error) {
+    el.scanStatus.classList.add('scan-error');
+    el.scanStatus.textContent = error.message;
+  }
 }
 
 async function handleAddExpenseSubmit(event) {
@@ -175,6 +279,7 @@ async function handleAddExpenseSubmit(event) {
         amount: parseFloat(el.fieldAmount.value),
         type: 'expense',
         description: el.fieldDescription.value || undefined,
+        thumbnail_url: scannedThumbnailPath || undefined,
         transaction_date: new Date(`${el.fieldDate.value}T12:00:00Z`).toISOString(),
       }),
     });
@@ -188,6 +293,114 @@ async function handleAddExpenseSubmit(event) {
     submitButton.disabled = false;
   }
 }
+
+// ---- Settings view ----
+
+function openSettingsView() {
+  if (currentUser) {
+    el.settingNotifications.checked = currentUser.notifications_enabled !== false;
+    el.settingThumbnails.checked = currentUser.thumbnails_enabled !== false;
+    el.settingCycleDay.value = currentUser.billing_cycle_start_day || 1;
+  }
+  el.settingsStatus.hidden = true;
+  el.dashboardView.hidden = true;
+  el.settingsView.hidden = false;
+}
+
+function closeSettingsView() {
+  el.settingsView.hidden = true;
+  el.dashboardView.hidden = false;
+}
+
+function showSettingsStatus(message) {
+  el.settingsStatus.textContent = message;
+  el.settingsStatus.hidden = false;
+  setTimeout(() => {
+    el.settingsStatus.hidden = true;
+  }, 2500);
+}
+
+async function handlePreferenceToggle(key, checkbox) {
+  checkbox.disabled = true;
+  try {
+    const response = await apiRequest(`/users/${lineUserId}/preferences`, {
+      method: 'PATCH',
+      body: JSON.stringify({ [key]: checkbox.checked }),
+    });
+    currentUser = response.user;
+    showSettingsStatus('Saved.');
+  } catch (error) {
+    checkbox.checked = !checkbox.checked;
+    showSettingsStatus(error.message);
+  } finally {
+    checkbox.disabled = false;
+  }
+}
+
+async function handleSaveCycleDay() {
+  const day = parseInt(el.settingCycleDay.value, 10);
+  if (!day || day < 1 || day > 31) {
+    showSettingsStatus('Cycle start day must be between 1 and 31.');
+    return;
+  }
+
+  el.saveCycleDay.disabled = true;
+  try {
+    const response = await apiRequest(`/users/${lineUserId}/billing-cycle`, {
+      method: 'PUT',
+      body: JSON.stringify({ billing_cycle_start_day: day }),
+    });
+    currentUser = response.user;
+    showSettingsStatus('Saved.');
+    await loadDashboard(); // the dashboard's period label depends on this
+  } catch (error) {
+    showSettingsStatus(error.message);
+  } finally {
+    el.saveCycleDay.disabled = false;
+  }
+}
+
+// Generic yes/no confirmation, used for the destructive clear-history action.
+function confirmAction(message) {
+  return new Promise((resolve) => {
+    el.confirmMessage.textContent = message;
+    el.confirmModal.hidden = false;
+
+    function cleanup(result) {
+      el.confirmModal.hidden = true;
+      el.confirmOk.removeEventListener('click', onOk);
+      el.confirmCancel.removeEventListener('click', onCancel);
+      resolve(result);
+    }
+    function onOk() {
+      cleanup(true);
+    }
+    function onCancel() {
+      cleanup(false);
+    }
+
+    el.confirmOk.addEventListener('click', onOk);
+    el.confirmCancel.addEventListener('click', onCancel);
+  });
+}
+
+async function handleClearHistory() {
+  const confirmed = await confirmAction('Permanently delete every transaction in your history? This cannot be undone.');
+  if (!confirmed) return;
+
+  el.clearHistoryButton.disabled = true;
+  try {
+    await apiRequest(`/transactions/${lineUserId}/all`, { method: 'DELETE' });
+    showSettingsStatus('Transaction history cleared.');
+    await loadDashboard();
+  } catch (error) {
+    showSettingsStatus(error.message);
+  } finally {
+    el.clearHistoryButton.disabled = false;
+  }
+}
+
+// ---- Init ----
 
 async function init() {
   try {
@@ -224,5 +437,13 @@ async function init() {
 el.addExpenseButton.addEventListener('click', openAddExpenseModal);
 el.cancelAddExpense.addEventListener('click', closeAddExpenseModal);
 el.addExpenseForm.addEventListener('submit', handleAddExpenseSubmit);
+el.fieldReceiptImage.addEventListener('change', handleReceiptFileChange);
+
+el.settingsButton.addEventListener('click', openSettingsView);
+el.backToDashboard.addEventListener('click', closeSettingsView);
+el.settingNotifications.addEventListener('change', () => handlePreferenceToggle('notifications_enabled', el.settingNotifications));
+el.settingThumbnails.addEventListener('change', () => handlePreferenceToggle('thumbnails_enabled', el.settingThumbnails));
+el.saveCycleDay.addEventListener('click', handleSaveCycleDay);
+el.clearHistoryButton.addEventListener('click', handleClearHistory);
 
 init();

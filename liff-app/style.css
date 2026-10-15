@@ -49,6 +49,10 @@ body {
   object-fit: cover;
 }
 
+.header-text {
+  flex: 1;
+}
+
 .profile-name {
   font-weight: 600;
   font-size: 16px;
@@ -57,6 +61,65 @@ body {
 .period-label {
   font-size: 12px;
   opacity: 0.85;
+}
+
+.icon-button {
+  background: none;
+  border: none;
+  font-size: 22px;
+  padding: 4px;
+  line-height: 1;
+}
+
+.back-button {
+  margin: 16px;
+  width: auto;
+  display: inline-block;
+}
+
+.settings-card {
+  background: white;
+  margin: 0 16px 16px;
+  padding: 16px;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.toggle-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 15px;
+  padding: 8px 0;
+}
+
+.toggle-row input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+}
+
+.settings-status {
+  margin: 0 16px 16px;
+  font-size: 13px;
+  color: #06c755;
+}
+
+.danger-text {
+  font-size: 13px;
+  color: #888;
+  margin: 0 0 12px;
+}
+
+.danger-button {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  background: #fdecea;
+  color: #b3261e;
+  border: 1px solid #f3c3bf;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
 }
 
 .summary-card {
@@ -233,6 +296,40 @@ body {
   border-radius: 8px;
   font-size: 13px;
   margin: 0 0 14px;
+}
+
+.receipt-scan-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.receipt-scan-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  padding: 10px 16px;
+  margin: 0;
+  cursor: pointer;
+}
+
+.receipt-preview {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.scan-status {
+  font-size: 13px;
+  color: #888;
+  margin: -6px 0 14px;
+}
+
+.scan-status.scan-error {
+  color: #b3261e;
 }
 
 .modal-actions {

@@ -11,6 +11,9 @@ router.get('/:line_user_id', userController.getUser);
 // PUT /api/users/:line_user_id/billing-cycle - Update billing cycle
 router.put('/:line_user_id/billing-cycle', userController.updateBillingCycle);
 
+// PATCH /api/users/:line_user_id/preferences - Update notification/thumbnail preferences
+router.patch('/:line_user_id/preferences', userController.updatePreferences);
+
 // DELETE /api/users/:line_user_id - Delete user account
 router.delete('/:line_user_id', userController.deleteUser);
 

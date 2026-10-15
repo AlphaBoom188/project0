@@ -31,10 +31,12 @@ npm start  # Starts server on port 3000
 - `GET /health` - Database health check
 - `POST /api/users` - Create/update user
 - `GET /api/users/:line_user_id` - Get user profile
+- `PATCH /api/users/:line_user_id/preferences` - Update `notifications_enabled`/`thumbnails_enabled`
 - `POST /api/categories/:line_user_id` - Create category
 - `GET /api/categories/:line_user_id` - Get categories
-- `POST /api/transactions/:line_user_id` - Create transaction
+- `POST /api/transactions/:line_user_id` - Create transaction (`category_id` optional for an expense with a `description` -- auto-categorized)
 - `GET /api/transactions/:line_user_id` - Get transactions
+- `DELETE /api/transactions/:line_user_id/all` - Delete every transaction for a user (irreversible; client must confirm first)
 - `GET /api/line/login-url` - Generate LINE Login URL
 - `GET /api/line/callback` - Handle LINE OAuth callback
 - `POST /api/ocr/scan/:line_user_id` - Scan a receipt image (OpenAI Vision), extract amount/date/merchant/category, and check `slip_hash` for duplicates
@@ -74,6 +76,7 @@ xcrun simctl io "iPhone 17 Pro" screenshot screenshot.png
    - 003_create_transactions_table.sql
    - 004_insert_preset_categories.sql
    - 005_add_user_preferences.sql
+   - 006_phase3_schema.sql
 
 ## Project Architecture
 
@@ -114,7 +117,8 @@ project0/
 │   │   ├── receiptThumbnail.js  # resize (sharp) + upload to private Storage bucket
 │   │   ├── signedUrl.js         # mint a short-lived signed URL for a stored thumbnail path
 │   │   ├── userPreferences.js   # notifications_enabled / thumbnails_enabled, fails open to TRUE
-│   │   └── budgetAlert.js       # event-driven budget-threshold check, fires once on crossing
+│   │   ├── budgetAlert.js       # event-driven budget-threshold check, fires once on crossing
+│   │   └── autoCategorize.js    # keyword-then-LLM category inference for expenses with no category_id
 │   ├── jobs/
 │   │   └── dailyDigest.js       # node-cron, 21:00 Asia/Bangkok, daily income/expense push
 │   ├── supabase/                  # Database migrations
@@ -246,10 +250,18 @@ project0/
 
 ✅ **Notifications** — split by trigger, not both scheduled: budget-threshold alerts (`services/budgetAlert.js`) are event-driven, checked immediately after each expense insert in `transactionCreate.js` (fire-and-forget; fires exactly once on crossing a category's `budget_amount`/`budget_period`, not on every subsequent over-budget transaction); the daily digest (`jobs/dailyDigest.js`, `node-cron`) runs once at 21:00 Asia/Bangkok, pushing that day's income/expense/net to every opted-in user with activity that day. Both respect per-user preferences below. Only reaches users who've messaged the bot at least once; be mindful of LINE's free-tier monthly push message cap at scale.
 
-✅ **User preferences** (migration `005_add_user_preferences.sql`) — `users.notifications_enabled` and `users.thumbnails_enabled`, both default `TRUE`. `services/userPreferences.js` reads them and **fails open to both defaults** if the columns are ever missing, so rollout ordering can't break anything. No settings UI exists yet to actually flip them (DB-only for now, by design) — a real settings screen (iOS or LIFF) is deferred rather than bolting on a bot text command.
+✅ **User preferences** (migration `005_add_user_preferences.sql`) — `users.notifications_enabled` and `users.thumbnails_enabled`, both default `TRUE`. `services/userPreferences.js` reads them and **fails open to both defaults** if the columns are ever missing, so rollout ordering can't break anything. Toggleable from the LIFF Settings screen (Phase 3).
 
-✅ **LINE MINI App (LIFF)** — `liff-app/` (plain HTML/JS, no build step), served by the backend itself at `/liff` (same server, same tunnel as the webhook — no separate hosting). `liff.init()` → `liff.getProfile()` gets `userId`/`displayName`/`pictureUrl` directly inside LINE's in-app browser, no OAuth redirect needed; provisions via the existing `POST /api/users`. Shows the current billing-cycle summary and recent transactions (with thumbnails), plus a manual "Add Expense" form — all against the existing REST API, no new backend endpoints. Camera/OCR capture inside LIFF is deliberately deferred to a follow-up (LINE's in-app browser camera/file access is more constrained than a native app). Needs `LIFF_ID` set and the LIFF app's Endpoint URL registered to `https://<tunnel>/liff/` in the LINE Developers Console.
+✅ **LINE MINI App (LIFF)** — `liff-app/` (plain HTML/JS, no build step), served by the backend itself at `/liff` (same server, same tunnel as the webhook — no separate hosting). `liff.init()` → `liff.getProfile()` gets `userId`/`displayName`/`pictureUrl` directly inside LINE's in-app browser, no OAuth redirect needed; provisions via the existing `POST /api/users`. Shows the current billing-cycle summary and recent transactions (with thumbnails), a manual "Add Expense" form (now with in-browser camera/file receipt OCR, Phase 3), and a Settings screen (Phase 3). Needs `LIFF_ID` set and the LIFF app's Endpoint URL registered to `https://<tunnel>/liff/` in the LINE Developers Console.
 
-- [ ] AI-powered expense categorization (beyond the category-matching already done during OCR/text parsing)
-- [ ] A settings UI (iOS or LIFF) to actually toggle `notifications_enabled`/`thumbnails_enabled`
-- [ ] Camera/OCR receipt capture inside the LIFF app (currently iOS + bot only)
+### Phase 3
+
+Scoped against `docs/PHASE_3_SPEC.md` — note that spec's own SQL migration assumed a schema we don't actually have (`users.id` UUID PK, a from-scratch `categories` table) and was reconciled rather than applied literally; see migration `006_phase3_schema.sql`'s header comment.
+
+✅ **LIFF Settings screen** — gear icon in the LIFF header opens a Settings view (`liff-app/` `#settings-view`, no router, just show/hide): toggles for `notifications_enabled`/`thumbnails_enabled` (`PATCH /api/users/:line_user_id/preferences`, new), budget cycle start day (reuses the existing `PUT /api/users/:line_user_id/billing-cycle` — deliberately *not* the spec's separate `budget_cycle_start_day` column, to avoid two columns meaning the same thing), and a "Clear Transaction History" destructive action gated behind a custom confirm modal (`DELETE /api/transactions/:line_user_id/all`, new — registered before the `:transaction_id` wildcard route so `/all` isn't swallowed by it).
+
+✅ **In-LIFF receipt OCR** — the Add Expense modal's `<input type="file" accept="image/*" capture="environment">` resizes the photo client-side (canvas, ~1280px JPEG q0.7, mirroring the iOS app's approach), hashes it (`crypto.subtle.digest`), and POSTs to the same `/api/ocr/scan/:line_user_id` the REST/bot paths already use — no new backend endpoint, same dedup and thumbnail pipeline.
+
+✅ **Auto-categorization** — `services/autoCategorize.js`: cheap keyword matching against the user's category names first (English + Thai hints), an LLM call (`gpt-4o-mini`) only if that misses, falling back to "Others" so a category is always returned. Wired into `transactionController.createTransaction` — `category_id` is now optional for an expense *if* a `description` is given (income still requires an explicit category_id); existing callers that always pass `category_id` are unaffected.
+
+- [ ] Analytics charts, CSV export, custom per-category budget alerts UI, Thai voice-to-text, PDF statement import, recurring expenses, multi-user/group support, paywall UI — all named in `docs/PHASE_3_SPEC.md` but out of scope for this pass
