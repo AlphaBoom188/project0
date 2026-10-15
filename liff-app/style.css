@@ -122,6 +122,70 @@ body {
   font-weight: 600;
 }
 
+.recurring-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+}
+
+.recurring-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.recurring-row:last-child {
+  border-bottom: none;
+}
+
+.recurring-row.inactive {
+  opacity: 0.5;
+}
+
+.recurring-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.recurring-description {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.recurring-meta {
+  font-size: 12px;
+  color: #888;
+}
+
+.recurring-amount {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.recurring-amount.income {
+  color: #06c755;
+}
+
+.recurring-amount.expense {
+  color: #e53935;
+}
+
+.recurring-delete {
+  background: none;
+  border: none;
+  font-size: 18px;
+  padding: 4px;
+  color: #b3261e;
+}
+
+.recurring-add-button {
+  width: 100%;
+  margin: 0;
+}
+
 .summary-card {
   display: flex;
   justify-content: space-around;
@@ -184,6 +248,26 @@ body {
   font-weight: 600;
   margin: 0 16px 8px;
   color: #555;
+}
+
+.section-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 16px 8px;
+}
+
+.section-header-row .section-title {
+  margin: 0;
+}
+
+.link-button {
+  background: none;
+  border: none;
+  color: #06c755;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px;
 }
 
 .transaction-list {

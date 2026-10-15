@@ -37,6 +37,8 @@ npm start  # Starts server on port 3000
 - `POST /api/transactions/:line_user_id` - Create transaction (`category_id` optional for an expense with a `description` -- auto-categorized)
 - `GET /api/transactions/:line_user_id` - Get transactions
 - `DELETE /api/transactions/:line_user_id/all` - Delete every transaction for a user (irreversible; client must confirm first)
+- `GET /api/transactions/:line_user_id/export` - Export transactions as CSV (UTF-8 BOM)
+- `GET/POST /api/recurring/:line_user_id`, `PUT/DELETE /api/recurring/:line_user_id/:recurring_id` - Recurring expense/income rules
 - `GET /api/line/login-url` - Generate LINE Login URL
 - `GET /api/line/callback` - Handle LINE OAuth callback
 - `POST /api/ocr/scan/:line_user_id` - Scan a receipt image (OpenAI Vision), extract amount/date/merchant/category, and check `slip_hash` for duplicates
@@ -77,6 +79,7 @@ xcrun simctl io "iPhone 17 Pro" screenshot screenshot.png
    - 004_insert_preset_categories.sql
    - 005_add_user_preferences.sql
    - 006_phase3_schema.sql
+   - 007_phase4_schema.sql
 
 ## Project Architecture
 
@@ -98,13 +101,15 @@ project0/
 │   │   ├── transactionController.js # Transaction management
 │   │   ├── lineController.js    # LINE Login OAuth
 │   │   ├── lineWebhookController.js # LINE Bot webhook (follow/text/image/postback)
-│   │   └── ocrController.js     # Receipt OCR (OpenAI Vision)
+│   │   ├── ocrController.js     # Receipt OCR (OpenAI Vision)
+│   │   └── recurringController.js # Recurring expense/income rule CRUD
 │   ├── routes/                    # API routes
 │   │   ├── userRoutes.js
 │   │   ├── categoryRoutes.js
 │   │   ├── transactionRoutes.js
 │   │   ├── lineRoutes.js
 │   │   ├── lineWebhookRoutes.js  # mounted before express.json() -- needs the raw body
+│   │   ├── recurringRoutes.js
 │   └── ocrRoutes.js
 │   ├── services/                  # Logic shared between REST controllers and the LINE Bot
 │   │   ├── userUpsert.js        # create/update user + preset categories
@@ -120,7 +125,8 @@ project0/
 │   │   ├── budgetAlert.js       # event-driven budget-threshold check, fires once on crossing
 │   │   └── autoCategorize.js    # keyword-then-LLM category inference for expenses with no category_id
 │   ├── jobs/
-│   │   └── dailyDigest.js       # node-cron, 21:00 Asia/Bangkok, daily income/expense push
+│   │   ├── dailyDigest.js       # node-cron, 21:00 Asia/Bangkok, daily income/expense push
+│   │   └── recurringTransactions.js # node-cron, 00:05 Asia/Bangkok, generates due recurring transactions
 │   ├── supabase/                  # Database migrations
 │   │   └── migrations/
 │   ├── .env.example               # Environment template
@@ -262,6 +268,18 @@ Scoped against `docs/PHASE_3_SPEC.md` — note that spec's own SQL migration ass
 
 ✅ **In-LIFF receipt OCR** — the Add Expense modal's `<input type="file" accept="image/*" capture="environment">` resizes the photo client-side (canvas, ~1280px JPEG q0.7, mirroring the iOS app's approach), hashes it (`crypto.subtle.digest`), and POSTs to the same `/api/ocr/scan/:line_user_id` the REST/bot paths already use — no new backend endpoint, same dedup and thumbnail pipeline.
 
-✅ **Auto-categorization** — `services/autoCategorize.js`: cheap keyword matching against the user's category names first (English + Thai hints), an LLM call (`gpt-4o-mini`) only if that misses, falling back to "Others" so a category is always returned. Wired into `transactionController.createTransaction` — `category_id` is now optional for an expense *if* a `description` is given (income still requires an explicit category_id); existing callers that always pass `category_id` are unaffected.
+✅ **Auto-categorization** — `services/autoCategorize.js`: cheap keyword matching against the user's category names first (English + Thai hints), an LLM call (`gpt-4o-mini`) only if that misses, falling back to "Others" so a category is always returned. Wired into `transactionController.createTransaction` — `category_id` is now optional for an expense *if* a `description` is given (income still requires an explicit category_id); existing callers that always pass `category_id` are unaffected. In the LIFF Add Expense form the Category field defaults to "✨ Auto-Categorize", not the first real category — leaving it as-is omits `category_id` from the request entirely.
 
-- [ ] Analytics charts, CSV export, custom per-category budget alerts UI, Thai voice-to-text, PDF statement import, recurring expenses, multi-user/group support, paywall UI — all named in `docs/PHASE_3_SPEC.md` but out of scope for this pass
+**Note:** `express.json()` has an explicit `limit: '10mb'` — the default is 100kb, which a base64-encoded receipt photo (even resized client-side) routinely exceeds; this surfaced as a 413 once real phone photos were tested (a tiny synthetic test image had been masking it). `apiRequest()` in `liff-app/app.js` always prefixes thrown errors with the real HTTP status (`[413] ...`) for exactly this kind of failure.
+
+- [ ] Analytics charts, custom per-category budget alerts UI, Thai voice-to-text, PDF statement import, multi-user/group support, paywall UI — all named in `docs/PHASE_3_SPEC.md` but out of scope so far
+
+### Phase 4
+
+Scoped down from the literal ask — "Tab Navigation Speed" and "lazy-load the Analytics tab" don't apply, since the LIFF app has only ever had two views (Dashboard, Settings; see Phase 3) and no tab bar or charts exist to speed up or lazy-load. See conversation for the full reconciliation.
+
+✅ **Recurring expenses** (migration `007_phase4_schema.sql`, table `recurring_transactions`) — `controllers/recurringController.js` + `routes/recurringRoutes.js` mounted at `/api/recurring` (CRUD, `line_user_id`-scoped like everything else; `category_id` uses `ON DELETE RESTRICT` like `transactions`, so a category in active use by a rule can't be deleted out from under it). `jobs/recurringTransactions.js` (`node-cron`, 00:05 Asia/Bangkok) finds rows where `next_run_date <= now` and `is_active = true`, creates a real transaction via the same shared `services/transactionCreate.js` every other path uses, advances `next_run_date` by the rule's `frequency`, and pushes a LINE notification (respecting `notifications_enabled`). One rule failing doesn't block the rest — `next_run_date` is only advanced on success, so a failed rule naturally retries next tick. Manager UI lives in the LIFF Settings screen ("ตั้งรายการจดประจำ"), not a separate Transactions screen (doesn't exist).
+
+✅ **CSV export** — `GET /api/transactions/:line_user_id/export`, same `type`/`category_id`/`start_date`/`end_date` filters as the regular list endpoint. Prefixes the response with a UTF-8 BOM (`﻿`) so Thai text opens correctly in Excel instead of as mojibake — verified with an actual Thai description end to end. Wired to a button on the Dashboard's existing "Recent Transactions" section (not a separate Transactions screen) via a plain `window.location.href` navigation, letting the browser handle the `Content-Disposition: attachment` response natively.
+
+✅ **LIFF initial-load parallelization** — `loadDashboard()` used to block the transactions fetch on the user response resolving first (it needs `billing_cycle_start_day` to compute the date range). Now fetches a fixed recent window (`limit=50`, no date filter) in parallel with the user and categories calls, then filters to the current billing cycle client-side for the summary card (using actual `Date` comparisons, not string comparisons — the API's `+00:00`-suffixed timestamps and the client's `Z`-suffixed ones are different string shapes for the same instant). Side effect: "Recent Transactions" now shows genuinely recent activity across cycle boundaries rather than being clipped to the current cycle.

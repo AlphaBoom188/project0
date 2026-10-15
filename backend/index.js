@@ -10,7 +10,9 @@ const transactionRoutes = require('./routes/transactionRoutes');
 const lineRoutes = require('./routes/lineRoutes');
 const ocrRoutes = require('./routes/ocrRoutes');
 const lineWebhookRoutes = require('./routes/lineWebhookRoutes');
+const recurringRoutes = require('./routes/recurringRoutes');
 const { startDailyDigestJob } = require('./jobs/dailyDigest');
+const { startRecurringTransactionsJob } = require('./jobs/recurringTransactions');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -51,6 +53,7 @@ app.use('/api/categories', categoryRoutes);
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/line', lineRoutes);
 app.use('/api/ocr', ocrRoutes);
+app.use('/api/recurring', recurringRoutes);
 
 // LIFF (LINE MINI App) -- static files, plus a tiny dynamic script so the LIFF ID
 // lives in .env like every other credential rather than being hardcoded into a
@@ -63,4 +66,5 @@ app.use('/liff', express.static(path.join(__dirname, '../liff-app')));
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
   startDailyDigestJob();
+  startRecurringTransactionsJob();
 });

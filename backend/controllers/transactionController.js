@@ -7,6 +7,11 @@ const {
 const { withSignedThumbnails } = require('../services/signedUrl');
 const { autoCategorize } = require('../services/autoCategorize');
 
+function toCsvField(value) {
+  const str = value === null || value === undefined ? '' : String(value);
+  return /[",\r\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+}
+
 const transactionController = {
   // Get all transactions for a user
   async getTransactions(req, res) {
@@ -51,6 +56,47 @@ const transactionController = {
       res.json({ success: true, transactions: await withSignedThumbnails(transactions) });
     } catch (error) {
       console.error('Error in getTransactions:', error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  // Export transactions as CSV, with a UTF-8 BOM so Thai text renders correctly
+  // when opened directly in Excel rather than as mojibake.
+  async exportTransactions(req, res) {
+    try {
+      const { line_user_id } = req.params;
+      const { type, category_id, start_date, end_date } = req.query;
+
+      let query = supabase
+        .from('transactions')
+        .select('transaction_date, type, amount, description, payment_method, categories ( name )')
+        .eq('line_user_id', line_user_id)
+        .order('transaction_date', { ascending: false });
+
+      if (type) query = query.eq('type', type);
+      if (category_id) query = query.eq('category_id', category_id);
+      if (start_date) query = query.gte('transaction_date', start_date);
+      if (end_date) query = query.lte('transaction_date', end_date);
+
+      const { data: transactions, error } = await query;
+      if (error) throw error;
+
+      const header = ['Date', 'Type', 'Category', 'Description', 'Amount', 'Payment Method'];
+      const rows = (transactions || []).map((t) => [
+        t.transaction_date,
+        t.type,
+        t.categories?.name || '',
+        t.description || '',
+        t.amount,
+        t.payment_method || '',
+      ]);
+      const csv = [header, ...rows].map((row) => row.map(toCsvField).join(',')).join('\r\n');
+
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="transactions-${line_user_id}.csv"`);
+      res.send('\uFEFF' + csv);
+    } catch (error) {
+      console.error('Error in exportTransactions:', error);
       res.status(500).json({ error: error.message });
     }
   },

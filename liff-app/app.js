@@ -34,10 +34,24 @@ const el = {
   saveCycleDay: document.getElementById('save-cycle-day'),
   settingsStatus: document.getElementById('settings-status'),
   clearHistoryButton: document.getElementById('clear-history-button'),
+  exportCsvButton: document.getElementById('export-csv-button'),
   confirmModal: document.getElementById('confirm-modal'),
   confirmMessage: document.getElementById('confirm-message'),
   confirmOk: document.getElementById('confirm-ok'),
   confirmCancel: document.getElementById('confirm-cancel'),
+  recurringList: document.getElementById('recurring-list'),
+  recurringEmptyState: document.getElementById('recurring-empty-state'),
+  addRecurringButton: document.getElementById('add-recurring-button'),
+  recurringModal: document.getElementById('recurring-modal'),
+  recurringForm: document.getElementById('recurring-form'),
+  cancelRecurring: document.getElementById('cancel-recurring'),
+  recurringFieldType: document.getElementById('recurring-field-type'),
+  recurringFieldCategory: document.getElementById('recurring-field-category'),
+  recurringFieldAmount: document.getElementById('recurring-field-amount'),
+  recurringFieldDescription: document.getElementById('recurring-field-description'),
+  recurringFieldFrequency: document.getElementById('recurring-field-frequency'),
+  recurringFieldStartDate: document.getElementById('recurring-field-start-date'),
+  recurringModalError: document.getElementById('recurring-modal-error'),
 };
 
 let lineUserId = null;
@@ -161,10 +175,15 @@ function renderCategoryOptions(categories) {
   el.fieldCategory.innerHTML = autoOption + categoryOptions;
 }
 
+// The transactions fetch can't be date-filtered server-side until we know the
+// user's billing_cycle_start_day, which only comes back from the /users call --
+// so instead of waiting on that before firing it, fetch a fixed recent window
+// in parallel with everything else and filter the cycle window client-side.
 async function loadDashboard() {
-  const [userResponse, categoriesResponse] = await Promise.all([
+  const [userResponse, categoriesResponse, transactionsResponse] = await Promise.all([
     apiRequest(`/users/${lineUserId}`),
     apiRequest(`/categories/${lineUserId}?type=expense`),
+    apiRequest(`/transactions/${lineUserId}?limit=50`),
   ]);
 
   currentUser = userResponse.user;
@@ -173,12 +192,26 @@ async function loadDashboard() {
   const { startISO, endISO } = getBillingCycleRange(currentUser.billing_cycle_start_day);
   const periodLabel = `${formatDate(startISO)} – ${formatDate(endISO)}`;
 
-  const transactionsResponse = await apiRequest(
-    `/transactions/${lineUserId}?start_date=${encodeURIComponent(startISO)}&end_date=${encodeURIComponent(endISO)}&limit=50`
-  );
+  const allTransactions = transactionsResponse.transactions;
+  const periodStart = new Date(startISO);
+  const periodEnd = new Date(endISO);
+  // String comparison isn't safe here: the API returns "+00:00"-suffixed
+  // timestamps while startISO/endISO are "Z"-suffixed -- same instant, different
+  // string shape -- so these are compared as actual Dates instead.
+  const inPeriod = allTransactions.filter((t) => {
+    const d = new Date(t.transaction_date);
+    return d >= periodStart && d < periodEnd;
+  });
 
-  renderSummary(transactionsResponse.transactions, periodLabel);
-  renderTransactionList(transactionsResponse.transactions);
+  renderSummary(inPeriod, periodLabel);
+  renderTransactionList(allTransactions);
+}
+
+function handleExportCsv() {
+  // A plain top-level navigation lets the browser handle the response's
+  // Content-Disposition: attachment header natively (save/share prompt),
+  // rather than fetching the CSV into JS just to hand it back off again.
+  window.location.href = `${API_BASE}/transactions/${lineUserId}/export`;
 }
 
 // ---- Add Expense modal ----
@@ -321,6 +354,9 @@ function openSettingsView() {
   el.settingsStatus.hidden = true;
   el.dashboardView.hidden = true;
   el.settingsView.hidden = false;
+  // Not awaited: Settings should open instantly (pure show/hide, no blocking
+  // fetch) -- the recurring list fills in once it arrives.
+  loadRecurringList().catch((error) => showSettingsStatus(error.message));
 }
 
 function closeSettingsView() {
@@ -377,9 +413,10 @@ async function handleSaveCycleDay() {
 }
 
 // Generic yes/no confirmation, used for the destructive clear-history action.
-function confirmAction(message) {
+function confirmAction(message, confirmLabel = 'Delete') {
   return new Promise((resolve) => {
     el.confirmMessage.textContent = message;
+    el.confirmOk.textContent = confirmLabel;
     el.confirmModal.hidden = false;
 
     function cleanup(result) {
@@ -401,7 +438,10 @@ function confirmAction(message) {
 }
 
 async function handleClearHistory() {
-  const confirmed = await confirmAction('Permanently delete every transaction in your history? This cannot be undone.');
+  const confirmed = await confirmAction(
+    'Permanently delete every transaction in your history? This cannot be undone.',
+    'Delete Everything'
+  );
   if (!confirmed) return;
 
   el.clearHistoryButton.disabled = true;
@@ -413,6 +453,133 @@ async function handleClearHistory() {
     showSettingsStatus(error.message);
   } finally {
     el.clearHistoryButton.disabled = false;
+  }
+}
+
+// ---- Recurring expenses ----
+
+const FREQUENCY_LABELS = { daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly', yearly: 'Yearly' };
+
+async function fetchCategoriesForType(type) {
+  const response = await apiRequest(`/categories/${lineUserId}?type=${type}`);
+  return response.categories;
+}
+
+async function loadRecurringList() {
+  const response = await apiRequest(`/recurring/${lineUserId}`);
+  renderRecurringList(response.recurring || []);
+}
+
+function renderRecurringList(rules) {
+  el.recurringList.innerHTML = '';
+  el.recurringEmptyState.hidden = rules.length > 0;
+
+  for (const rule of rules) {
+    const li = document.createElement('li');
+    li.className = `recurring-row${rule.is_active ? '' : ' inactive'}`;
+    li.innerHTML = `
+      <input type="checkbox" class="recurring-active-toggle" ${rule.is_active ? 'checked' : ''} />
+      <div class="recurring-details">
+        <div class="recurring-description">${escapeHtml(rule.description || rule.categories?.name || 'Recurring')}</div>
+        <div class="recurring-meta">${FREQUENCY_LABELS[rule.frequency] || rule.frequency} · next ${formatDate(rule.next_run_date)}</div>
+      </div>
+      <div class="recurring-amount ${rule.type}">${parseFloat(rule.amount).toFixed(2)}</div>
+      <button type="button" class="recurring-delete" aria-label="Delete">🗑</button>
+    `;
+    li.querySelector('.recurring-active-toggle').addEventListener('change', (e) =>
+      handleToggleRecurringActive(rule.id, e.target.checked)
+    );
+    li.querySelector('.recurring-delete').addEventListener('click', () => handleDeleteRecurring(rule.id));
+    el.recurringList.appendChild(li);
+  }
+}
+
+function clearRecurringModalError() {
+  el.recurringModalError.hidden = true;
+}
+
+function showRecurringModalError(message) {
+  el.recurringModalError.textContent = message;
+  el.recurringModalError.hidden = false;
+}
+
+async function populateRecurringCategoryOptions() {
+  const categories = await fetchCategoriesForType(el.recurringFieldType.value);
+  el.recurringFieldCategory.innerHTML = categories
+    .map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`)
+    .join('');
+}
+
+async function openRecurringModal() {
+  el.recurringFieldType.value = 'expense';
+  el.recurringFieldAmount.value = '';
+  el.recurringFieldDescription.value = '';
+  el.recurringFieldFrequency.value = 'monthly';
+  el.recurringFieldStartDate.value = new Date().toISOString().slice(0, 10);
+  clearRecurringModalError();
+  el.recurringModal.hidden = false;
+  try {
+    await populateRecurringCategoryOptions();
+  } catch (error) {
+    showRecurringModalError(error.message);
+  }
+}
+
+function closeRecurringModal() {
+  el.recurringModal.hidden = true;
+}
+
+async function handleRecurringSubmit(event) {
+  event.preventDefault();
+  const submitButton = event.submitter;
+  submitButton.disabled = true;
+  clearRecurringModalError();
+
+  try {
+    await apiRequest(`/recurring/${lineUserId}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        category_id: el.recurringFieldCategory.value,
+        amount: parseFloat(el.recurringFieldAmount.value),
+        type: el.recurringFieldType.value,
+        description: el.recurringFieldDescription.value || undefined,
+        frequency: el.recurringFieldFrequency.value,
+        start_date: new Date(`${el.recurringFieldStartDate.value}T12:00:00Z`).toISOString(),
+      }),
+    });
+    closeRecurringModal();
+    await loadRecurringList();
+    showSettingsStatus('Recurring expense added.');
+  } catch (error) {
+    showRecurringModalError(error.message);
+  } finally {
+    submitButton.disabled = false;
+  }
+}
+
+async function handleToggleRecurringActive(recurringId, isActive) {
+  try {
+    await apiRequest(`/recurring/${lineUserId}/${recurringId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ is_active: isActive }),
+    });
+    await loadRecurringList();
+  } catch (error) {
+    showSettingsStatus(error.message);
+    await loadRecurringList(); // revert the optimistic checkbox state on failure
+  }
+}
+
+async function handleDeleteRecurring(recurringId) {
+  const confirmed = await confirmAction('Delete this recurring expense? This cannot be undone.', 'Delete');
+  if (!confirmed) return;
+
+  try {
+    await apiRequest(`/recurring/${lineUserId}/${recurringId}`, { method: 'DELETE' });
+    await loadRecurringList();
+    showSettingsStatus('Recurring expense deleted.');
+  } catch (error) {
+    showSettingsStatus(error.message);
   }
 }
 
@@ -461,5 +628,13 @@ el.settingNotifications.addEventListener('change', () => handlePreferenceToggle(
 el.settingThumbnails.addEventListener('change', () => handlePreferenceToggle('thumbnails_enabled', el.settingThumbnails));
 el.saveCycleDay.addEventListener('click', handleSaveCycleDay);
 el.clearHistoryButton.addEventListener('click', handleClearHistory);
+el.exportCsvButton.addEventListener('click', handleExportCsv);
+
+el.addRecurringButton.addEventListener('click', openRecurringModal);
+el.cancelRecurring.addEventListener('click', closeRecurringModal);
+el.recurringForm.addEventListener('submit', handleRecurringSubmit);
+el.recurringFieldType.addEventListener('change', () =>
+  populateRecurringCategoryOptions().catch((error) => showRecurringModalError(error.message))
+);
 
 init();

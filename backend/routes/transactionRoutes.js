@@ -8,6 +8,9 @@ router.get('/:line_user_id', transactionController.getTransactions);
 // GET /api/transactions/:line_user_id/summary - Get transaction summary by category
 router.get('/:line_user_id/summary', transactionController.getTransactionSummary);
 
+// GET /api/transactions/:line_user_id/export - Export transactions as CSV (UTF-8 BOM)
+router.get('/:line_user_id/export', transactionController.exportTransactions);
+
 // GET /api/transactions/:line_user_id/:transaction_id - Get a single transaction
 router.get('/:line_user_id/:transaction_id', transactionController.getTransaction);
 

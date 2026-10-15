@@ -42,7 +42,10 @@
       <button id="add-expense-button" class="primary-button">+ Add Expense</button>
 
       <section>
-        <h2 class="section-title">Recent Transactions</h2>
+        <div class="section-header-row">
+          <h2 class="section-title">Recent Transactions</h2>
+          <button id="export-csv-button" class="link-button">⬇ Export CSV</button>
+        </div>
         <ul id="transaction-list" class="transaction-list"></ul>
         <p id="empty-state" class="empty-state" hidden>No transactions yet.</p>
       </section>
@@ -72,6 +75,13 @@
         <button id="save-cycle-day" class="secondary-button">Save</button>
       </div>
 
+      <h2 class="section-title">ตั้งรายการจดประจำ (Recurring Expenses)</h2>
+      <div class="settings-card">
+        <ul id="recurring-list" class="recurring-list"></ul>
+        <p id="recurring-empty-state" class="empty-state" hidden>No recurring expenses yet.</p>
+        <button id="add-recurring-button" class="secondary-button recurring-add-button">+ Add Recurring</button>
+      </div>
+
       <p id="settings-status" class="settings-status" hidden></p>
 
       <h2 class="section-title">Danger Zone</h2>
@@ -89,6 +99,51 @@
         <button type="button" id="confirm-cancel" class="secondary-button">Cancel</button>
         <button type="button" id="confirm-ok" class="danger-button">Delete Everything</button>
       </div>
+    </div>
+  </div>
+
+  <div id="recurring-modal" class="modal" hidden>
+    <div class="modal-content">
+      <h2 class="section-title">Recurring Expense</h2>
+      <form id="recurring-form">
+        <label class="field">
+          Type
+          <select id="recurring-field-type">
+            <option value="expense">Expense</option>
+            <option value="income">Income</option>
+          </select>
+        </label>
+        <label class="field">
+          Category
+          <select id="recurring-field-category" required></select>
+        </label>
+        <label class="field">
+          Amount
+          <input id="recurring-field-amount" type="number" inputmode="decimal" step="0.01" min="0.01" required />
+        </label>
+        <label class="field">
+          Description
+          <input id="recurring-field-description" type="text" maxlength="200" />
+        </label>
+        <label class="field">
+          Frequency
+          <select id="recurring-field-frequency">
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly" selected>Monthly</option>
+            <option value="yearly">Yearly</option>
+          </select>
+        </label>
+        <label class="field">
+          Start date
+          <input id="recurring-field-start-date" type="date" required />
+        </label>
+        <p id="recurring-modal-error" class="modal-error" hidden></p>
+        <div class="modal-actions">
+          <button type="button" id="cancel-recurring" class="secondary-button">Cancel</button>
+          <button type="submit" class="primary-button">Save</button>
+        </div>
+      </form>
     </div>
   </div>
 
