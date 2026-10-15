@@ -4,6 +4,7 @@ const {
   InvalidCategoryError,
   DuplicateSlipError,
 } = require('../services/transactionCreate');
+const { withSignedThumbnails } = require('../services/signedUrl');
 
 const transactionController = {
   // Get all transactions for a user
@@ -46,7 +47,7 @@ const transactionController = {
 
       if (error) throw error;
 
-      res.json({ success: true, transactions });
+      res.json({ success: true, transactions: await withSignedThumbnails(transactions) });
     } catch (error) {
       console.error('Error in getTransactions:', error);
       res.status(500).json({ error: error.message });
@@ -79,7 +80,7 @@ const transactionController = {
         throw error;
       }
 
-      res.json({ success: true, transaction });
+      res.json({ success: true, transaction: await withSignedThumbnails(transaction) });
     } catch (error) {
       console.error('Error in getTransaction:', error);
       res.status(500).json({ error: error.message });
@@ -113,7 +114,7 @@ const transactionController = {
         transactionDate: transaction_date,
       });
 
-      res.status(201).json({ success: true, transaction });
+      res.status(201).json({ success: true, transaction: await withSignedThumbnails(transaction) });
     } catch (error) {
       if (error instanceof InvalidCategoryError) {
         return res.status(400).json({ error: error.message });
@@ -171,7 +172,7 @@ const transactionController = {
 
       if (error) throw error;
 
-      res.json({ success: true, transaction });
+      res.json({ success: true, transaction: await withSignedThumbnails(transaction) });
     } catch (error) {
       console.error('Error in updateTransaction:', error);
       res.status(500).json({ error: error.message });

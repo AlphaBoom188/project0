@@ -5,6 +5,7 @@ const { fetchExpenseCategories, matchCategoryByName } = require('../services/cat
 const { findDuplicateBySlipHash, extractReceiptFromImage } = require('../services/receiptExtraction');
 const { parseExpenseText } = require('../services/textExpenseParser');
 const { createTransaction, InvalidCategoryError, DuplicateSlipError } = require('../services/transactionCreate');
+const { signThumbnailPath } = require('../services/signedUrl');
 const pending = require('../services/pendingConfirmations');
 const { replyText, replyConfirmationCard, getImageBuffer } = require('../services/lineMessagingClient');
 
@@ -197,11 +198,15 @@ async function handleImageMessage(event) {
     description: extracted.merchant,
     transactionDate,
     slipHash,
+    thumbnailPath: extracted.thumbnail_path,
   });
   log('image: pending created', lineUserId, token);
 
+  const heroImageUrl = await signThumbnailPath(extracted.thumbnail_path);
+
   await replyConfirmationCard(event.replyToken, {
     title: 'Log this receipt?',
+    heroImageUrl,
     rows: [
       { label: 'Amount', value: extracted.amount != null ? String(extracted.amount) : '(unreadable)' },
       { label: 'Merchant', value: extracted.merchant || '(unreadable)' },
@@ -244,6 +249,7 @@ async function handlePostback(event) {
       type: 'expense',
       description: data.description,
       slipHash: data.slipHash,
+      thumbnailUrl: data.thumbnailPath,
       transactionDate: data.transactionDate,
     });
     pending.remove(token);

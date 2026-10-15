@@ -195,6 +195,16 @@ struct TransactionRow: View {
     
     var body: some View {
         HStack {
+            if let thumbnailUrl = transaction.thumbnailUrl, let url = URL(string: thumbnailUrl) {
+                AsyncImage(url: url) { image in
+                    image.resizable().aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    Color(.systemGray5)
+                }
+                .frame(width: 44, height: 44)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+
             VStack(alignment: .leading, spacing: 4) {
                 Text(transaction.categories?.name ?? "Uncategorized")
                     .font(.subheadline)
@@ -208,9 +218,9 @@ struct TransactionRow: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            
+
             Spacer()
-            
+
             Text(String(format: "%.2f", transaction.amount))
                 .font(.subheadline)
                 .fontWeight(.semibold)

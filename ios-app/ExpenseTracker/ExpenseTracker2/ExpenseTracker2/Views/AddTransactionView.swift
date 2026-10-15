@@ -137,6 +137,7 @@ class AddTransactionViewModel: ObservableObject {
     @Published var showSaveError = false
 
     private var slipHash: String?
+    private var thumbnailPath: String?
     private let apiService = APIService.shared
 
     func loadCategories() {
@@ -203,6 +204,7 @@ class AddTransactionViewModel: ObservableObject {
                     if let categoryId = data.suggestedCategoryId {
                         self.selectedCategoryId = categoryId
                     }
+                    self.thumbnailPath = data.thumbnailPath
                 case .failure(let error):
                     if case APIError.httpError(409) = error {
                         self.isDuplicate = true
@@ -239,6 +241,7 @@ class AddTransactionViewModel: ObservableObject {
             type: type,
             description: description.isEmpty ? nil : description,
             slipHash: slipHash,
+            thumbnailUrl: thumbnailPath,
             transactionDate: dateString
         ) { result in
             DispatchQueue.main.async {

@@ -102,12 +102,18 @@ project0/
 │   └── ocrRoutes.js
 │   ├── services/                  # Logic shared between REST controllers and the LINE Bot
 │   │   ├── userUpsert.js        # create/update user + preset categories
-│   │   ├── transactionCreate.js # validate category + insert transaction
-│   │   ├── receiptExtraction.js # OpenAI Vision extraction + slip_hash dedup
+│   │   ├── transactionCreate.js # validate category + insert transaction + fire budget check
+│   │   ├── receiptExtraction.js # OpenAI Vision extraction + slip_hash dedup + thumbnail upload
 │   │   ├── textExpenseParser.js # OpenAI text parsing ("coffee 120")
 │   │   ├── categoryMatch.js     # fetch/match a user's expense categories
 │   │   ├── pendingConfirmations.js # in-memory TTL store for bot Confirm/Cancel
-│   │   └── lineMessagingClient.js  # @line/bot-sdk wrapper + Flex card builder
+│   │   ├── lineMessagingClient.js  # @line/bot-sdk wrapper + Flex card builder (with timeouts)
+│   │   ├── receiptThumbnail.js  # resize (sharp) + upload to private Storage bucket
+│   │   ├── signedUrl.js         # mint a short-lived signed URL for a stored thumbnail path
+│   │   ├── userPreferences.js   # notifications_enabled / thumbnails_enabled, fails open to TRUE
+│   │   └── budgetAlert.js       # event-driven budget-threshold check, fires once on crossing
+│   ├── jobs/
+│   │   └── dailyDigest.js       # node-cron, 21:00 Asia/Bangkok, daily income/expense push
 │   ├── supabase/                  # Database migrations
 │   │   └── migrations/
 │   ├── .env.example               # Environment template
@@ -227,9 +233,14 @@ project0/
 
 ✅ **OCR slip scanning** — iOS camera/photo-library capture (`AddTransactionView` + `ImagePicker`) → `POST /api/ocr/scan/:line_user_id` extracts amount/date/merchant/category via OpenAI Vision (`gpt-4o-mini`) → form auto-fills → `slip_hash` (SHA-256, computed client-side) is checked both as a fast pre-check in the OCR endpoint and as a DB-level `UNIQUE` constraint on `transactions.slip_hash`, so the same receipt can't be recorded twice.
 
-✅ **LINE Bot webhook** — `POST /api/line/webhook`, signature-verified via `@line/bot-sdk`. `follow` provisions the user; a receipt photo runs through the same Vision extraction + `slip_hash` dedup as the REST OCR endpoint; free text (e.g. "coffee 120") is parsed into an expense via OpenAI; both reply with a Flex confirmation card (Confirm/Cancel postback) before anything is saved — the pending transaction lives in an in-memory, 10-minute-TTL store (`services/pendingConfirmations.js`), not a DB table. A "summary"/"สรุป" text command replies with the current billing-cycle's income/expense/net. Proactive/scheduled push notifications (budget alerts, periodic digests) are intentionally deferred — this pass is reply-based only. Needs `LINE_MESSAGING_CHANNEL_ACCESS_TOKEN` set and a public HTTPS tunnel (e.g. `ngrok http 3000`) registered as the webhook URL to actually receive events from LINE.
+✅ **LINE Bot webhook** — `POST /api/line/webhook`, signature-verified via `@line/bot-sdk`. `follow` provisions the user (and any first message lazily provisions one too, in case the Official Account was already friended before the webhook existed); a receipt photo runs through the same Vision extraction + `slip_hash` dedup as the REST OCR endpoint; free text (e.g. "coffee 120") is parsed into an expense via OpenAI; both reply with a Flex confirmation card (Confirm/Cancel postback, with a receipt thumbnail as the hero image) before anything is saved — the pending transaction lives in an in-memory, 10-minute-TTL store (`services/pendingConfirmations.js`), not a DB table. A "summary"/"สรุป" text command replies with the current billing-cycle's income/expense/net. Every outbound call (OpenAI, LINE reply/push/blob) is wrapped with a 10-20s timeout so a slow upstream degrades to a logged failure instead of hanging a webhook request.
+
+✅ **Receipt thumbnails** — `services/receiptThumbnail.js` resizes (`sharp`, ~320px JPEG) and uploads to a **private** Supabase Storage bucket (`receipt-thumbnails`), used by both the REST OCR endpoint and the bot's image handler. `transactions.thumbnail_url` stores the raw storage *path*, not a usable URL — `services/signedUrl.js` mints a fresh 1-hour signed URL every time transactions are read (`transactionController.js`'s get/list/create/update) or shown in a bot confirmation card. Thumbnails upload at scan time, not confirm time, so a scan that's never saved leaves a small orphaned object in storage — accepted as a low-cost tradeoff rather than building save-time-only upload plumbing.
+
+✅ **Notifications** — split by trigger, not both scheduled: budget-threshold alerts (`services/budgetAlert.js`) are event-driven, checked immediately after each expense insert in `transactionCreate.js` (fire-and-forget; fires exactly once on crossing a category's `budget_amount`/`budget_period`, not on every subsequent over-budget transaction); the daily digest (`jobs/dailyDigest.js`, `node-cron`) runs once at 21:00 Asia/Bangkok, pushing that day's income/expense/net to every opted-in user with activity that day. Both respect per-user preferences below. Only reaches users who've messaged the bot at least once; be mindful of LINE's free-tier monthly push message cap at scale.
+
+✅ **User preferences** (migration `005_add_user_preferences.sql`) — `users.notifications_enabled` and `users.thumbnails_enabled`, both default `TRUE`. `services/userPreferences.js` reads them and **fails open to both defaults** if the columns are ever missing, so rollout ordering can't break anything. No settings UI exists yet to actually flip them (DB-only for now, by design) — a real settings screen (iOS or LIFF) is deferred rather than bolting on a bot text command.
 
 - [ ] LINE MINI App (LIFF)
 - [ ] AI-powered expense categorization (beyond the category-matching already done during OCR/text parsing)
-- [ ] Scheduled/proactive LINE push notifications (budget threshold alerts, periodic summaries)
-- [ ] Thumbnail persistence to Supabase Storage for scanned slips (PRD calls for this; `thumbnail_url` exists in the schema but is still unused by both the REST OCR endpoint and the bot)
+- [ ] A settings UI (iOS or LIFF) to actually toggle `notifications_enabled`/`thumbnails_enabled`

@@ -9,6 +9,7 @@ const transactionRoutes = require('./routes/transactionRoutes');
 const lineRoutes = require('./routes/lineRoutes');
 const ocrRoutes = require('./routes/ocrRoutes');
 const lineWebhookRoutes = require('./routes/lineWebhookRoutes');
+const { startDailyDigestJob } = require('./jobs/dailyDigest');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -49,4 +50,5 @@ app.use('/api/ocr', ocrRoutes);
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
+  startDailyDigestJob();
 });

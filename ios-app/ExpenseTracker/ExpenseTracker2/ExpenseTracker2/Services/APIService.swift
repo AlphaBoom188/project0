@@ -95,10 +95,11 @@ class APIService {
         performRequest(endpoint: endpoint, completion: completion)
     }
     
-    func createTransaction(lineUserId: String, categoryId: String, amount: Double, type: String, description: String? = nil, slipHash: String? = nil, transactionDate: String, completion: @escaping (Result<TransactionResponse, Error>) -> Void) {
+    func createTransaction(lineUserId: String, categoryId: String, amount: Double, type: String, description: String? = nil, slipHash: String? = nil, thumbnailUrl: String? = nil, transactionDate: String, completion: @escaping (Result<TransactionResponse, Error>) -> Void) {
         var body: [String: Any] = ["category_id": categoryId, "amount": amount, "type": type, "transaction_date": transactionDate]
         if let description = description { body["description"] = description }
         if let slipHash = slipHash { body["slip_hash"] = slipHash }
+        if let thumbnailUrl = thumbnailUrl { body["thumbnail_url"] = thumbnailUrl }
         guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else {
             completion(.failure(APIError.encodingError))
             return
@@ -140,6 +141,7 @@ struct OCRData: Codable {
     let merchant: String?
     let suggestedCategoryId: String?
     let suggestedCategoryName: String?
+    let thumbnailPath: String?
 
     enum CodingKeys: String, CodingKey {
         case amount
@@ -147,6 +149,7 @@ struct OCRData: Codable {
         case merchant
         case suggestedCategoryId = "suggested_category_id"
         case suggestedCategoryName = "suggested_category_name"
+        case thumbnailPath = "thumbnail_path"
     }
 }
 

@@ -1,4 +1,5 @@
 const supabase = require('../config/supabase');
+const { checkBudgetAndAlert } = require('./budgetAlert');
 
 class InvalidCategoryError extends Error {}
 class DuplicateSlipError extends Error {}
@@ -44,6 +45,13 @@ async function createTransaction({ lineUserId, categoryId, amount, type, descrip
       throw new DuplicateSlipError('Duplicate slip detected. This receipt has already been recorded.');
     }
     throw error;
+  }
+
+  if (type === 'expense') {
+    // Fire-and-forget: never let a budget-check/push failure affect the response.
+    checkBudgetAndAlert(lineUserId, categoryId, amount).catch((err) =>
+      console.error('checkBudgetAndAlert failed:', err.message)
+    );
   }
 
   return transaction;

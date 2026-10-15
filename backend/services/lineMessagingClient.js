@@ -27,12 +27,15 @@ async function pushText(to, text) {
 }
 
 // Confirm/Cancel card for a parsed-but-unsaved transaction.
-function buildConfirmationFlex({ title, rows, confirmData, cancelData }) {
+function buildConfirmationFlex({ title, rows, confirmData, cancelData, heroImageUrl }) {
   return {
     type: 'flex',
     altText: title,
     contents: {
       type: 'bubble',
+      ...(heroImageUrl
+        ? { hero: { type: 'image', url: heroImageUrl, size: 'full', aspectRatio: '4:3', aspectMode: 'cover' } }
+        : {}),
       body: {
         type: 'box',
         layout: 'vertical',
