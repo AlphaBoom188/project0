@@ -37,7 +37,8 @@ npm start  # Starts server on port 3000
 - `POST /api/transactions/:line_user_id` - Create transaction (`category_id` optional for an expense with a `description` -- auto-categorized)
 - `GET /api/transactions/:line_user_id` - Get transactions
 - `DELETE /api/transactions/:line_user_id/all` - Delete every transaction for a user (irreversible; client must confirm first)
-- `GET /api/transactions/:line_user_id/export` - Export transactions as CSV (UTF-8 BOM)
+- `GET /api/transactions/:line_user_id/export` - Export transactions as CSV (UTF-8 BOM), accepts `type`/`category_id`/`start_date`/`end_date` filters
+- `POST /api/transactions/:line_user_id/export/email` - Same filtered export, emailed via the Apps Script relay (501 if not configured)
 - `GET/POST /api/recurring/:line_user_id`, `PUT/DELETE /api/recurring/:line_user_id/:recurring_id` - Recurring expense/income rules
 - `GET /api/line/login-url` - Generate LINE Login URL
 - `GET /api/line/callback` - Handle LINE OAuth callback
@@ -80,6 +81,7 @@ xcrun simctl io "iPhone 17 Pro" screenshot screenshot.png
    - 005_add_user_preferences.sql
    - 006_phase3_schema.sql
    - 007_phase4_schema.sql
+   - 008_add_user_email.sql
 
 ## Project Architecture
 
@@ -91,7 +93,9 @@ project0/
 │   ├── PRD.md                     # Product Requirements
 │   ├── ARCHITECTURE.md            # System Architecture
 │   ├── DB_SCHEMA.md               # Database Schema
-│   └── SETUP_GUIDE.md             # Setup Instructions
+│   ├── SETUP_GUIDE.md             # Setup Instructions
+│   ├── PHASE_3_SPEC.md            # Phase 3 feature spec (reconciled against actual schema, not applied literally)
+│   └── APPS_SCRIPT_EMAIL_RELAY.md # Script to deploy for the email CSV export feature
 ├── backend/                       # Node.js Express API
 │   ├── config/                    # Configuration files
 │   │   └── supabase.js          # Supabase connection
@@ -123,7 +127,9 @@ project0/
 │   │   ├── signedUrl.js         # mint a short-lived signed URL for a stored thumbnail path
 │   │   ├── userPreferences.js   # notifications_enabled / thumbnails_enabled, fails open to TRUE
 │   │   ├── budgetAlert.js       # event-driven budget-threshold check, fires once on crossing
-│   │   └── autoCategorize.js    # keyword-then-LLM category inference for expenses with no category_id
+│   │   ├── autoCategorize.js    # keyword-then-LLM category inference for expenses with no category_id
+│   │   ├── csvExport.js         # shared CSV builder (direct-download + email export)
+│   │   └── emailRelay.js        # POSTs a base64 CSV to the Apps Script email relay
 │   ├── jobs/
 │   │   ├── dailyDigest.js       # node-cron, 21:00 Asia/Bangkok, daily income/expense push
 │   │   └── recurringTransactions.js # node-cron, 00:05 Asia/Bangkok, generates due recurring transactions
@@ -264,11 +270,11 @@ project0/
 
 Scoped against `docs/PHASE_3_SPEC.md` — note that spec's own SQL migration assumed a schema we don't actually have (`users.id` UUID PK, a from-scratch `categories` table) and was reconciled rather than applied literally; see migration `006_phase3_schema.sql`'s header comment.
 
-✅ **LIFF Settings screen** — gear icon in the LIFF header opens a Settings view (`liff-app/` `#settings-view`, no router, just show/hide): toggles for `notifications_enabled`/`thumbnails_enabled` (`PATCH /api/users/:line_user_id/preferences`, new), budget cycle start day (reuses the existing `PUT /api/users/:line_user_id/billing-cycle` — deliberately *not* the spec's separate `budget_cycle_start_day` column, to avoid two columns meaning the same thing), and a "Clear Transaction History" destructive action gated behind a custom confirm modal (`DELETE /api/transactions/:line_user_id/all`, new — registered before the `:transaction_id` wildcard route so `/all` isn't swallowed by it).
+✅ **LIFF Settings screen** — originally a gear-icon-accessed view, now the ตั้งค่า tab (see Phase 5): toggles for `notifications_enabled`/`thumbnails_enabled` (`PATCH /api/users/:line_user_id/preferences`), budget cycle start day (reuses the existing `PUT /api/users/:line_user_id/billing-cycle` — deliberately *not* the spec's separate `budget_cycle_start_day` column, to avoid two columns meaning the same thing), and a "Clear Transaction History" destructive action gated behind a custom confirm modal (`DELETE /api/transactions/:line_user_id/all` — registered before the `:transaction_id` wildcard route so `/all` isn't swallowed by it).
 
 ✅ **In-LIFF receipt OCR** — the Add Expense modal's `<input type="file" accept="image/*" capture="environment">` resizes the photo client-side (canvas, ~1280px JPEG q0.7, mirroring the iOS app's approach), hashes it (`crypto.subtle.digest`), and POSTs to the same `/api/ocr/scan/:line_user_id` the REST/bot paths already use — no new backend endpoint, same dedup and thumbnail pipeline.
 
-✅ **Auto-categorization** — `services/autoCategorize.js`: cheap keyword matching against the user's category names first (English + Thai hints), an LLM call (`gpt-4o-mini`) only if that misses, falling back to "Others" so a category is always returned. Wired into `transactionController.createTransaction` — `category_id` is now optional for an expense *if* a `description` is given (income still requires an explicit category_id); existing callers that always pass `category_id` are unaffected. In the LIFF Add Expense form the Category field defaults to "✨ Auto-Categorize", not the first real category — leaving it as-is omits `category_id` from the request entirely.
+✅ **Auto-categorization** — `services/autoCategorize.js`: cheap keyword matching against the user's category names first (English + Thai hints), an LLM call (`gpt-4o-mini`) only if that misses, falling back to "Others" so a category is always returned. Wired into `transactionController.createTransaction` — `category_id` is now optional for an expense *if* a `description` is given (income still requires an explicit category_id); existing callers that always pass `category_id` are unaffected. In the LIFF Add Expense form the Category field defaults to "Auto-Categorize" (no emoji, see Phase 5), not the first real category — leaving it as-is omits `category_id` from the request entirely.
 
 **Note:** `express.json()` has an explicit `limit: '10mb'` — the default is 100kb, which a base64-encoded receipt photo (even resized client-side) routinely exceeds; this surfaced as a 413 once real phone photos were tested (a tiny synthetic test image had been masking it). `apiRequest()` in `liff-app/app.js` always prefixes thrown errors with the real HTTP status (`[413] ...`) for exactly this kind of failure.
 
@@ -276,10 +282,32 @@ Scoped against `docs/PHASE_3_SPEC.md` — note that spec's own SQL migration ass
 
 ### Phase 4
 
-Scoped down from the literal ask — "Tab Navigation Speed" and "lazy-load the Analytics tab" don't apply, since the LIFF app has only ever had two views (Dashboard, Settings; see Phase 3) and no tab bar or charts exist to speed up or lazy-load. See conversation for the full reconciliation.
+Originally scoped down — "Tab Navigation Speed" and "lazy-load the Analytics tab" didn't apply yet, since the LIFF app only had two views (Dashboard, Settings). **Superseded by Phase 5 below**, which built the full 5-tab shell these referred to.
 
 ✅ **Recurring expenses** (migration `007_phase4_schema.sql`, table `recurring_transactions`) — `controllers/recurringController.js` + `routes/recurringRoutes.js` mounted at `/api/recurring` (CRUD, `line_user_id`-scoped like everything else; `category_id` uses `ON DELETE RESTRICT` like `transactions`, so a category in active use by a rule can't be deleted out from under it). `jobs/recurringTransactions.js` (`node-cron`, 00:05 Asia/Bangkok) finds rows where `next_run_date <= now` and `is_active = true`, creates a real transaction via the same shared `services/transactionCreate.js` every other path uses, advances `next_run_date` by the rule's `frequency`, and pushes a LINE notification (respecting `notifications_enabled`). One rule failing doesn't block the rest — `next_run_date` is only advanced on success, so a failed rule naturally retries next tick. Manager UI lives in the LIFF Settings screen ("ตั้งรายการจดประจำ"), not a separate Transactions screen (doesn't exist).
 
 ✅ **CSV export** — `GET /api/transactions/:line_user_id/export`, same `type`/`category_id`/`start_date`/`end_date` filters as the regular list endpoint. Prefixes the response with a UTF-8 BOM (`﻿`) so Thai text opens correctly in Excel instead of as mojibake — verified with an actual Thai description end to end. Wired to a button on the Dashboard's existing "Recent Transactions" section (not a separate Transactions screen) via a plain `window.location.href` navigation, letting the browser handle the `Content-Disposition: attachment` response natively.
 
 ✅ **LIFF initial-load parallelization** — `loadDashboard()` used to block the transactions fetch on the user response resolving first (it needs `billing_cycle_start_day` to compute the date range). Now fetches a fixed recent window (`limit=50`, no date filter) in parallel with the user and categories calls, then filters to the current billing cycle client-side for the summary card (using actual `Date` comparisons, not string comparisons — the API's `+00:00`-suffixed timestamps and the client's `Z`-suffixed ones are different string shapes for the same instant). Side effect: "Recent Transactions" now shows genuinely recent activity across cycle boundaries rather than being clipped to the current cycle.
+
+### Phase 5
+
+Full LIFF rewrite: 5-tab bottom-nav shell, emoji removal, and email CSV export. `liff-app/index.html`/`app.js`/`style.css` were rewritten wholesale rather than patched incrementally, given the scale (restructuring Dashboard+Settings into 5 named tabs plus two brand-new ones) — every existing feature (OCR capture, recurring manager, preferences, clear history) was carried over, not dropped.
+
+✅ **5-tab bottom nav** — `.bottom-nav` (fixed position) with สรุป/วิเคราะห์/หมวด-งบ/รายการ/ตั้งค่า. Tab switching (`switchTab()`) is synchronous show/hide first, then each tab's load function runs *after* (not blocking the switch) and reads through `cachedGet()` — see caching note below.
+
+✅ **No emojis anywhere in `liff-app/`** — verified via a full-file emoji-range regex sweep post-build, zero matches across all three files. (Scoped to the LIFF app only, per the request; the LINE Bot's own messages — e.g. the ⚠️ budget alert, 🔁 recurring notification — are a separate surface and weren't touched.)
+
+✅ **วิเคราะห์ (Analytics) tab** — lazy-loaded on first visit: one `cachedGet` of the last 6 months of transactions (`limit=1000`), aggregated **client-side** into (a) a hand-rolled CSS bar chart (no charting library added) of monthly income-vs-expense, and (b) a horizontal-bar category breakdown for the current billing cycle. One fetch feeds both charts rather than two separate summary calls.
+
+✅ **หมวด/งบ (Categories & Budgets) tab** — type toggle (reuses existing `GET /api/categories/:id?type=`), each category's current-period spend vs. `budget_amount` rendered as a progress bar (red once over budget) using the same per-period-start-date logic as `services/budgetAlert.js`, ported to JS (`getPeriodStartDate()`). Tapping a row opens budget editing (existing `PUT /api/categories/:id/:category_id`, unchanged); "+Add Category" reuses the existing create endpoint. Preset categories can't be deleted from here (no delete button rendered for `is_preset` rows) — deleting a non-preset category still goes through the existing safety check (blocks if it has transactions).
+
+✅ **รายการ (Transactions) tab** — type filter + date range, re-queries `GET /api/transactions/:id` with those as query params on every change, card-list rendering (reused `renderTransactionList()`, now with an opt-in Payment Method line). Both export buttons live here and pass the exact same filter params through to their respective endpoints.
+
+✅ **Email CSV export** — `email` column on `users` (migration `008_add_user_email.sql`, still needs running), editable in Settings, validated both client- and server-side. `POST /api/transactions/:line_user_id/export/email` (`services/emailRelay.js`) builds the identical filtered CSV (`services/csvExport.js`, shared with the direct-download endpoint so the two export paths can't drift) and POSTs it base64-encoded to a **Google Apps Script Web App** acting as the send relay — see `docs/APPS_SCRIPT_EMAIL_RELAY.md` for the script to deploy and the `APPS_SCRIPT_EMAIL_WEBHOOK_URL`/`APPS_SCRIPT_SHARED_SECRET` env vars (the shared secret isn't optional: an Apps Script Web App's "who has access: Anyone" setting is required for POST triggers, so without a secret check anyone who found the URL could send arbitrary mail through the deploying user's Gmail). Missing webhook URL → clean `501`, not a silent failure or a 500.
+
+✅ **In-memory response caching** — `apiRequest()` clears a module-level `Map` on every non-`GET` call (simplest-correct for this scale, vs. tracking exactly which keys a given write affects); `cachedGet()` wraps every cacheable read through it. Net effect: first visit to a tab this session does a real fetch, every revisit is instant until something mutates, satisfying both "cache so tab switches are instant" and "lazy-load on first visit" from the same mechanism.
+
+**Verified**: full `line_webhook_harness.js` regression suite 19/19 (shared `transactionCreate` path untouched). New backend coverage (`phase5_backend_test.js`, not committed — ad hoc): category create/update with budget, full recurring-engine lifecycle against the now-applied migration 007 (generates once, advances `next_run_date` by exactly one `frequency` unit, does *not* regenerate on a second run, respects `is_active = false` even when due, pushes a LINE notification), filtered CSV export (confirmed real `ef bb bf` BOM bytes on the wire — a Node `fetch().text()` call silently strips a leading BOM per the WHATWG decoding spec, so that has to be checked via raw bytes, not decoded text), and the email-export endpoint's current state (migration 008 isn't applied yet, so it correctly surfaces a clear "column does not exist" 500 rather than crashing — expected, not a bug). All HTML element IDs cross-checked against `app.js`, zero mismatches; emoji-range regex swept all three files clean.
+
+**Still needs your action**: run migration `008_add_user_email.sql`; deploy the Apps Script from `docs/APPS_SCRIPT_EMAIL_RELAY.md` and set the two env vars for email export to actually send; live phone test of the whole new tab shell (I can't render LINE's in-app browser myself, same constraint as every other LIFF feature).

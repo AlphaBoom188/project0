@@ -6,10 +6,25 @@ const {
 } = require('../services/transactionCreate');
 const { withSignedThumbnails } = require('../services/signedUrl');
 const { autoCategorize } = require('../services/autoCategorize');
+const { buildTransactionsCsv } = require('../services/csvExport');
+const { sendCsvByEmail } = require('../services/emailRelay');
 
-function toCsvField(value) {
-  const str = value === null || value === undefined ? '' : String(value);
-  return /[",\r\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+// Shared by both export endpoints so the download and email paths can't filter differently.
+async function queryTransactionsForExport(lineUserId, { type, category_id, start_date, end_date }) {
+  let query = supabase
+    .from('transactions')
+    .select('transaction_date, type, amount, description, payment_method, categories ( name )')
+    .eq('line_user_id', lineUserId)
+    .order('transaction_date', { ascending: false });
+
+  if (type) query = query.eq('type', type);
+  if (category_id) query = query.eq('category_id', category_id);
+  if (start_date) query = query.gte('transaction_date', start_date);
+  if (end_date) query = query.lte('transaction_date', end_date);
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
 }
 
 const transactionController = {
@@ -65,38 +80,50 @@ const transactionController = {
   async exportTransactions(req, res) {
     try {
       const { line_user_id } = req.params;
-      const { type, category_id, start_date, end_date } = req.query;
-
-      let query = supabase
-        .from('transactions')
-        .select('transaction_date, type, amount, description, payment_method, categories ( name )')
-        .eq('line_user_id', line_user_id)
-        .order('transaction_date', { ascending: false });
-
-      if (type) query = query.eq('type', type);
-      if (category_id) query = query.eq('category_id', category_id);
-      if (start_date) query = query.gte('transaction_date', start_date);
-      if (end_date) query = query.lte('transaction_date', end_date);
-
-      const { data: transactions, error } = await query;
-      if (error) throw error;
-
-      const header = ['Date', 'Type', 'Category', 'Description', 'Amount', 'Payment Method'];
-      const rows = (transactions || []).map((t) => [
-        t.transaction_date,
-        t.type,
-        t.categories?.name || '',
-        t.description || '',
-        t.amount,
-        t.payment_method || '',
-      ]);
-      const csv = [header, ...rows].map((row) => row.map(toCsvField).join(',')).join('\r\n');
+      const transactions = await queryTransactionsForExport(line_user_id, req.query);
+      const csv = buildTransactionsCsv(transactions);
 
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename="transactions-${line_user_id}.csv"`);
       res.send('\uFEFF' + csv);
     } catch (error) {
       console.error('Error in exportTransactions:', error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  // Same filtered export, emailed as an attachment instead of downloaded directly.
+  async exportTransactionsByEmail(req, res) {
+    try {
+      const { line_user_id } = req.params;
+
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('email')
+        .eq('line_user_id', line_user_id)
+        .single();
+      if (userError) throw userError;
+
+      if (!user?.email) {
+        return res.status(400).json({ error: 'No email address saved. Add one in Settings first.' });
+      }
+
+      const transactions = await queryTransactionsForExport(line_user_id, req.query);
+      const csv = buildTransactionsCsv(transactions);
+
+      await sendCsvByEmail({
+        to: user.email,
+        subject: 'Your Expense Export',
+        filename: `transactions-${line_user_id}.csv`,
+        csv,
+      });
+
+      res.json({ success: true, message: `Export emailed to ${user.email}.` });
+    } catch (error) {
+      if (error.notConfigured) {
+        return res.status(501).json({ error: error.message });
+      }
+      console.error('Error in exportTransactionsByEmail:', error);
       res.status(500).json({ error: error.message });
     }
   },

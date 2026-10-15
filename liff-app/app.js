@@ -6,6 +6,8 @@ const el = {
   errorBanner: document.getElementById('error-banner'),
   profilePicture: document.getElementById('profile-picture'),
   profileName: document.getElementById('profile-name'),
+
+  // Dashboard tab
   periodLabel: document.getElementById('period-label'),
   summaryIncome: document.getElementById('summary-income'),
   summaryExpense: document.getElementById('summary-expense'),
@@ -13,6 +15,8 @@ const el = {
   transactionList: document.getElementById('transaction-list'),
   emptyState: document.getElementById('empty-state'),
   addExpenseButton: document.getElementById('add-expense-button'),
+
+  // Add Expense modal
   addExpenseModal: document.getElementById('add-expense-modal'),
   addExpenseForm: document.getElementById('add-expense-form'),
   cancelAddExpense: document.getElementById('cancel-add-expense'),
@@ -24,21 +28,62 @@ const el = {
   fieldReceiptImage: document.getElementById('field-receipt-image'),
   receiptPreview: document.getElementById('receipt-preview'),
   scanStatus: document.getElementById('scan-status'),
-  dashboardView: document.getElementById('dashboard-view'),
-  settingsView: document.getElementById('settings-view'),
-  settingsButton: document.getElementById('settings-button'),
-  backToDashboard: document.getElementById('back-to-dashboard'),
+
+  // Tab shell
+  tabContent: document.querySelector('.tab-content'),
+  navTabs: Array.from(document.querySelectorAll('.nav-tab')),
+  tabPanels: {
+    dashboard: document.getElementById('tab-dashboard'),
+    analytics: document.getElementById('tab-analytics'),
+    categories: document.getElementById('tab-categories'),
+    transactions: document.getElementById('tab-transactions'),
+    settings: document.getElementById('tab-settings'),
+  },
+
+  // Analytics tab
+  trendChart: document.getElementById('trend-chart'),
+  categoryChart: document.getElementById('category-chart'),
+  analyticsEmptyState: document.getElementById('analytics-empty-state'),
+
+  // Categories tab
+  categoriesTypeExpense: document.getElementById('categories-type-expense'),
+  categoriesTypeIncome: document.getElementById('categories-type-income'),
+  categoriesList: document.getElementById('categories-list'),
+  categoriesEmptyState: document.getElementById('categories-empty-state'),
+  addCategoryButton: document.getElementById('add-category-button'),
+
+  // Category modal
+  categoryModal: document.getElementById('category-modal'),
+  categoryModalTitle: document.getElementById('category-modal-title'),
+  categoryForm: document.getElementById('category-form'),
+  cancelCategory: document.getElementById('cancel-category'),
+  categoryFieldName: document.getElementById('category-field-name'),
+  categoryFieldType: document.getElementById('category-field-type'),
+  categoryFieldBudgetAmount: document.getElementById('category-field-budget-amount'),
+  categoryFieldBudgetPeriod: document.getElementById('category-field-budget-period'),
+  categoryModalError: document.getElementById('category-modal-error'),
+
+  // Transactions tab
+  txnFilterType: document.getElementById('txn-filter-type'),
+  txnFilterStart: document.getElementById('txn-filter-start'),
+  txnFilterEnd: document.getElementById('txn-filter-end'),
+  exportCsvButton: document.getElementById('export-csv-button'),
+  exportEmailButton: document.getElementById('export-email-button'),
+  exportStatus: document.getElementById('export-status'),
+  txnFullList: document.getElementById('txn-full-list'),
+  txnEmptyState: document.getElementById('txn-empty-state'),
+
+  // Settings tab
   settingNotifications: document.getElementById('setting-notifications'),
   settingThumbnails: document.getElementById('setting-thumbnails'),
   settingCycleDay: document.getElementById('setting-cycle-day'),
   saveCycleDay: document.getElementById('save-cycle-day'),
+  settingEmail: document.getElementById('setting-email'),
+  saveEmail: document.getElementById('save-email'),
   settingsStatus: document.getElementById('settings-status'),
   clearHistoryButton: document.getElementById('clear-history-button'),
-  exportCsvButton: document.getElementById('export-csv-button'),
-  confirmModal: document.getElementById('confirm-modal'),
-  confirmMessage: document.getElementById('confirm-message'),
-  confirmOk: document.getElementById('confirm-ok'),
-  confirmCancel: document.getElementById('confirm-cancel'),
+
+  // Recurring expenses
   recurringList: document.getElementById('recurring-list'),
   recurringEmptyState: document.getElementById('recurring-empty-state'),
   addRecurringButton: document.getElementById('add-recurring-button'),
@@ -52,28 +97,27 @@ const el = {
   recurringFieldFrequency: document.getElementById('recurring-field-frequency'),
   recurringFieldStartDate: document.getElementById('recurring-field-start-date'),
   recurringModalError: document.getElementById('recurring-modal-error'),
+
+  // Generic confirm modal
+  confirmModal: document.getElementById('confirm-modal'),
+  confirmMessage: document.getElementById('confirm-message'),
+  confirmOk: document.getElementById('confirm-ok'),
+  confirmCancel: document.getElementById('confirm-cancel'),
 };
 
 let lineUserId = null;
 let currentUser = null;
 let scannedThumbnailPath = null;
+let categoriesTabType = 'expense';
+let editingCategoryId = null;
 
-function showError(message) {
-  el.errorBanner.textContent = message;
-  el.errorBanner.hidden = false;
-}
-
-// The modal is a fixed, full-screen overlay, so the top-level error banner would be
-// rendered underneath it and never seen -- errors from inside the modal need their
-// own visible spot instead of (or in addition to) the global banner.
-function showModalError(message) {
-  el.modalError.textContent = message;
-  el.modalError.hidden = false;
-}
-
-function clearModalError() {
-  el.modalError.hidden = true;
-}
+// ---- API + in-memory cache ----
+//
+// Any non-GET request clears the whole cache (simplest-correct for an app
+// this size, rather than tracking exactly which keys a given write affects).
+// GETs go through cachedGet() so revisiting a tab you've already loaded this
+// session is instant instead of re-fetching.
+const getCache = new Map();
 
 async function apiRequest(path, options = {}) {
   let response;
@@ -96,7 +140,38 @@ async function apiRequest(path, options = {}) {
   if (!response.ok) {
     throw new Error(`[${response.status}] ${body.error || body.message || response.statusText || 'Request failed'}`);
   }
+
+  const method = (options.method || 'GET').toUpperCase();
+  if (method !== 'GET') {
+    getCache.clear();
+  }
   return body;
+}
+
+async function cachedGet(path) {
+  if (getCache.has(path)) return getCache.get(path);
+  const result = await apiRequest(path);
+  getCache.set(path, result);
+  return result;
+}
+
+// ---- Shared helpers ----
+
+function showError(message) {
+  el.errorBanner.textContent = message;
+  el.errorBanner.hidden = false;
+}
+
+// The modal is a fixed, full-screen overlay, so the top-level error banner would be
+// rendered underneath it and never seen -- errors from inside a modal need their
+// own visible spot instead of (or in addition to) the global banner.
+function showModalError(target, message) {
+  target.textContent = message;
+  target.hidden = false;
+}
+
+function clearModalError(target) {
+  target.hidden = true;
 }
 
 // Mirrors the billing-cycle window used elsewhere in the backend (e.g. the bot's
@@ -112,9 +187,35 @@ function getBillingCycleRange(billingCycleStartDay) {
   return { startISO: start.toISOString(), endISO: end.toISOString() };
 }
 
+// Mirrors services/budgetAlert.js's getPeriodStartISO on the backend, for
+// client-side "how much spent this period" display on the Categories tab.
+function getPeriodStartDate(period) {
+  const now = new Date();
+  switch (period) {
+    case 'daily':
+      return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    case 'weekly': {
+      const day = now.getUTCDay();
+      return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - day));
+    }
+    case 'monthly':
+      return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    case 'yearly':
+      return new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
+    default:
+      return null;
+  }
+}
+
 function formatDate(isoString) {
   const date = new Date(isoString);
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
 }
 
 function renderProfile(profile) {
@@ -123,6 +224,57 @@ function renderProfile(profile) {
     el.profilePicture.src = profile.pictureUrl;
   }
 }
+
+// Generic yes/no confirmation, used for every destructive action across tabs.
+function confirmAction(message, confirmLabel = 'Delete') {
+  return new Promise((resolve) => {
+    el.confirmMessage.textContent = message;
+    el.confirmOk.textContent = confirmLabel;
+    el.confirmModal.hidden = false;
+
+    function cleanup(result) {
+      el.confirmModal.hidden = true;
+      el.confirmOk.removeEventListener('click', onOk);
+      el.confirmCancel.removeEventListener('click', onCancel);
+      resolve(result);
+    }
+    function onOk() {
+      cleanup(true);
+    }
+    function onCancel() {
+      cleanup(false);
+    }
+
+    el.confirmOk.addEventListener('click', onOk);
+    el.confirmCancel.addEventListener('click', onCancel);
+  });
+}
+
+// ---- Tab navigation ----
+//
+// Switching is pure, synchronous show/hide (instant); each tab's load function
+// runs after, not blocking the switch, and reads through cachedGet so a repeat
+// visit this session resolves immediately instead of re-fetching.
+const TAB_LOADERS = {
+  dashboard: loadDashboardTab,
+  analytics: loadAnalyticsTab,
+  categories: loadCategoriesTab,
+  transactions: loadTransactionsTab,
+  settings: loadSettingsTab,
+};
+
+function switchTab(tabName) {
+  for (const [name, panel] of Object.entries(el.tabPanels)) {
+    panel.hidden = name !== tabName;
+  }
+  for (const button of el.navTabs) {
+    button.classList.toggle('active', button.dataset.tab === tabName);
+  }
+  el.tabContent.scrollTop = 0;
+  TAB_LOADERS[tabName]().catch((error) => showError(error.message));
+}
+
+// ---- Dashboard tab ----
 
 function renderSummary(transactions, periodLabel) {
   el.periodLabel.textContent = periodLabel;
@@ -140,15 +292,17 @@ function renderSummary(transactions, periodLabel) {
   el.summaryNet.style.color = net >= 0 ? '#06c755' : '#e53935';
 }
 
-function renderTransactionList(transactions) {
-  el.transactionList.innerHTML = '';
-  el.emptyState.hidden = transactions.length > 0;
+function renderTransactionList(target, emptyStateEl, transactions, { showPaymentMethod = false } = {}) {
+  target.innerHTML = '';
+  emptyStateEl.hidden = transactions.length > 0;
 
   for (const t of transactions) {
     const li = document.createElement('li');
     li.className = 'transaction-row';
 
     const thumbHtml = t.thumbnail_url ? `<img class="transaction-thumbnail" src="${t.thumbnail_url}" alt="" />` : '';
+    const paymentHtml =
+      showPaymentMethod && t.payment_method ? `<div class="transaction-date">${escapeHtml(t.payment_method)}</div>` : '';
 
     li.innerHTML = `
       ${thumbHtml}
@@ -156,38 +310,25 @@ function renderTransactionList(transactions) {
         <div class="transaction-category">${escapeHtml(t.categories?.name || 'Uncategorized')}</div>
         ${t.description ? `<div class="transaction-description">${escapeHtml(t.description)}</div>` : ''}
         <div class="transaction-date">${formatDate(t.transaction_date)}</div>
+        ${paymentHtml}
       </div>
       <div class="transaction-amount ${t.type}">${parseFloat(t.amount).toFixed(2)}</div>
     `;
-    el.transactionList.appendChild(li);
+    target.appendChild(li);
   }
 }
 
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
-
-function renderCategoryOptions(categories) {
-  const autoOption = '<option value="">✨ Auto-Categorize (Default)</option>';
-  const categoryOptions = categories.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
-  el.fieldCategory.innerHTML = autoOption + categoryOptions;
-}
-
-// The transactions fetch can't be date-filtered server-side until we know the
-// user's billing_cycle_start_day, which only comes back from the /users call --
-// so instead of waiting on that before firing it, fetch a fixed recent window
-// in parallel with everything else and filter the cycle window client-side.
-async function loadDashboard() {
-  const [userResponse, categoriesResponse, transactionsResponse] = await Promise.all([
-    apiRequest(`/users/${lineUserId}`),
-    apiRequest(`/categories/${lineUserId}?type=expense`),
-    apiRequest(`/transactions/${lineUserId}?limit=50`),
+async function loadDashboardTab() {
+  // The transactions fetch can't be date-filtered server-side until we know the
+  // user's billing_cycle_start_day, which only comes back from the /users call --
+  // so instead of waiting on that before firing it, fetch a fixed recent window
+  // in parallel with everything else and filter the cycle window client-side.
+  const [userResponse, transactionsResponse] = await Promise.all([
+    cachedGet(`/users/${lineUserId}`),
+    cachedGet(`/transactions/${lineUserId}?limit=50`),
   ]);
 
   currentUser = userResponse.user;
-  renderCategoryOptions(categoriesResponse.categories);
 
   const { startISO, endISO } = getBillingCycleRange(currentUser.billing_cycle_start_day);
   const periodLabel = `${formatDate(startISO)} – ${formatDate(endISO)}`;
@@ -204,17 +345,17 @@ async function loadDashboard() {
   });
 
   renderSummary(inPeriod, periodLabel);
-  renderTransactionList(allTransactions);
-}
-
-function handleExportCsv() {
-  // A plain top-level navigation lets the browser handle the response's
-  // Content-Disposition: attachment header natively (save/share prompt),
-  // rather than fetching the CSV into JS just to hand it back off again.
-  window.location.href = `${API_BASE}/transactions/${lineUserId}/export`;
+  renderTransactionList(el.transactionList, el.emptyState, allTransactions);
 }
 
 // ---- Add Expense modal ----
+
+async function renderAddExpenseCategoryOptions() {
+  const response = await cachedGet(`/categories/${lineUserId}?type=expense`);
+  const autoOption = '<option value="">Auto-Categorize</option>';
+  const categoryOptions = response.categories.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+  el.fieldCategory.innerHTML = autoOption + categoryOptions;
+}
 
 function resetReceiptScanState() {
   el.fieldReceiptImage.value = '';
@@ -225,14 +366,19 @@ function resetReceiptScanState() {
   scannedThumbnailPath = null;
 }
 
-function openAddExpenseModal() {
+async function openAddExpenseModal() {
   el.fieldAmount.value = '';
   el.fieldDescription.value = '';
   el.fieldDate.value = new Date().toISOString().slice(0, 10);
   el.fieldCategory.value = ''; // defaults to "Auto-Categorize", not whatever was left selected last time
-  clearModalError();
+  clearModalError(el.modalError);
   resetReceiptScanState();
   el.addExpenseModal.hidden = false;
+  try {
+    await renderAddExpenseCategoryOptions();
+  } catch (error) {
+    showModalError(el.modalError, error.message);
+  }
 }
 
 function closeAddExpenseModal() {
@@ -280,7 +426,7 @@ async function handleReceiptFileChange(event) {
   const file = event.target.files[0];
   if (!file) return;
 
-  clearModalError();
+  clearModalError(el.modalError);
   el.scanStatus.hidden = false;
   el.scanStatus.classList.remove('scan-error');
   el.scanStatus.textContent = 'Scanning receipt…';
@@ -315,7 +461,7 @@ async function handleAddExpenseSubmit(event) {
   event.preventDefault();
   const submitButton = event.submitter;
   submitButton.disabled = true;
-  clearModalError();
+  clearModalError(el.modalError);
 
   try {
     await apiRequest(`/transactions/${lineUserId}`, {
@@ -333,35 +479,300 @@ async function handleAddExpenseSubmit(event) {
       }),
     });
     closeAddExpenseModal();
-    await loadDashboard();
+    await loadDashboardTab();
   } catch (error) {
     // Shown inside the modal, not the top-level banner -- the modal overlay would
     // otherwise hide the banner from view while still open.
-    showModalError(error.message);
+    showModalError(el.modalError, error.message);
   } finally {
     submitButton.disabled = false;
   }
 }
 
-// ---- Settings view ----
+// ---- Analytics tab ----
 
-function openSettingsView() {
-  if (currentUser) {
-    el.settingNotifications.checked = currentUser.notifications_enabled !== false;
-    el.settingThumbnails.checked = currentUser.thumbnails_enabled !== false;
-    el.settingCycleDay.value = currentUser.billing_cycle_start_day || 1;
-  }
-  el.settingsStatus.hidden = true;
-  el.dashboardView.hidden = true;
-  el.settingsView.hidden = false;
-  // Not awaited: Settings should open instantly (pure show/hide, no blocking
-  // fetch) -- the recurring list fills in once it arrives.
-  loadRecurringList().catch((error) => showSettingsStatus(error.message));
+function monthKey(date) {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
-function closeSettingsView() {
-  el.settingsView.hidden = true;
-  el.dashboardView.hidden = false;
+function monthLabel(key) {
+  const [year, month] = key.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString(undefined, { month: 'short' });
+}
+
+function renderTrendChart(transactions) {
+  const now = new Date();
+  const months = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+    months.push(monthKey(d));
+  }
+
+  const totals = Object.fromEntries(months.map((m) => [m, { income: 0, expense: 0 }]));
+  for (const t of transactions) {
+    const key = monthKey(new Date(t.transaction_date));
+    if (totals[key]) totals[key][t.type] += parseFloat(t.amount);
+  }
+
+  const maxValue = Math.max(1, ...months.flatMap((m) => [totals[m].income, totals[m].expense]));
+
+  el.trendChart.innerHTML = months
+    .map((m) => {
+      const incomeHeight = Math.round((totals[m].income / maxValue) * 100);
+      const expenseHeight = Math.round((totals[m].expense / maxValue) * 100);
+      return `
+        <div class="trend-month">
+          <div class="trend-bars">
+            <div class="trend-bar income" style="height:${incomeHeight}%" title="Income ${totals[m].income.toFixed(2)}"></div>
+            <div class="trend-bar expense" style="height:${expenseHeight}%" title="Expense ${totals[m].expense.toFixed(2)}"></div>
+          </div>
+          <div class="trend-month-label">${monthLabel(m)}</div>
+        </div>
+      `;
+    })
+    .join('');
+}
+
+function renderCategoryBreakdown(transactions, periodStart, periodEnd) {
+  const totalsByCategory = new Map();
+  for (const t of transactions) {
+    if (t.type !== 'expense') continue;
+    const d = new Date(t.transaction_date);
+    if (d < periodStart || d >= periodEnd) continue;
+    const name = t.categories?.name || 'Uncategorized';
+    totalsByCategory.set(name, (totalsByCategory.get(name) || 0) + parseFloat(t.amount));
+  }
+
+  const rows = Array.from(totalsByCategory.entries()).sort((a, b) => b[1] - a[1]);
+  const maxValue = Math.max(1, ...rows.map(([, amount]) => amount));
+
+  el.categoryChart.innerHTML = rows
+    .map(
+      ([name, amount]) => `
+        <div class="category-bar-row">
+          <div class="category-bar-label-row">
+            <span>${escapeHtml(name)}</span>
+            <span>${amount.toFixed(2)}</span>
+          </div>
+          <div class="category-bar-track">
+            <div class="category-bar-fill" style="width:${Math.round((amount / maxValue) * 100)}%"></div>
+          </div>
+        </div>
+      `
+    )
+    .join('');
+
+  return rows.length > 0;
+}
+
+async function loadAnalyticsTab() {
+  if (!currentUser) {
+    const userResponse = await cachedGet(`/users/${lineUserId}`);
+    currentUser = userResponse.user;
+  }
+
+  // One fetch covering a wide-enough window for both charts: the trend chart
+  // needs the last 6 months, the breakdown needs the current billing cycle
+  // (which the trend window always contains).
+  const sixMonthsAgoISO = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() - 5, 1)).toISOString();
+  const response = await cachedGet(`/transactions/${lineUserId}?start_date=${encodeURIComponent(sixMonthsAgoISO)}&limit=1000`);
+  const transactions = response.transactions;
+
+  renderTrendChart(transactions);
+
+  const { startISO, endISO } = getBillingCycleRange(currentUser.billing_cycle_start_day);
+  const hasBreakdown = renderCategoryBreakdown(transactions, new Date(startISO), new Date(endISO));
+  el.analyticsEmptyState.hidden = transactions.length > 0 || hasBreakdown;
+}
+
+// ---- Categories & Budgets tab ----
+
+function setCategoriesTabType(type) {
+  categoriesTabType = type;
+  el.categoriesTypeExpense.classList.toggle('active', type === 'expense');
+  el.categoriesTypeIncome.classList.toggle('active', type === 'income');
+  loadCategoriesTab().catch((error) => showError(error.message));
+}
+
+async function loadCategoriesTab() {
+  const [categoriesResponse, transactionsResponse] = await Promise.all([
+    cachedGet(`/categories/${lineUserId}?type=${categoriesTabType}`),
+    cachedGet(`/transactions/${lineUserId}?limit=200`),
+  ]);
+
+  renderCategoriesList(categoriesResponse.categories, transactionsResponse.transactions);
+}
+
+function renderCategoriesList(categories, transactions) {
+  el.categoriesList.innerHTML = '';
+  el.categoriesEmptyState.hidden = categories.length > 0;
+
+  for (const category of categories) {
+    const li = document.createElement('li');
+    li.className = 'category-row';
+
+    let budgetHtml = '';
+    if (category.budget_amount && category.budget_period) {
+      const periodStart = getPeriodStartDate(category.budget_period);
+      const spent = transactions
+        .filter((t) => t.category_id === category.id && new Date(t.transaction_date) >= periodStart)
+        .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+      const budget = parseFloat(category.budget_amount);
+      const pct = Math.min(100, Math.round((spent / budget) * 100));
+      budgetHtml = `
+        <div class="category-budget-track">
+          <div class="category-budget-fill${spent >= budget ? ' over' : ''}" style="width:${pct}%"></div>
+        </div>
+      `;
+    }
+
+    const budgetLabel = category.budget_amount
+      ? `${parseFloat(category.budget_amount).toFixed(2)} / ${category.budget_period}`
+      : 'No budget';
+
+    li.innerHTML = `
+      <div class="category-row-top">
+        <span class="category-name">${escapeHtml(category.name)}</span>
+        <span class="category-budget-label">${escapeHtml(budgetLabel)}</span>
+        ${category.is_preset ? '' : '<button type="button" class="category-delete">Delete</button>'}
+      </div>
+      ${budgetHtml}
+    `;
+    li.addEventListener('click', (e) => {
+      if (e.target.closest('.category-delete')) return;
+      openCategoryModal(category);
+    });
+    const deleteButton = li.querySelector('.category-delete');
+    if (deleteButton) {
+      deleteButton.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handleDeleteCategory(category);
+      });
+    }
+    el.categoriesList.appendChild(li);
+  }
+}
+
+function openCategoryModal(category) {
+  editingCategoryId = category ? category.id : null;
+  el.categoryModalTitle.textContent = category ? 'Edit Category' : 'Add Category';
+  el.categoryFieldName.value = category ? category.name : '';
+  el.categoryFieldName.disabled = !!category; // renaming isn't exposed here, keep this focused on budget editing
+  el.categoryFieldType.value = category ? category.type : categoriesTabType;
+  el.categoryFieldType.disabled = !!category;
+  el.categoryFieldBudgetAmount.value = category?.budget_amount || '';
+  el.categoryFieldBudgetPeriod.value = category?.budget_period || '';
+  clearModalError(el.categoryModalError);
+  el.categoryModal.hidden = false;
+}
+
+function closeCategoryModal() {
+  el.categoryModal.hidden = true;
+  el.categoryFieldName.disabled = false;
+  el.categoryFieldType.disabled = false;
+}
+
+async function handleCategorySubmit(event) {
+  event.preventDefault();
+  const submitButton = event.submitter;
+  submitButton.disabled = true;
+  clearModalError(el.categoryModalError);
+
+  try {
+    const budgetAmount = el.categoryFieldBudgetAmount.value ? parseFloat(el.categoryFieldBudgetAmount.value) : null;
+    const budgetPeriod = el.categoryFieldBudgetPeriod.value || null;
+
+    if (editingCategoryId) {
+      await apiRequest(`/categories/${lineUserId}/${editingCategoryId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ budget_amount: budgetAmount, budget_period: budgetPeriod }),
+      });
+    } else {
+      await apiRequest(`/categories/${lineUserId}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          name: el.categoryFieldName.value,
+          type: el.categoryFieldType.value,
+          budget_amount: budgetAmount || undefined,
+          budget_period: budgetPeriod || undefined,
+        }),
+      });
+    }
+    closeCategoryModal();
+    await loadCategoriesTab();
+  } catch (error) {
+    showModalError(el.categoryModalError, error.message);
+  } finally {
+    submitButton.disabled = false;
+  }
+}
+
+async function handleDeleteCategory(category) {
+  const confirmed = await confirmAction(`Delete "${category.name}"? This only works if it has no transactions.`, 'Delete');
+  if (!confirmed) return;
+
+  try {
+    await apiRequest(`/categories/${lineUserId}/${category.id}`, { method: 'DELETE' });
+    await loadCategoriesTab();
+  } catch (error) {
+    showError(error.message);
+  }
+}
+
+// ---- Transactions tab ----
+
+function buildTransactionFilterQuery() {
+  const params = new URLSearchParams();
+  if (el.txnFilterType.value) params.set('type', el.txnFilterType.value);
+  if (el.txnFilterStart.value) params.set('start_date', new Date(`${el.txnFilterStart.value}T00:00:00Z`).toISOString());
+  if (el.txnFilterEnd.value) params.set('end_date', new Date(`${el.txnFilterEnd.value}T23:59:59Z`).toISOString());
+  return params;
+}
+
+async function loadTransactionsTab() {
+  const params = buildTransactionFilterQuery();
+  params.set('limit', '200');
+  const response = await cachedGet(`/transactions/${lineUserId}?${params.toString()}`);
+  renderTransactionList(el.txnFullList, el.txnEmptyState, response.transactions, { showPaymentMethod: true });
+}
+
+function handleExportCsv() {
+  const params = buildTransactionFilterQuery();
+  // A plain top-level navigation lets the browser handle the response's
+  // Content-Disposition: attachment header natively (save/share prompt),
+  // rather than fetching the CSV into JS just to hand it back off again.
+  window.location.href = `${API_BASE}/transactions/${lineUserId}/export?${params.toString()}`;
+}
+
+async function handleExportEmail() {
+  el.exportEmailButton.disabled = true;
+  el.exportStatus.hidden = true;
+  try {
+    const params = buildTransactionFilterQuery();
+    const response = await apiRequest(`/transactions/${lineUserId}/export/email?${params.toString()}`, { method: 'POST' });
+    el.exportStatus.textContent = response.message || 'Export emailed.';
+    el.exportStatus.hidden = false;
+  } catch (error) {
+    el.exportStatus.textContent = error.message;
+    el.exportStatus.hidden = false;
+  } finally {
+    el.exportEmailButton.disabled = false;
+  }
+}
+
+// ---- Settings tab ----
+
+async function loadSettingsTab() {
+  if (!currentUser) {
+    const userResponse = await cachedGet(`/users/${lineUserId}`);
+    currentUser = userResponse.user;
+  }
+  el.settingNotifications.checked = currentUser.notifications_enabled !== false;
+  el.settingThumbnails.checked = currentUser.thumbnails_enabled !== false;
+  el.settingCycleDay.value = currentUser.billing_cycle_start_day || 1;
+  el.settingEmail.value = currentUser.email || '';
+
+  await loadRecurringList();
 }
 
 function showSettingsStatus(message) {
@@ -404,7 +815,6 @@ async function handleSaveCycleDay() {
     });
     currentUser = response.user;
     showSettingsStatus('Saved.');
-    await loadDashboard(); // the dashboard's period label depends on this
   } catch (error) {
     showSettingsStatus(error.message);
   } finally {
@@ -412,29 +822,20 @@ async function handleSaveCycleDay() {
   }
 }
 
-// Generic yes/no confirmation, used for the destructive clear-history action.
-function confirmAction(message, confirmLabel = 'Delete') {
-  return new Promise((resolve) => {
-    el.confirmMessage.textContent = message;
-    el.confirmOk.textContent = confirmLabel;
-    el.confirmModal.hidden = false;
-
-    function cleanup(result) {
-      el.confirmModal.hidden = true;
-      el.confirmOk.removeEventListener('click', onOk);
-      el.confirmCancel.removeEventListener('click', onCancel);
-      resolve(result);
-    }
-    function onOk() {
-      cleanup(true);
-    }
-    function onCancel() {
-      cleanup(false);
-    }
-
-    el.confirmOk.addEventListener('click', onOk);
-    el.confirmCancel.addEventListener('click', onCancel);
-  });
+async function handleSaveEmail() {
+  el.saveEmail.disabled = true;
+  try {
+    const response = await apiRequest(`/users/${lineUserId}/preferences`, {
+      method: 'PATCH',
+      body: JSON.stringify({ email: el.settingEmail.value || null }),
+    });
+    currentUser = response.user;
+    showSettingsStatus('Saved.');
+  } catch (error) {
+    showSettingsStatus(error.message);
+  } finally {
+    el.saveEmail.disabled = false;
+  }
 }
 
 async function handleClearHistory() {
@@ -448,7 +849,6 @@ async function handleClearHistory() {
   try {
     await apiRequest(`/transactions/${lineUserId}/all`, { method: 'DELETE' });
     showSettingsStatus('Transaction history cleared.');
-    await loadDashboard();
   } catch (error) {
     showSettingsStatus(error.message);
   } finally {
@@ -460,13 +860,8 @@ async function handleClearHistory() {
 
 const FREQUENCY_LABELS = { daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly', yearly: 'Yearly' };
 
-async function fetchCategoriesForType(type) {
-  const response = await apiRequest(`/categories/${lineUserId}?type=${type}`);
-  return response.categories;
-}
-
 async function loadRecurringList() {
-  const response = await apiRequest(`/recurring/${lineUserId}`);
+  const response = await cachedGet(`/recurring/${lineUserId}`);
   renderRecurringList(response.recurring || []);
 }
 
@@ -484,7 +879,7 @@ function renderRecurringList(rules) {
         <div class="recurring-meta">${FREQUENCY_LABELS[rule.frequency] || rule.frequency} · next ${formatDate(rule.next_run_date)}</div>
       </div>
       <div class="recurring-amount ${rule.type}">${parseFloat(rule.amount).toFixed(2)}</div>
-      <button type="button" class="recurring-delete" aria-label="Delete">🗑</button>
+      <button type="button" class="recurring-delete">Delete</button>
     `;
     li.querySelector('.recurring-active-toggle').addEventListener('change', (e) =>
       handleToggleRecurringActive(rule.id, e.target.checked)
@@ -494,18 +889,9 @@ function renderRecurringList(rules) {
   }
 }
 
-function clearRecurringModalError() {
-  el.recurringModalError.hidden = true;
-}
-
-function showRecurringModalError(message) {
-  el.recurringModalError.textContent = message;
-  el.recurringModalError.hidden = false;
-}
-
 async function populateRecurringCategoryOptions() {
-  const categories = await fetchCategoriesForType(el.recurringFieldType.value);
-  el.recurringFieldCategory.innerHTML = categories
+  const response = await cachedGet(`/categories/${lineUserId}?type=${el.recurringFieldType.value}`);
+  el.recurringFieldCategory.innerHTML = response.categories
     .map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`)
     .join('');
 }
@@ -516,12 +902,12 @@ async function openRecurringModal() {
   el.recurringFieldDescription.value = '';
   el.recurringFieldFrequency.value = 'monthly';
   el.recurringFieldStartDate.value = new Date().toISOString().slice(0, 10);
-  clearRecurringModalError();
+  clearModalError(el.recurringModalError);
   el.recurringModal.hidden = false;
   try {
     await populateRecurringCategoryOptions();
   } catch (error) {
-    showRecurringModalError(error.message);
+    showModalError(el.recurringModalError, error.message);
   }
 }
 
@@ -533,7 +919,7 @@ async function handleRecurringSubmit(event) {
   event.preventDefault();
   const submitButton = event.submitter;
   submitButton.disabled = true;
-  clearRecurringModalError();
+  clearModalError(el.recurringModalError);
 
   try {
     await apiRequest(`/recurring/${lineUserId}`, {
@@ -551,7 +937,7 @@ async function handleRecurringSubmit(event) {
     await loadRecurringList();
     showSettingsStatus('Recurring expense added.');
   } catch (error) {
-    showRecurringModalError(error.message);
+    showModalError(el.recurringModalError, error.message);
   } finally {
     submitButton.disabled = false;
   }
@@ -607,7 +993,7 @@ async function init() {
     });
 
     renderProfile(profile);
-    await loadDashboard();
+    await loadDashboardTab();
 
     el.loading.hidden = true;
     el.app.hidden = false;
@@ -617,24 +1003,38 @@ async function init() {
   }
 }
 
+for (const button of el.navTabs) {
+  button.addEventListener('click', () => switchTab(button.dataset.tab));
+}
+
 el.addExpenseButton.addEventListener('click', openAddExpenseModal);
 el.cancelAddExpense.addEventListener('click', closeAddExpenseModal);
 el.addExpenseForm.addEventListener('submit', handleAddExpenseSubmit);
 el.fieldReceiptImage.addEventListener('change', handleReceiptFileChange);
 
-el.settingsButton.addEventListener('click', openSettingsView);
-el.backToDashboard.addEventListener('click', closeSettingsView);
+el.categoriesTypeExpense.addEventListener('click', () => setCategoriesTabType('expense'));
+el.categoriesTypeIncome.addEventListener('click', () => setCategoriesTabType('income'));
+el.addCategoryButton.addEventListener('click', () => openCategoryModal(null));
+el.cancelCategory.addEventListener('click', closeCategoryModal);
+el.categoryForm.addEventListener('submit', handleCategorySubmit);
+
+el.txnFilterType.addEventListener('change', () => loadTransactionsTab().catch((error) => showError(error.message)));
+el.txnFilterStart.addEventListener('change', () => loadTransactionsTab().catch((error) => showError(error.message)));
+el.txnFilterEnd.addEventListener('change', () => loadTransactionsTab().catch((error) => showError(error.message)));
+el.exportCsvButton.addEventListener('click', handleExportCsv);
+el.exportEmailButton.addEventListener('click', handleExportEmail);
+
 el.settingNotifications.addEventListener('change', () => handlePreferenceToggle('notifications_enabled', el.settingNotifications));
 el.settingThumbnails.addEventListener('change', () => handlePreferenceToggle('thumbnails_enabled', el.settingThumbnails));
 el.saveCycleDay.addEventListener('click', handleSaveCycleDay);
+el.saveEmail.addEventListener('click', handleSaveEmail);
 el.clearHistoryButton.addEventListener('click', handleClearHistory);
-el.exportCsvButton.addEventListener('click', handleExportCsv);
 
 el.addRecurringButton.addEventListener('click', openRecurringModal);
 el.cancelRecurring.addEventListener('click', closeRecurringModal);
 el.recurringForm.addEventListener('submit', handleRecurringSubmit);
 el.recurringFieldType.addEventListener('change', () =>
-  populateRecurringCategoryOptions().catch((error) => showRecurringModalError(error.message))
+  populateRecurringCategoryOptions().catch((error) => showModalError(el.recurringModalError, error.message))
 );
 
 init();

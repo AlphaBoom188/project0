@@ -18,78 +18,147 @@
       <img id="profile-picture" class="profile-picture" alt="" />
       <div class="header-text">
         <div class="profile-name" id="profile-name"></div>
-        <div class="period-label" id="period-label"></div>
       </div>
-      <button id="settings-button" class="icon-button" aria-label="Settings">⚙️</button>
     </header>
 
-    <section id="dashboard-view">
-      <section class="summary-card">
-        <div class="summary-item">
-          <span class="summary-label">Income</span>
-          <span class="summary-value income" id="summary-income">0.00</span>
-        </div>
-        <div class="summary-item">
-          <span class="summary-label">Expense</span>
-          <span class="summary-value expense" id="summary-expense">0.00</span>
-        </div>
-        <div class="summary-item">
-          <span class="summary-label">Net</span>
-          <span class="summary-value" id="summary-net">0.00</span>
-        </div>
-      </section>
+    <main class="tab-content">
+      <!-- สรุป (Dashboard) -->
+      <section id="tab-dashboard" class="tab-panel">
+        <div class="period-label" id="period-label"></div>
 
-      <button id="add-expense-button" class="primary-button">+ Add Expense</button>
+        <section class="summary-card">
+          <div class="summary-item">
+            <span class="summary-label">Income</span>
+            <span class="summary-value income" id="summary-income">0.00</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">Expense</span>
+            <span class="summary-value expense" id="summary-expense">0.00</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">Net</span>
+            <span class="summary-value" id="summary-net">0.00</span>
+          </div>
+        </section>
 
-      <section>
-        <div class="section-header-row">
+        <button id="add-expense-button" class="primary-button">+ Add Expense</button>
+
+        <section>
           <h2 class="section-title">Recent Transactions</h2>
-          <button id="export-csv-button" class="link-button">⬇ Export CSV</button>
-        </div>
-        <ul id="transaction-list" class="transaction-list"></ul>
-        <p id="empty-state" class="empty-state" hidden>No transactions yet.</p>
+          <ul id="transaction-list" class="transaction-list"></ul>
+          <p id="empty-state" class="empty-state" hidden>No transactions yet.</p>
+        </section>
       </section>
-    </section>
 
-    <section id="settings-view" hidden>
-      <button id="back-to-dashboard" class="secondary-button back-button">← Back</button>
+      <!-- วิเคราะห์ (Analytics) -->
+      <section id="tab-analytics" class="tab-panel" hidden>
+        <h2 class="section-title">Monthly Trend</h2>
+        <div id="trend-chart" class="trend-chart"></div>
 
-      <h2 class="section-title">Preferences</h2>
-      <div class="settings-card">
-        <label class="toggle-row">
-          <span>Notifications</span>
-          <input type="checkbox" id="setting-notifications" />
-        </label>
-        <label class="toggle-row">
-          <span>Save receipt thumbnails</span>
-          <input type="checkbox" id="setting-thumbnails" />
-        </label>
-      </div>
+        <h2 class="section-title">Category Breakdown (this period)</h2>
+        <div id="category-chart" class="category-chart"></div>
+        <p id="analytics-empty-state" class="empty-state" hidden>Not enough data yet.</p>
+      </section>
 
-      <h2 class="section-title">Budget Cycle</h2>
-      <div class="settings-card">
-        <label class="field">
-          Cycle start day
-          <input type="number" id="setting-cycle-day" min="1" max="31" />
-        </label>
-        <button id="save-cycle-day" class="secondary-button">Save</button>
-      </div>
+      <!-- หมวด / งบ (Categories & Budgets) -->
+      <section id="tab-categories" class="tab-panel" hidden>
+        <div class="type-toggle">
+          <button type="button" class="type-toggle-button active" id="categories-type-expense" data-type="expense">Expense</button>
+          <button type="button" class="type-toggle-button" id="categories-type-income" data-type="income">Income</button>
+        </div>
+        <ul id="categories-list" class="categories-list"></ul>
+        <p id="categories-empty-state" class="empty-state" hidden>No categories yet.</p>
+        <button id="add-category-button" class="secondary-button recurring-add-button">+ Add Category</button>
+      </section>
 
-      <h2 class="section-title">ตั้งรายการจดประจำ (Recurring Expenses)</h2>
-      <div class="settings-card">
-        <ul id="recurring-list" class="recurring-list"></ul>
-        <p id="recurring-empty-state" class="empty-state" hidden>No recurring expenses yet.</p>
-        <button id="add-recurring-button" class="secondary-button recurring-add-button">+ Add Recurring</button>
-      </div>
+      <!-- รายการ (Transactions) -->
+      <section id="tab-transactions" class="tab-panel" hidden>
+        <div class="filter-row">
+          <select id="txn-filter-type">
+            <option value="">All</option>
+            <option value="expense">Expense</option>
+            <option value="income">Income</option>
+          </select>
+          <input type="date" id="txn-filter-start" aria-label="Start date" />
+          <input type="date" id="txn-filter-end" aria-label="End date" />
+        </div>
 
-      <p id="settings-status" class="settings-status" hidden></p>
+        <div class="export-row">
+          <button id="export-csv-button" class="link-button">Download CSV</button>
+          <button id="export-email-button" class="link-button">Email CSV</button>
+        </div>
+        <p id="export-status" class="settings-status" hidden></p>
 
-      <h2 class="section-title">Danger Zone</h2>
-      <div class="settings-card">
-        <p class="danger-text">Permanently deletes every transaction in your history. This cannot be undone.</p>
-        <button id="clear-history-button" class="danger-button">Clear Transaction History</button>
-      </div>
-    </section>
+        <ul id="txn-full-list" class="transaction-list"></ul>
+        <p id="txn-empty-state" class="empty-state" hidden>No transactions match these filters.</p>
+      </section>
+
+      <!-- ตั้งค่า (Settings) -->
+      <section id="tab-settings" class="tab-panel" hidden>
+        <h2 class="section-title">Preferences</h2>
+        <div class="settings-card">
+          <label class="toggle-row">
+            <span>Notifications</span>
+            <input type="checkbox" id="setting-notifications" />
+          </label>
+          <label class="toggle-row">
+            <span>Save receipt thumbnails</span>
+            <input type="checkbox" id="setting-thumbnails" />
+          </label>
+        </div>
+
+        <h2 class="section-title">Budget Cycle</h2>
+        <div class="settings-card">
+          <label class="field">
+            Cycle start day
+            <input type="number" id="setting-cycle-day" min="1" max="31" />
+          </label>
+          <button id="save-cycle-day" class="secondary-button">Save</button>
+        </div>
+
+        <h2 class="section-title">Email (for CSV export)</h2>
+        <div class="settings-card">
+          <label class="field">
+            Email address
+            <input type="email" id="setting-email" placeholder="you@example.com" />
+          </label>
+          <button id="save-email" class="secondary-button">Save</button>
+        </div>
+
+        <h2 class="section-title">ตั้งรายการจดประจำ (Recurring Expenses)</h2>
+        <div class="settings-card">
+          <ul id="recurring-list" class="recurring-list"></ul>
+          <p id="recurring-empty-state" class="empty-state" hidden>No recurring expenses yet.</p>
+          <button id="add-recurring-button" class="secondary-button recurring-add-button">+ Add Recurring</button>
+        </div>
+
+        <p id="settings-status" class="settings-status" hidden></p>
+
+        <h2 class="section-title">Danger Zone</h2>
+        <div class="settings-card">
+          <p class="danger-text">Permanently deletes every transaction in your history. This cannot be undone.</p>
+          <button id="clear-history-button" class="danger-button">Clear Transaction History</button>
+        </div>
+      </section>
+    </main>
+
+    <nav class="bottom-nav">
+      <button type="button" class="nav-tab active" data-tab="dashboard">
+        <span class="nav-tab-label">สรุป</span>
+      </button>
+      <button type="button" class="nav-tab" data-tab="analytics">
+        <span class="nav-tab-label">วิเคราะห์</span>
+      </button>
+      <button type="button" class="nav-tab" data-tab="categories">
+        <span class="nav-tab-label">หมวด/งบ</span>
+      </button>
+      <button type="button" class="nav-tab" data-tab="transactions">
+        <span class="nav-tab-label">รายการ</span>
+      </button>
+      <button type="button" class="nav-tab" data-tab="settings">
+        <span class="nav-tab-label">ตั้งค่า</span>
+      </button>
+    </nav>
   </div>
 
   <div id="confirm-modal" class="modal" hidden>
@@ -97,7 +166,7 @@
       <p id="confirm-message"></p>
       <div class="modal-actions">
         <button type="button" id="confirm-cancel" class="secondary-button">Cancel</button>
-        <button type="button" id="confirm-ok" class="danger-button">Delete Everything</button>
+        <button type="button" id="confirm-ok" class="danger-button">Delete</button>
       </div>
     </div>
   </div>
@@ -154,7 +223,7 @@
         <div class="receipt-scan-row">
           <img id="receipt-preview" class="receipt-preview" alt="" hidden />
           <label class="secondary-button receipt-scan-label">
-            <span id="receipt-scan-label-text">📷 Scan Receipt</span>
+            <span id="receipt-scan-label-text">Scan Receipt</span>
             <input type="file" id="field-receipt-image" accept="image/*" capture="environment" hidden />
           </label>
         </div>
@@ -179,6 +248,44 @@
         <p id="modal-error" class="modal-error" hidden></p>
         <div class="modal-actions">
           <button type="button" id="cancel-add-expense" class="secondary-button">Cancel</button>
+          <button type="submit" class="primary-button">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="category-modal" class="modal" hidden>
+    <div class="modal-content">
+      <h2 class="section-title" id="category-modal-title">Add Category</h2>
+      <form id="category-form">
+        <label class="field">
+          Name
+          <input id="category-field-name" type="text" maxlength="100" required />
+        </label>
+        <label class="field">
+          Type
+          <select id="category-field-type">
+            <option value="expense">Expense</option>
+            <option value="income">Income</option>
+          </select>
+        </label>
+        <label class="field">
+          Budget amount (optional)
+          <input id="category-field-budget-amount" type="number" inputmode="decimal" step="0.01" min="0" />
+        </label>
+        <label class="field">
+          Budget period
+          <select id="category-field-budget-period">
+            <option value="">No budget</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+            <option value="yearly">Yearly</option>
+          </select>
+        </label>
+        <p id="category-modal-error" class="modal-error" hidden></p>
+        <div class="modal-actions">
+          <button type="button" id="cancel-category" class="secondary-button">Cancel</button>
           <button type="submit" class="primary-button">Save</button>
         </div>
       </form>

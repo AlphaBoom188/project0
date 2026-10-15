@@ -11,6 +11,9 @@ router.get('/:line_user_id/summary', transactionController.getTransactionSummary
 // GET /api/transactions/:line_user_id/export - Export transactions as CSV (UTF-8 BOM)
 router.get('/:line_user_id/export', transactionController.exportTransactions);
 
+// POST /api/transactions/:line_user_id/export/email - Email the same filtered export
+router.post('/:line_user_id/export/email', transactionController.exportTransactionsByEmail);
+
 // GET /api/transactions/:line_user_id/:transaction_id - Get a single transaction
 router.get('/:line_user_id/:transaction_id', transactionController.getTransaction);
 

@@ -75,14 +75,20 @@ const userController = {
   async updatePreferences(req, res) {
     try {
       const { line_user_id } = req.params;
-      const { notifications_enabled, thumbnails_enabled } = req.body;
+      const { notifications_enabled, thumbnails_enabled, email } = req.body;
 
       const updateData = {};
       if (notifications_enabled !== undefined) updateData.notifications_enabled = Boolean(notifications_enabled);
       if (thumbnails_enabled !== undefined) updateData.thumbnails_enabled = Boolean(thumbnails_enabled);
+      if (email !== undefined) {
+        if (email !== null && email !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          return res.status(400).json({ error: 'email is not a valid address' });
+        }
+        updateData.email = email || null;
+      }
 
       if (Object.keys(updateData).length === 0) {
-        return res.status(400).json({ error: 'At least one of notifications_enabled or thumbnails_enabled is required' });
+        return res.status(400).json({ error: 'At least one of notifications_enabled, thumbnails_enabled, or email is required' });
       }
 
       const { data: user, error } = await supabase
