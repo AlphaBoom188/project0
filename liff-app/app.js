@@ -1126,6 +1126,14 @@ function renderEmergencyFund(fund, surplus) {
   }
 }
 
+function formatPricedAt(holding) {
+  if (MANUAL_PRICE_ASSET_TYPES.includes(holding.asset_type)) return holding.priced_at ? `Manual, ${new Date(holding.priced_at).toLocaleDateString()}` : 'Manual price';
+  if (!holding.priced_at) return 'Fetching live price…';
+  const t = new Date(holding.priced_at);
+  const sameDay = t.toDateString() === new Date().toDateString();
+  return `Live, ${sameDay ? t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : t.toLocaleDateString()}`;
+}
+
 function renderHoldingsList(holdings) {
   el.holdingsList.innerHTML = '';
   el.holdingsEmptyState.hidden = holdings.length > 0;
@@ -1141,7 +1149,15 @@ function renderHoldingsList(holdings) {
       </div>
       <div class="category-bar-label-row">
         <span>${ASSET_TYPE_LABELS[holding.asset_type]} · ${parseFloat(holding.quantity)} units</span>
-        <span style="color:${holding.gain >= 0 ? 'var(--color-income)' : 'var(--color-expense)'}">${gainSign}${holding.gain.toFixed(2)} (${gainSign}${holding.gain_percent.toFixed(1)}%)</span>
+        ${
+          holding.current_price === null
+            ? '<span class="empty-state">No price yet</span>'
+            : `<span style="color:${holding.gain >= 0 ? 'var(--color-income)' : 'var(--color-expense)'}">${gainSign}${holding.gain.toFixed(2)} (${gainSign}${holding.gain_percent.toFixed(1)}%)</span>`
+        }
+      </div>
+      <div class="category-bar-label-row">
+        <span>${holding.current_price === null ? '' : `Price ${parseFloat(holding.current_price).toFixed(2)}`}</span>
+        <span>${formatPricedAt(holding)}</span>
       </div>
       <div class="bill-participant-detail-row" style="margin-top: 6px;">
         <button type="button" class="link-button holding-edit">Edit</button>
@@ -1163,6 +1179,26 @@ async function handleDeleteHolding(holdingId) {
   } catch (error) {
     showError(error.message);
   }
+}
+
+// Prices are only ever stored when something asks for them -- there's no
+// background price job -- so opening the tab kicks off a refresh for any
+// live-priced holding that has never been priced or whose price is stale.
+// Runs after the tab has already rendered (never blocks it on Yahoo/CoinGecko),
+// and at most once per PRICE_STALE_MS per session, so a ticker that keeps
+// failing can't turn loadNetWorthTab() -> refresh -> loadNetWorthTab() into a loop.
+const PRICE_STALE_MS = 15 * 60 * 1000;
+let lastAutoPriceRefreshAt = 0;
+
+function autoRefreshStalePrices(holdings) {
+  const now = Date.now();
+  if (now - lastAutoPriceRefreshAt < PRICE_STALE_MS) return;
+  const hasStale = holdings.some(
+    (h) => !MANUAL_PRICE_ASSET_TYPES.includes(h.asset_type) && (!h.priced_at || now - new Date(h.priced_at).getTime() > PRICE_STALE_MS)
+  );
+  if (!hasStale) return;
+  lastAutoPriceRefreshAt = now;
+  handleRefreshPrices();
 }
 
 async function handleRefreshPrices() {
@@ -1427,6 +1463,7 @@ async function loadNetWorthTab() {
 
   renderAccountsList(accountsResponse.accounts);
   renderPortfolio(portfolioResponse, surplus);
+  autoRefreshStalePrices(portfolioResponse.holdings);
 
   el.settingEfGoal.value = currentUser.emergency_fund_goal_amount || '';
   el.settingEfAccount.innerHTML =
