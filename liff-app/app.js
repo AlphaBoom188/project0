@@ -1714,7 +1714,7 @@ function renderGoogleConnectState() {
 
 // Google blocks its own OAuth consent screen inside embedded webviews
 // (LINE's in-app browser included -- error 403 disallowed_useragent), so
-// this MUST open in the real system browser via openWindowExternal(url, true),
+// this MUST open in the real system browser via liff.openWindow({ url, external: true }),
 // never inline. The backend's callback renders a plain "connected, close this
 // tab" page; there's no way back into the LIFF app directly from there, so
 // the user just switches back and this tab's Settings re-fetch (next load,
@@ -1728,7 +1728,7 @@ async function handleConnectGoogle() {
   try {
     const response = await apiRequest(`/google/login-url/${lineUserId}`);
     awaitingGoogleConnectReturn = true;
-    liff.openWindowExternal(response.login_url, true);
+    liff.openWindow({ url: response.login_url, external: true });
     el.googleConnectStatus.textContent = 'After connecting, switch back to this tab.';
   } catch (error) {
     el.googleConnectStatus.classList.add('scan-error');

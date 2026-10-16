@@ -8,7 +8,7 @@ function htmlPage(title, message) {
 }
 
 const googleController = {
-  // GET /api/google/login-url/:line_user_id -- opened via liff.openWindowExternal(),
+  // GET /api/google/login-url/:line_user_id -- opened via liff.openWindow({ url, external: true }),
   // never inline inside the LIFF webview (see services/googleOAuth.js header comment).
   getLoginUrl(req, res) {
     try {

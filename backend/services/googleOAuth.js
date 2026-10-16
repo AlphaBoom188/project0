@@ -5,7 +5,7 @@
 //
 // Google actively blocks its OAuth consent screen inside embedded webviews
 // (LINE's in-app browser included) -- error 403 disallowed_useragent. The
-// LIFF frontend MUST open buildAuthUrl()'s result via liff.openWindowExternal()
+// LIFF frontend MUST open buildAuthUrl()'s result via liff.openWindow({ url, external: true })
 // (the real system browser), not inline -- see liff-app/app.js's
 // handleConnectGoogle().
 
