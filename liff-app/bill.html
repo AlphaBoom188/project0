@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#06c755" />
+  <title>Shared Bill</title>
+  <link rel="stylesheet" href="style.css" />
+  <script>
+    (function () {
+      var saved = localStorage.getItem('theme');
+      if (saved === 'light' || saved === 'dark') {
+        document.documentElement.setAttribute('data-theme', saved);
+      }
+    })();
+  </script>
+</head>
+<body>
+  <!--
+    Public, unauthenticated by design: the bill_id in the URL is an
+    unguessable UUID and acts as the access token, the same model a
+    payment-split share link uses elsewhere. Anyone with the link can view
+    the bill and mark any participant's own share as paid -- there's no
+    login here, since the whole point is working for people who've never
+    opened the app. See migration 010_shared_bills.sql for the full rationale.
+  -->
+  <div id="loading">
+    <p>Loading…</p>
+  </div>
+
+  <div id="error-banner" class="error-banner" hidden></div>
+
+  <main id="bill-view" class="tab-content" hidden style="padding: 16px;">
+    <section class="summary-card" style="margin: 0 0 16px; flex-direction: column; align-items: flex-start; gap: 4px;">
+      <h1 id="view-title" class="section-title" style="margin: 0; font-size: 18px;"></h1>
+      <p id="view-meta" class="transaction-description" style="margin: 0;"></p>
+    </section>
+
+    <h2 class="section-title">Who owes what</h2>
+    <ul id="view-participants" class="categories-list"></ul>
+  </main>
+
+  <script src="bill.js"></script>
+</body>
+</html>

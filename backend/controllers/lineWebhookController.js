@@ -251,6 +251,7 @@ async function handlePostback(event) {
       slipHash: data.slipHash,
       thumbnailUrl: data.thumbnailPath,
       transactionDate: data.transactionDate,
+      channel: 'line_chat',
     });
     pending.remove(token);
     await replyText(event.replyToken, `Saved: ${data.amount} — ${data.description || 'expense'}.`);

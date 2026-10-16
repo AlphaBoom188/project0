@@ -46,6 +46,7 @@ async function processDueRecurringTransactions() {
         type: rule.type,
         description: rule.description,
         transactionDate: rule.next_run_date,
+        channel: 'system',
       });
 
       await supabase

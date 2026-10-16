@@ -107,6 +107,56 @@ const userController = {
     }
   },
 
+  // Configure the Emergency Fund goal: a target amount plus which existing
+  // account's balance counts as "current progress" (see migration 011's
+  // header comment for why this points at accounts instead of its own ledger).
+  // Either field can be cleared by passing null.
+  async updateEmergencyFund(req, res) {
+    try {
+      const { line_user_id } = req.params;
+      const { goal_amount, account_id } = req.body;
+
+      const updateData = {};
+      if (goal_amount !== undefined) {
+        if (goal_amount !== null && goal_amount < 0) {
+          return res.status(400).json({ error: 'goal_amount must be non-negative' });
+        }
+        updateData.emergency_fund_goal_amount = goal_amount;
+      }
+      if (account_id !== undefined) {
+        if (account_id !== null) {
+          const { data: account, error: accountError } = await supabase
+            .from('accounts')
+            .select('id')
+            .eq('id', account_id)
+            .eq('line_user_id', line_user_id)
+            .single();
+          if (accountError || !account) {
+            return res.status(400).json({ error: 'Invalid account or account does not belong to user' });
+          }
+        }
+        updateData.emergency_fund_account_id = account_id;
+      }
+
+      if (Object.keys(updateData).length === 0) {
+        return res.status(400).json({ error: 'At least one of goal_amount or account_id is required' });
+      }
+
+      const { data: user, error } = await supabase
+        .from('users')
+        .update(updateData)
+        .eq('line_user_id', line_user_id)
+        .select()
+        .single();
+      if (error) throw error;
+
+      res.json({ success: true, user });
+    } catch (error) {
+      console.error('Error in updateEmergencyFund:', error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+
   // Delete user account
   async deleteUser(req, res) {
     try {

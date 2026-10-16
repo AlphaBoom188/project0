@@ -20,48 +20,58 @@ function getPeriodStartISO(period) {
   }
 }
 
-// Checks whether the just-created transaction is the one that pushed its category
-// over budget for the current period, and if so pushes a one-time LINE alert (not
-// re-sent on every subsequent transaction while still over budget). Called
-// fire-and-forget after an insert -- never throws, so it can't affect the response.
-async function checkBudgetAndAlert(lineUserId, categoryId, amount) {
+// Pure check, no delivery: does the just-created transaction push its category
+// over budget for the current period, for the first time (not re-flagged on
+// every subsequent transaction while still over budget)? Split out from
+// delivery so the caller can decide HOW to surface it -- a LINE push for the
+// bot/webhook channel (the only way to reach someone who isn't looking at a
+// screen), or an immediate in-app banner for the LIFF channel, built from this
+// same result, with no server push at all (see transactionCreate.js).
+async function evaluateBudgetAlert(lineUserId, categoryId, amount) {
+  const { data: category, error: catError } = await supabase
+    .from('categories')
+    .select('name, budget_amount, budget_period')
+    .eq('id', categoryId)
+    .single();
+  if (catError || !category || !category.budget_amount || !category.budget_period) return null;
+
+  const startISO = getPeriodStartISO(category.budget_period);
+  if (!startISO) return null;
+
+  const { data: transactions, error: txError } = await supabase
+    .from('transactions')
+    .select('amount')
+    .eq('line_user_id', lineUserId)
+    .eq('category_id', categoryId)
+    .eq('type', 'expense')
+    .gte('transaction_date', startISO);
+  if (txError) return null;
+
+  const totalSpent = (transactions || []).reduce((sum, t) => sum + parseFloat(t.amount), 0);
+  const budgetAmount = parseFloat(category.budget_amount);
+  const totalBeforeThisOne = totalSpent - parseFloat(amount);
+
+  const justCrossedThreshold = totalSpent >= budgetAmount && totalBeforeThisOne < budgetAmount;
+  if (!justCrossedThreshold) return null;
+
+  return { categoryName: category.name, budgetPeriod: category.budget_period, budgetAmount, totalSpent };
+}
+
+// Delivery for the bot/webhook channel -- fire-and-forget, never throws, and
+// respects notifications_enabled (a LINE push is an interruption; the LIFF
+// in-app banner this skips for is not, so that path never checks this).
+async function pushBudgetAlertIfEnabled(lineUserId, alert) {
   try {
     const { notificationsEnabled } = await getUserPreferences(lineUserId);
     if (!notificationsEnabled) return;
 
-    const { data: category, error: catError } = await supabase
-      .from('categories')
-      .select('name, budget_amount, budget_period')
-      .eq('id', categoryId)
-      .single();
-    if (catError || !category || !category.budget_amount || !category.budget_period) return;
-
-    const startISO = getPeriodStartISO(category.budget_period);
-    if (!startISO) return;
-
-    const { data: transactions, error: txError } = await supabase
-      .from('transactions')
-      .select('amount')
-      .eq('line_user_id', lineUserId)
-      .eq('category_id', categoryId)
-      .eq('type', 'expense')
-      .gte('transaction_date', startISO);
-    if (txError) return;
-
-    const total = (transactions || []).reduce((sum, t) => sum + parseFloat(t.amount), 0);
-    const budget = parseFloat(category.budget_amount);
-    const totalBeforeThisOne = total - parseFloat(amount);
-
-    const justCrossedThreshold = total >= budget && totalBeforeThisOne < budget;
-    if (!justCrossedThreshold) return;
-
     await pushText(
       lineUserId,
-      `⚠️ Budget alert: your "${category.name}" ${category.budget_period} budget of ${budget.toFixed(2)} has been reached (${total.toFixed(2)} spent).`
+      `⚠️ Budget alert: your "${alert.categoryName}" ${alert.budgetPeriod} budget of ${alert.budgetAmount.toFixed(2)} has been reached (${alert.totalSpent.toFixed(2)} spent).`
     );
   } catch (error) {
-    console.error('Error checking budget alert:', error.message);
+    console.error('Error pushing budget alert:', error.message);
   }
 }
 
-module.exports = { checkBudgetAndAlert };
+module.exports = { evaluateBudgetAlert, pushBudgetAlertIfEnabled };

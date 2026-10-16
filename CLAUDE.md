@@ -34,13 +34,21 @@ npm start  # Starts server on port 3000
 - `PATCH /api/users/:line_user_id/preferences` - Update `notifications_enabled`/`thumbnails_enabled`
 - `POST /api/categories/:line_user_id` - Create category
 - `GET /api/categories/:line_user_id` - Get categories
-- `POST /api/transactions/:line_user_id` - Create transaction (`category_id` optional for an expense with a `description` -- auto-categorized)
+- `POST /api/transactions/:line_user_id` - Create transaction (`category_id` optional for an expense with a `description` -- auto-categorized). Optional `channel: 'liff'` returns a crossed `budget_alert` in the response instead of pushing it via LINE (see Dual-Channel Alert Routing below)
 - `GET /api/transactions/:line_user_id` - Get transactions
 - `DELETE /api/transactions/:line_user_id/all` - Delete every transaction for a user (irreversible; client must confirm first)
 - `GET /api/transactions/:line_user_id/export` - Export transactions as CSV (UTF-8 BOM), accepts `type`/`category_id`/`start_date`/`end_date` filters
 - `POST /api/transactions/:line_user_id/export/email` - Same filtered export, emailed via the Apps Script relay (501 if not configured)
 - `GET/POST /api/recurring/:line_user_id`, `PUT/DELETE /api/recurring/:line_user_id/:recurring_id` - Recurring expense/income rules (now with optional `pay_start_day`/`pay_end_day`)
 - `GET/POST /api/accounts/:line_user_id`, `PUT/DELETE /api/accounts/:line_user_id/:account_id` - Bank/credit card/e-wallet/cash accounts; `POST /api/transactions/:line_user_id` with `type: "transfer"` moves money between two of them
+- `GET/POST /api/bills/:line_user_id`, `GET/DELETE /api/bills/:line_user_id/:bill_id`, `PATCH /api/bills/:line_user_id/:bill_id/participants/:participant_id` - Shared bills (equal/custom/itemized split), creator-scoped
+- `POST /api/bills/:line_user_id/scan-items` - OCR a receipt into itemized line items for an itemized split (no transaction/dedup involved)
+- `GET /api/bills/public/:bill_id`, `PATCH /api/bills/public/:bill_id/participants/:participant_id` - Unauthenticated bill view + self-serve mark-paid, for participants who never open the app (bill_id is the access token)
+- `GET/POST /api/portfolio/:line_user_id`, `PUT/DELETE /api/portfolio/:line_user_id/:holding_id` - Investment holdings (stock/etf/crypto/mutual_fund/gold) with computed market value/gain and allocation %; GET also returns emergency fund status
+- `POST /api/portfolio/:line_user_id/:holding_id/refresh-price`, `POST /api/portfolio/:line_user_id/refresh-all` - Live price refresh (Yahoo Finance for stock/etf, CoinGecko for crypto); 400s for mutual_fund/gold, which have no live source
+- `PUT /api/users/:line_user_id/emergency-fund` - Set the emergency fund goal amount and/or which existing account tracks progress
+- `GET/POST /api/budget-events/:line_user_id` (`?month=YYYY-MM-01`), `PUT/DELETE /api/budget-events/:line_user_id/:event_id` - One-off, single-month event/occasion budget buckets layered on a category, with computed `spent`/`remaining`/`percent`
+- `GET /api/google/login-url/:line_user_id`, `GET /api/google/callback` - Google OAuth used *only* to verify the CSV-export email (not a login method); 501 if not configured
 - `GET /api/line/login-url` - Generate LINE Login URL
 - `GET /api/line/callback` - Handle LINE OAuth callback
 - `POST /api/ocr/scan/:line_user_id` - Scan a receipt image (OpenAI Vision), extract amount/date/merchant/category, and check `slip_hash` for duplicates
@@ -84,6 +92,12 @@ xcrun simctl io "iPhone 17 Pro" screenshot screenshot.png
    - 007_phase4_schema.sql
    - 008_add_user_email.sql
    - 009_phase2a_accounts_transfers.sql
+   - 010_shared_bills.sql
+   - 011_portfolio.sql
+   - 012_budget_events.sql
+   - 013_google_email_verification.sql
+
+**Note:** after running a migration in the SQL Editor, the REST API layer (PostgREST) caches the schema and can take a bit to notice new tables — if the backend immediately 500s with `Could not find the table '...' in the schema cache` right after a migration, that's this cache, not a failed migration; it clears on its own within roughly a minute, or immediately by running `NOTIFY pgrst, 'reload schema';` in the SQL Editor.
 
 ## Project Architecture
 
@@ -110,7 +124,9 @@ project0/
 │   │   ├── lineWebhookController.js # LINE Bot webhook (follow/text/image/postback)
 │   │   ├── ocrController.js     # Receipt OCR (OpenAI Vision)
 │   │   ├── recurringController.js # Recurring expense/income rule CRUD
-│   │   └── accountController.js # Accounts/wallets CRUD
+│   │   ├── accountController.js # Accounts/wallets CRUD
+│   │   ├── billController.js    # Shared bills: create/list/detail/delete, settlement, public share view
+│   │   └── portfolioController.js # Investment holdings CRUD + computed value/gain/allocation + emergency fund status
 │   ├── routes/                    # API routes
 │   │   ├── userRoutes.js
 │   │   ├── categoryRoutes.js
@@ -119,6 +135,8 @@ project0/
 │   │   ├── lineWebhookRoutes.js  # mounted before express.json() -- needs the raw body
 │   │   ├── recurringRoutes.js
 │   │   ├── accountRoutes.js
+│   │   ├── billRoutes.js        # /public/* registered before /:line_user_id -- same ordering gotcha as /all
+│   │   ├── portfolioRoutes.js
 │   └── ocrRoutes.js
 │   ├── services/                  # Logic shared between REST controllers and the LINE Bot
 │   │   ├── userUpsert.js        # create/update user + preset categories
@@ -131,14 +149,18 @@ project0/
 │   │   ├── receiptThumbnail.js  # resize (sharp) + upload to private Storage bucket
 │   │   ├── signedUrl.js         # mint a short-lived signed URL for a stored thumbnail path
 │   │   ├── userPreferences.js   # notifications_enabled / thumbnails_enabled, fails open to TRUE
-│   │   ├── budgetAlert.js       # event-driven budget-threshold check, fires once on crossing
+│   │   ├── budgetAlert.js       # evaluateBudgetAlert (pure check) + pushBudgetAlertIfEnabled (LINE push), split so the LIFF channel can skip the push
 │   │   ├── autoCategorize.js    # keyword-then-LLM category inference for expenses with no category_id
 │   │   ├── csvExport.js         # shared CSV builder (direct-download + email export)
 │   │   ├── emailRelay.js        # POSTs a base64 CSV to the Apps Script email relay
-│   │   └── accountBalance.js    # read-modify-write balance adjustment for transfers/account-attributed tx
+│   │   ├── accountBalance.js    # read-modify-write balance adjustment for transfers/account-attributed tx
+│   │   ├── billSplit.js         # cent-accurate equal/custom/itemized split math
+│   │   ├── billItemExtraction.js # OpenAI Vision -> itemized receipt line items (separate from receiptExtraction.js)
+│   │   └── marketPrices.js      # Live prices: Yahoo Finance (stock/etf), CoinGecko (crypto); mutual_fund/gold are manual-only
 │   ├── jobs/
 │   │   ├── dailyDigest.js       # node-cron, 21:00 Asia/Bangkok, daily income/expense push
-│   │   └── recurringTransactions.js # node-cron, 00:05 Asia/Bangkok, generates due recurring transactions
+│   │   ├── recurringTransactions.js # node-cron, 00:05 Asia/Bangkok, generates due recurring transactions
+│   │   └── activityReminders.js # node-cron, 12:00 + 20:00 Asia/Bangkok, nudges users with zero transactions so far today
 │   ├── supabase/                  # Database migrations
 │   │   └── migrations/
 │   ├── .env.example               # Environment template
@@ -169,7 +191,9 @@ project0/
 └── liff-app/                      # LINE MINI App (LIFF) -- served by the backend at /liff
     ├── index.html
     ├── app.js                      # liff.init() -> profile -> dashboard; reuses existing REST API
-    └── style.css
+    ├── style.css
+    ├── bill.html                   # Public, unauthenticated shared-bill share-link view (no liff.init())
+    └── bill.js
 ```
 
 ### Technology Stack
@@ -333,3 +357,65 @@ From `docs/phase_2_product_architecture_blueprint.md` — that doc's own migrati
 ✅ **LIFF UI** — Accounts section folded into the existing หมวด/งบ tab (list with live balances, "+Add Account", "Transfer Between Accounts") rather than a 6th nav tab.
 
 **Verified**: new `accounts_test.js` (ad hoc, not committed) — full account CRUD, a transfer correctly moving money between two account balances, an account-attributed expense/income adjusting the right side, same-account transfer rejected, deletion blocked while in use, pay-window validation (including rejecting a day outside 1-31), and a regression check that a plain expense with no account still works exactly as before. Full `line_webhook_harness.js` suite still 19/19 unaffected (nothing in the shared `transactionCreate` path broke for the LINE Bot). The Supabase PostgREST explicit-FK-disambiguation syntax (`accounts!transactions_from_account_id_fkey`), needed because `transactions` now has two FKs to the same `accounts` table, was guessed from Postgres's default constraint-naming convention and confirmed correct by the passing test rather than inspected directly (no raw catalog access via the JS client).
+
+### Design System — Dark/Light Theme Engine
+
+Pure LIFF frontend work (`liff-app/style.css`, `index.html`, `app.js`); no backend or migration involved. Zero-emoji rule re-verified, not relaxed.
+
+✅ **Design tokens** — every hardcoded color in `style.css` replaced with CSS custom properties on `:root` (`--color-bg`, `--color-surface`, `--color-surface-alt`, `--color-track`, `--color-border`, `--color-text-primary`, `--color-text-secondary`, `--color-text-on-accent`, `--color-accent`, `--color-income`, `--color-expense`, `--color-danger-bg`/`-text`/`-border`, `--color-overlay`, `--shadow-card`), plus a small spacing/radius scale (`--radius-card`, `--radius-control`, `--radius-input`, `--space-page`). Deliberately consolidated several near-duplicate grays from the old file (`#eee`/`#f0f0f0`/`#f5f5f5`/`#ddd`) into the smaller token set rather than giving every literal its own 1:1 variable — that consolidation is itself part of what makes it a design system instead of a mechanical find-replace. One literal intentionally left as-is: `.profile-picture`'s `rgba(255,255,255,0.3)` placeholder tint, since it's a translucent overlay on the header's fixed accent color in both themes, not a themed surface. The `[hidden] { display: none !important; }` rule from the earlier modal-close bug fix was preserved exactly.
+
+✅ **Dark theme values** — layered two ways so the more specific one always wins: `@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {...} }` for following system preference, and `:root[data-theme="dark"] {...}` for an explicit user override (same values in both blocks). Brand/semantic colors (accent green, income, expense) intentionally stay constant across themes; only surface/text/border/overlay/shadow tokens change. Card shadows are turned off in dark mode (`--shadow-card: none`) since shadows don't read well on dark backgrounds — card definition there comes from the `--color-border` outline already added to every card-like element.
+
+✅ **Theme toggle + persistence** — System/Light/Dark control (`.theme-toggle` buttons) in Settings → new "Appearance" section, above Preferences. Persisted to `localStorage` only (explicit choice, not a new `users` column — this is a device preference, not account data). A small inline script in `index.html`'s `<head>`, before the stylesheet's render, reads `localStorage` and sets `data-theme` on `<html>` pre-paint to avoid a flash of the wrong theme on load. `app.js` owns the live toggle (`applyTheme()`/`setTheme()`), runs independent of `liff.init()`/login so it works even before the network round-trip completes.
+
+**Verified**: `node --check app.js` clean; grep sweep confirmed every hex/rgba literal in `style.css` now lives only inside the three token-definition blocks (plus the one intentional exception above); emoji-range regex swept `index.html`/`app.js`/`style.css` clean. Full `accounts_test.js` regression (16/16) re-run after these changes — expected to be unaffected since this is pure frontend CSS/JS, confirmed rather than assumed. Visual confirmation (actual light/dark rendering, toggle behavior in the LINE in-app browser) still needs the user's phone — no browser automation was available this session to render LIFF's authenticated context.
+
+### Shared-Bill Engine ("KhunThong"-style bill splitting)
+
+Reconciled against `docs/phase_2_product_architecture_blueprint.md` section 7 — see migration `010_shared_bills.sql`'s header comment for the full rationale. The blueprint's own schema links participants back to a `users.id UUID` row; this project made a different, deliberate call: participants are plain display names, not linked LINE accounts, since the entire point of splitting a bill is working with people who may never open this app. Linking a participant to a real account and pushing them LINE notifications server-side is an intentionally deferred decision, same pattern as `pay_start_day`/`pay_end_day` in Phase 2A — not built, not guessed at.
+
+✅ **Three split types** (`services/billSplit.js`) — all math done in integer cents to avoid float drift, only converting back to decimal at the end. **Equal**: total divided among the creator + every participant; the creator's own slot is computed but intentionally dropped (this app only tracks what *other* people owe the creator). **Custom**: the creator names each participant's amount directly with no sum-to-total requirement ("you owe me 200, you owe me nothing" is valid). **Itemized**: each item is assigned to one participant or left shared (split evenly across everyone including the creator, same dropped-creator-slot rule); `total_amount` must equal the sum of all item amounts exactly, validated server-side.
+
+✅ **Itemized OCR mapping** — `services/billItemExtraction.js`, a second OpenAI Vision prompt separate from `services/receiptExtraction.js` (that one extracts a single total+category for recording *one* expense; this one extracts itemized line items for *splitting* a bill — no slip_hash dedup or thumbnail upload, since a bill split isn't itself a transaction). `POST /api/bills/:line_user_id/scan-items` is read-only — nothing is written until the bill itself is created.
+
+✅ **Settlement without a second LINE account** — `shared_bills.status` auto-flips between `'active'`/`'settled'` (`refreshBillStatus()` in `billController.js`) every time a participant's `is_paid` changes, in either direction (un-marking a payment reopens the bill). Two ways to mark paid: the creator directly in the LIFF app (`PATCH /api/bills/:line_user_id/:bill_id/participants/:participant_id`), or the participant themselves via a share link — `GET/PATCH /api/bills/public/:bill_id[/participants/:participant_id]`, deliberately unauthenticated, the bill's UUID acting as the access token (same trust model as any payment-split link). These public routes are registered *before* the `/:line_user_id` routes in `billRoutes.js` so `"public"` isn't swallowed as a `line_user_id` value — the same ordering gotcha the `/all` transactions route hit in Phase 3.
+
+✅ **LIFF UI** — folded into the Dashboard (สรุป) tab as a new "Shared Bills" section (list + "+ Split a Bill"), not a 6th nav tab, same pattern as Accounts living inside หมวด/งบ. The create modal's participant/item rows are built dynamically (add/remove), with the itemized item-assignment `<select>` kept in sync with participant names live via an `input` listener. `liff-app/bill.html`/`bill.js` is a *separate*, intentionally login-free static page (no `liff.init()`) for the share-link recipient — reuses `style.css` for visual consistency but is otherwise independent of `app.js`.
+
+**Verified**: new `bills_test.js` (ad hoc, not committed) — all three split types including cent-remainder distribution on equal splits, itemized total/participant_index validation, custom split's negative-amount rejection, status auto-settle/reopen on payment toggle, public view + public self-serve mark-paid, 404 on an unknown bill_id, and a check that deleting with the wrong `line_user_id` silently no-ops rather than deleting someone else's bill — 27/27. Full `accounts_test.js` regression (16/16) re-run, unaffected. Hit one real deployment snag along the way: right after running the migration, the backend 500'd with `Could not find the table 'public.shared_bills' in the schema cache` — not a failed migration, but PostgREST's schema cache not yet having picked up the new tables; resolved itself within about a minute (now called out in the Database Setup section above so it doesn't look like a broken migration next time). Zero-emoji sweep re-verified across all five LIFF files including the two new ones.
+
+### Dual-Channel Alert Routing & Smart Reminders
+
+Maps to `docs/phase_2_product_architecture_blueprint.md` section 3. One honest scoping note up front: "channel-aware routing" is only meaningful for an alert that's a *response to a live request* — the budget-crossing check below. A *scheduled* reminder has no live request to respond through, and there is no way to push a notification into a closed/backgrounded LIFF web page (no service worker/PWA infra here), so the activity-reminder job below can only ever deliver via LINE push. That's called out in its own code comment rather than pretending a fake "dual channel" exists for it.
+
+✅ **Budget alerts now route by channel, never both** — `services/budgetAlert.js` was split into `evaluateBudgetAlert()` (pure DB-only check, cheap enough to `await` inline) and `pushBudgetAlertIfEnabled()` (the actual LINE push, still fire-and-forget). `transactionCreate.js` takes a new optional `channel` param: `channel: 'liff'` means the result is handed back in the create-transaction response as `budget_alert` instead of being pushed — the LIFF frontend shows it as an instant in-app banner (`showBudgetAlert()` in `app.js`, auto-hides after 8s). Every other value (`'line_chat'` from the bot webhook, `'system'` from the recurring-transactions job, or simply omitted — e.g. the iOS app, untouched) keeps the original LINE-push behavior unchanged. The two paths are mutually exclusive by construction (one `if (channel !== 'liff')`), so one budget crossing can never produce two alerts — directly the blueprint's "eliminate duplicate alerts" goal, achieved by trusting which endpoint handled the request rather than building a separate presence/heartbeat system to guess which channel the user is "active" on.
+
+✅ **Activity-detection reminders** (`jobs/activityReminders.js`, new) — two fixed `node-cron` times, 12:00 and 20:00 Asia/Bangkok (matching the blueprint's own example), each pushing a nudge via LINE to any opted-in user who hasn't logged a single transaction yet today. "Yet today" is computed against the actual Bangkok calendar day (hardcoded +7h offset — Asia/Bangkok has no DST, so this is always correct), deliberately *not* reusing `dailyDigest.js`'s UTC-day boundary (a separate, pre-existing quirk left untouched here). No per-user-configurable times were built (the blueprint's "configurable" is a bigger lift: a settings UI + DB columns + dynamic per-user cron registration) — two fixed times ship the real value now; configurability is a deferred enhancement, same pattern as other scoped-down items in this project.
+
+**Verified**: new `alerts_test.js` (ad hoc, not committed) — an under-budget expense returns `budget_alert: null`; a budget-crossing expense with `channel: 'liff'` returns the alert with correct category/total and the server log shows zero push attempts for it; a budget-crossing expense with `channel: 'line_chat'` still returns the alert *and* the log shows exactly one push attempt (which 400s for the fake test user, expected — same failure mode confirms the push was genuinely attempted, not skipped); a third expense while already over budget confirms the one-time-only crossing behavior is unchanged — 6/6. `activityReminders.js`'s `sendActivityReminder()` called directly against a user with a transaction logged today (zero push attempts, confirmed via log) and a user with none (one push attempt, confirmed via log) — activity detection correctly distinguishes the two. Full `accounts_test.js` (16/16) and `bills_test.js` (27/27) regressions re-run after the `transactionCreate.js` signature change — unaffected, since `channel` is a new optional field with no default-behavior change for any value other than exactly `'liff'`. Zero-emoji sweep re-verified across all LIFF files (the new budget-alert banner text has none; the bot's own `⚠️` push message is the pre-existing, intentionally untouched non-LIFF surface).
+
+### Investment Portfolio & Asset Tracking
+
+Maps to `docs/phase_2_product_architecture_blueprint.md` section 8. One deliberate, explicit scope cut up front: **live prices only exist for `stock`/`etf` (Yahoo Finance's unofficial, keyless chart endpoint) and `crypto` (CoinGecko's public API)** — `mutual_fund` and `gold` have no reliable free global pricing API (Thai mutual fund NAVs in particular are on neither service), so those two are manual-price-entry only, by design, not as a stopgap. This is called out in migration `011_portfolio.sql`'s header comment, `services/marketPrices.js`'s header comment, and surfaces to the user directly (a 400 with a clear message on refresh, a hint string in the LIFF add/edit form).
+
+✅ **Holdings CRUD with computed fields** — `asset_holdings` (migration `011_portfolio.sql`), `line_user_id`-keyed like everything else. `portfolioController.js`'s `withComputedFields()` derives `cost_basis`, `market_value`, `gain`, `gain_percent` on every read rather than storing them (they're pure functions of `quantity`/`average_cost`/`current_price`, so storing them would just be a cache that could drift). `market_value` falls back to `cost_basis` when there's no price yet, so the frontend never has to null-check it before summing.
+
+✅ **Live price refresh** — `services/marketPrices.js`: `fetchStockOrEtfPrice()` (Yahoo Finance, plain ticker) and `fetchCryptoPrice()` (CoinGecko, which needs its own coin id like `"bitcoin"` — NOT a ticker like `"BTC"`, since tickers aren't unique across coins there). Both are public/keyless, which also means unofficial and best-effort — every call is wrapped with a 10s timeout and a clear thrown message, never a crash. `POST /api/portfolio/:line_user_id/refresh-all` refreshes every live-priced holding, one failure doesn't block the rest, and failures are reported back per-symbol rather than silently dropped.
+
+✅ **Emergency Fund points at an existing account, not a new ledger** — `users.emergency_fund_goal_amount` + `users.emergency_fund_account_id` (FK to `accounts`, Phase 2A). "Current amount saved" is read live from that account's real `balance` rather than duplicated into a second number that could drift out of sync — exactly one source of truth for any given pile of money. Configured via `PUT /api/users/:line_user_id/emergency-fund` (validates the account actually belongs to the user); surfaced via `GET /api/portfolio/:line_user_id`'s `emergency_fund` field (`goal_amount`, `current_amount`, `percent_funded`) since that's where the LIFF Portfolio section actually renders it.
+
+✅ **Surplus allocation nudge** — computed client-side only (no new backend endpoint): the Analytics tab's existing current-billing-cycle transaction fetch is reused to compute net surplus, and if an emergency fund is configured and under its goal, a one-line suggestion renders ("Surplus this period: X. Consider adding it to \"Account\" (Y% funded) or your portfolio."). At goal, the suggestion flips to recommending the portfolio instead. With no emergency fund configured, the whole card stays hidden — there's nothing true to say about progress toward a goal that doesn't exist yet.
+
+✅ **LIFF UI** — folded into the Analytics (วิเคราะห์) tab as a new "Portfolio & Net Worth" section (value/cost/gain summary, allocation-by-type bars reusing the existing category-breakdown chart markup, emergency fund progress bar, holdings list, "+ Add Holding"/"Refresh Prices" buttons), not a new tab — same pattern as Accounts folding into หมวด/งบ and Shared Bills folding into สรุป. The add/edit holding modal locks `asset_type`/`symbol` once editing (same UX precedent as the Category edit modal locking name/type) and swaps between a live-price hint and a manual current-price field depending on the selected type. Emergency Fund goal/account configuration lives in Settings, next to Budget Cycle and Email — same precedent as every other account-level setting.
+
+**Verified**: new `portfolio_test.js` (ad hoc, not committed) — holding creation across types including a manual `current_price` on a gold holding; `market_value` falling back to `cost_basis` with no price; validation (bad `asset_type`, negative `quantity`); totals and allocation-percentage math; an update recomputing `cost_basis`; `refresh-price` correctly rejecting a manual-only type (gold, 400) while a **real, live call to Yahoo Finance for AAPL succeeded** and returned a real-looking market price; `refresh-all` attempting exactly the one live-priced holding and skipping gold; emergency fund status starting unset, then correctly reading a real linked account's balance and computing `percent_funded`, rejecting an account that doesn't belong to the user, and clearing cleanly — 21/21. A separate direct call to `fetchCryptoPrice('bitcoin')` also succeeded live against CoinGecko, and an invalid coin id failed with the intended clear message rather than crashing. Full `accounts_test.js` (16/16), `bills_test.js` (27/27), and `alerts_test.js` (6/6) regressions re-run after these changes — all unaffected. Zero-emoji sweep re-verified across all LIFF files.
+
+### Event Budgets, Verified Export Email, LIFF Nav Restructure
+
+✅ **Event/occasion budget buckets** (migration `012_budget_events.sql`, blueprint section 5) — a category's existing `budget_amount`/`budget_period` stays the recurring "normal" limit; `budget_events` is a one-off limit for one specific month (`period_month`, always the 1st) layered on top, always tied to an existing category. `budgetEventController.js`'s `withSpent()` computes `spent`/`remaining`/`percent` on read by summing that category's expenses within the month (UTC month bounds) — no transaction-tagging column added. Display-only for now: deliberately **not** wired into `services/budgetAlert.js`'s push alerts (deferred product decision). LIFF: "Event & Occasion Budgets" section in the Budgets tab, current month only.
+
+✅ **Google OAuth for verified export email** (migration `013_google_email_verification.sql`) — narrow and secondary: LINE Login remains the only identity. `services/googleOAuth.js` (scope `openid email`, `state` carries `line_user_id`, rejects unverified emails) stores `users.google_email`/`google_linked_at`; the email-export endpoint prefers `google_email` over the legacy free-text `email`, which stays as a fallback and is hidden in Settings once Google is connected. Google blocks its consent screen in embedded webviews (403 `disallowed_useragent`), so the LIFF app opens it with `liff.openWindowExternal(url, true)`; the callback renders a plain "close this tab" HTML page, and a `visibilitychange` listener re-fetches the user when the LIFF tab regains focus. Needs `GOOGLE_OAUTH_CLIENT_ID`/`GOOGLE_OAUTH_CLIENT_SECRET`/`GOOGLE_OAUTH_REDIRECT_URI` (must be the public tunnel URL + `/api/google/callback`, registered in Google Cloud Console) — without them, a clean 501.
+
+✅ **LIFF nav restructure** — bottom nav is now Home / Transactions / Budgets / Net Worth / Settings (English labels, inline stroke SVG icons using `currentColor` — no icon library). Analytics charts and category breakdown moved into Budgets; Portfolio + Emergency Fund into Net Worth. Zero-emoji sweep re-verified across all LIFF files.
+
+**Verified**: new `budget_events_test.js` (ad hoc, not committed), run after migrations 012/013 were applied — `spent` counts only the event's own category within its own month (a previous-month expense and another category's expense are both excluded), over-budget caps `percent` at 100 with a negative `remaining`, validation (missing/negative/zero amount, another user's category), month filter, update recomputing `percent`, update/delete with the wrong `line_user_id` not touching the row, `google_email` round-tripping through `GET /api/users/:id`, the Google callback's 400 page with no `code`, and the email export still 400ing with neither email set — 19/19. The `accounts_test.js`, `bills_test.js`, `alerts_test.js` and `portfolio_test.js` regressions were re-run with zero failures. The real Google consent round-trip is untested until OAuth credentials are configured.

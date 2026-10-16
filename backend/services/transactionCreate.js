@@ -1,5 +1,5 @@
 const supabase = require('../config/supabase');
-const { checkBudgetAndAlert } = require('./budgetAlert');
+const { evaluateBudgetAlert, pushBudgetAlertIfEnabled } = require('./budgetAlert');
 const { adjustAccountBalance } = require('./accountBalance');
 
 class InvalidCategoryError extends Error {}
@@ -28,6 +28,12 @@ async function createTransaction({
   transactionDate,
   fromAccountId,
   toAccountId,
+  // 'liff' gets the budget alert back in the return value for an instant
+  // in-app banner instead of a LINE push -- every other value (the LINE bot,
+  // the recurring-transactions job, or simply omitted) pushes via LINE, since
+  // that's the only way to reach someone who isn't looking at a screen.
+  // Never both, so one budget crossing never produces two alerts.
+  channel,
 }) {
   if (type === 'transfer') {
     if (!fromAccountId || !toAccountId) {
@@ -110,14 +116,25 @@ async function createTransaction({
     );
   }
 
+  let budgetAlert = null;
   if (type === 'expense') {
-    // Fire-and-forget: never let a budget-check/push failure affect the response.
-    checkBudgetAndAlert(lineUserId, categoryId, amount).catch((err) =>
-      console.error('checkBudgetAndAlert failed:', err.message)
-    );
+    // Cheap DB-only reads, safe to await (unlike the push itself) -- this is
+    // what lets the LIFF channel get the alert back in this same response.
+    try {
+      budgetAlert = await evaluateBudgetAlert(lineUserId, categoryId, amount);
+    } catch (err) {
+      console.error('evaluateBudgetAlert failed:', err.message);
+    }
+
+    if (budgetAlert && channel !== 'liff') {
+      // Fire-and-forget: never let a push failure affect the response.
+      pushBudgetAlertIfEnabled(lineUserId, budgetAlert).catch((err) =>
+        console.error('pushBudgetAlertIfEnabled failed:', err.message)
+      );
+    }
   }
 
-  return transaction;
+  return { ...transaction, budget_alert: budgetAlert };
 }
 
 module.exports = { createTransaction, InvalidCategoryError, DuplicateSlipError, InvalidAccountError };

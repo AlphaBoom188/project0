@@ -4,6 +4,7 @@ const el = {
   loading: document.getElementById('loading'),
   app: document.getElementById('app'),
   errorBanner: document.getElementById('error-banner'),
+  budgetAlertBanner: document.getElementById('budget-alert-banner'),
   profilePicture: document.getElementById('profile-picture'),
   profileName: document.getElementById('profile-name'),
 
@@ -15,6 +16,37 @@ const el = {
   transactionList: document.getElementById('transaction-list'),
   emptyState: document.getElementById('empty-state'),
   addExpenseButton: document.getElementById('add-expense-button'),
+
+  // Shared Bills (Dashboard tab)
+  billsList: document.getElementById('bills-list'),
+  billsEmptyState: document.getElementById('bills-empty-state'),
+  addBillButton: document.getElementById('add-bill-button'),
+
+  // Bill create modal
+  billModal: document.getElementById('bill-modal'),
+  billForm: document.getElementById('bill-form'),
+  cancelBill: document.getElementById('cancel-bill'),
+  billFieldTitle: document.getElementById('bill-field-title'),
+  billFieldTotal: document.getElementById('bill-field-total'),
+  billSplitButtons: document.querySelectorAll('[data-split-type]'),
+  billParticipantsList: document.getElementById('bill-participants-list'),
+  billAddParticipant: document.getElementById('bill-add-participant'),
+  billItemizedSection: document.getElementById('bill-itemized-section'),
+  billFieldReceiptImage: document.getElementById('bill-field-receipt-image'),
+  billScanStatus: document.getElementById('bill-scan-status'),
+  billItemsList: document.getElementById('bill-items-list'),
+  billAddItem: document.getElementById('bill-add-item'),
+  billModalError: document.getElementById('bill-modal-error'),
+
+  // Bill detail modal
+  billDetailModal: document.getElementById('bill-detail-modal'),
+  billDetailTitle: document.getElementById('bill-detail-title'),
+  billDetailMeta: document.getElementById('bill-detail-meta'),
+  billDetailParticipants: document.getElementById('bill-detail-participants'),
+  billDetailError: document.getElementById('bill-detail-error'),
+  billCopyLink: document.getElementById('bill-copy-link'),
+  billDelete: document.getElementById('bill-delete'),
+  closeBillDetail: document.getElementById('close-bill-detail'),
 
   // Add Expense modal
   addExpenseModal: document.getElementById('add-expense-modal'),
@@ -33,17 +65,83 @@ const el = {
   tabContent: document.querySelector('.tab-content'),
   navTabs: Array.from(document.querySelectorAll('.nav-tab')),
   tabPanels: {
-    dashboard: document.getElementById('tab-dashboard'),
-    analytics: document.getElementById('tab-analytics'),
-    categories: document.getElementById('tab-categories'),
+    home: document.getElementById('tab-home'),
     transactions: document.getElementById('tab-transactions'),
+    budgets: document.getElementById('tab-budgets'),
+    networth: document.getElementById('tab-networth'),
     settings: document.getElementById('tab-settings'),
   },
 
-  // Analytics tab
+  // Home tab
   trendChart: document.getElementById('trend-chart'),
+
+  // Budgets tab
   categoryChart: document.getElementById('category-chart'),
   analyticsEmptyState: document.getElementById('analytics-empty-state'),
+  budgetsStatus: document.getElementById('budgets-status'),
+  advancedToggle: document.getElementById('advanced-toggle'),
+  advancedSection: document.getElementById('advanced-section'),
+
+  // Event/Occasion budgets (Budgets tab)
+  eventsList: document.getElementById('events-list'),
+  eventsEmptyState: document.getElementById('events-empty-state'),
+  addEventButton: document.getElementById('add-event-button'),
+  eventModal: document.getElementById('event-modal'),
+  eventForm: document.getElementById('event-form'),
+  cancelEvent: document.getElementById('cancel-event'),
+  eventFieldTitle: document.getElementById('event-field-title'),
+  eventFieldCategory: document.getElementById('event-field-category'),
+  eventFieldAmount: document.getElementById('event-field-amount'),
+  eventFieldMonth: document.getElementById('event-field-month'),
+  eventModalError: document.getElementById('event-modal-error'),
+
+  // Net Worth tab
+  networthStatus: document.getElementById('networth-status'),
+
+  // Transactions tab
+  txnScanButton: document.getElementById('txn-scan-button'),
+
+  // Google connect (Settings tab, export-email verification only)
+  connectGoogleButton: document.getElementById('connect-google-button'),
+  googleConnectedRow: document.getElementById('google-connected-row'),
+  googleConnectedEmail: document.getElementById('google-connected-email'),
+  disconnectGoogle: document.getElementById('disconnect-google'),
+  googleConnectStatus: document.getElementById('google-connect-status'),
+  legacyEmailField: document.getElementById('legacy-email-field'),
+
+  // Portfolio & Net Worth (Net Worth tab)
+  refreshPricesButton: document.getElementById('refresh-prices-button'),
+  portfolioTotalValue: document.getElementById('portfolio-total-value'),
+  portfolioTotalCost: document.getElementById('portfolio-total-cost'),
+  portfolioTotalGain: document.getElementById('portfolio-total-gain'),
+  portfolioAllocationChart: document.getElementById('portfolio-allocation-chart'),
+  emergencyFundCard: document.getElementById('emergency-fund-card'),
+  emergencyFundLabel: document.getElementById('emergency-fund-label'),
+  emergencyFundFill: document.getElementById('emergency-fund-fill'),
+  emergencyFundSuggestion: document.getElementById('emergency-fund-suggestion'),
+  holdingsList: document.getElementById('holdings-list'),
+  holdingsEmptyState: document.getElementById('holdings-empty-state'),
+  addHoldingButton: document.getElementById('add-holding-button'),
+
+  // Holding modal
+  holdingModal: document.getElementById('holding-modal'),
+  holdingForm: document.getElementById('holding-form'),
+  cancelHolding: document.getElementById('cancel-holding'),
+  holdingFieldType: document.getElementById('holding-field-type'),
+  holdingSymbolField: document.getElementById('holding-symbol-field'),
+  holdingFieldSymbol: document.getElementById('holding-field-symbol'),
+  holdingSymbolHint: document.getElementById('holding-symbol-hint'),
+  holdingFieldName: document.getElementById('holding-field-name'),
+  holdingFieldQuantity: document.getElementById('holding-field-quantity'),
+  holdingFieldCost: document.getElementById('holding-field-cost'),
+  holdingPriceField: document.getElementById('holding-price-field'),
+  holdingFieldPrice: document.getElementById('holding-field-price'),
+  holdingModalError: document.getElementById('holding-modal-error'),
+
+  // Emergency Fund settings (Settings tab)
+  settingEfGoal: document.getElementById('setting-ef-goal'),
+  settingEfAccount: document.getElementById('setting-ef-account'),
+  saveEmergencyFund: document.getElementById('save-emergency-fund'),
 
   // Categories tab
   categoriesTypeExpense: document.getElementById('categories-type-expense'),
@@ -95,6 +193,7 @@ const el = {
   txnEmptyState: document.getElementById('txn-empty-state'),
 
   // Settings tab
+  themeOptionButtons: document.querySelectorAll('[data-theme-option]'),
   settingNotifications: document.getElementById('setting-notifications'),
   settingThumbnails: document.getElementById('setting-thumbnails'),
   settingCycleDay: document.getElementById('setting-cycle-day'),
@@ -133,6 +232,10 @@ let currentUser = null;
 let scannedThumbnailPath = null;
 let categoriesTabType = 'expense';
 let editingCategoryId = null;
+let billSplitType = 'equal';
+let openBillDetailId = null;
+let editingHoldingId = null;
+const MANUAL_PRICE_ASSET_TYPES = ['mutual_fund', 'gold']; // mirrors backend/services/marketPrices.js -- no live price source for these
 
 // ---- API + in-memory cache ----
 //
@@ -185,6 +288,20 @@ function showError(message) {
   el.errorBanner.hidden = false;
 }
 
+// Real-time Channel B alert (see backend/services/transactionCreate.js): the
+// server already decided NOT to also push this via LINE because this request
+// came from the LIFF channel -- this banner IS the one and only notification
+// for this budget crossing, so it has to actually show it, not just log it.
+let budgetAlertTimer = null;
+function showBudgetAlert(alert) {
+  clearTimeout(budgetAlertTimer);
+  el.budgetAlertBanner.textContent = `Budget alert: your "${alert.categoryName}" ${alert.budgetPeriod} budget of ${alert.budgetAmount.toFixed(2)} has been reached (${alert.totalSpent.toFixed(2)} spent).`;
+  el.budgetAlertBanner.hidden = false;
+  budgetAlertTimer = setTimeout(() => {
+    el.budgetAlertBanner.hidden = true;
+  }, 8000);
+}
+
 // The modal is a fixed, full-screen overlay, so the top-level error banner would be
 // rendered underneath it and never seen -- errors from inside a modal need their
 // own visible spot instead of (or in addition to) the global banner.
@@ -235,6 +352,12 @@ function formatDate(isoString) {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
+// YYYY-MM-01, matching backend/controllers/budgetEventController.js's period_month shape.
+function currentMonthFirstDay() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+}
+
 function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
@@ -273,16 +396,46 @@ function confirmAction(message, confirmLabel = 'Delete') {
   });
 }
 
+// ---- Theme (System / Light / Dark) ----
+//
+// Persisted client-side only (localStorage), not a backend preference -- the
+// <head> inline script already applied any saved choice before first paint.
+function applyTheme(choice) {
+  if (choice === 'light' || choice === 'dark') {
+    document.documentElement.setAttribute('data-theme', choice);
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+  }
+  for (const button of el.themeOptionButtons) {
+    button.classList.toggle('active', button.dataset.themeOption === choice);
+  }
+}
+
+function setTheme(choice) {
+  if (choice === 'system') {
+    localStorage.removeItem('theme');
+  } else {
+    localStorage.setItem('theme', choice);
+  }
+  applyTheme(choice);
+}
+
+for (const button of el.themeOptionButtons) {
+  button.addEventListener('click', () => setTheme(button.dataset.themeOption));
+}
+
+applyTheme(localStorage.getItem('theme') || 'system');
+
 // ---- Tab navigation ----
 //
 // Switching is pure, synchronous show/hide (instant); each tab's load function
 // runs after, not blocking the switch, and reads through cachedGet so a repeat
 // visit this session resolves immediately instead of re-fetching.
 const TAB_LOADERS = {
-  dashboard: loadDashboardTab,
-  analytics: loadAnalyticsTab,
-  categories: loadCategoriesTab,
+  home: loadHomeTab,
   transactions: loadTransactionsTab,
+  budgets: loadBudgetsTab,
+  networth: loadNetWorthTab,
   settings: loadSettingsTab,
 };
 
@@ -312,7 +465,7 @@ function renderSummary(transactions, periodLabel) {
   el.summaryIncome.textContent = totals.income.toFixed(2);
   el.summaryExpense.textContent = totals.expense.toFixed(2);
   el.summaryNet.textContent = net.toFixed(2);
-  el.summaryNet.style.color = net >= 0 ? '#06c755' : '#e53935';
+  el.summaryNet.style.color = net >= 0 ? 'var(--color-income)' : 'var(--color-expense)';
 }
 
 function renderTransactionList(target, emptyStateEl, transactions, { showPaymentMethod = false } = {}) {
@@ -341,14 +494,17 @@ function renderTransactionList(target, emptyStateEl, transactions, { showPayment
   }
 }
 
-async function loadDashboardTab() {
+async function loadHomeTab() {
   // The transactions fetch can't be date-filtered server-side until we know the
   // user's billing_cycle_start_day, which only comes back from the /users call --
-  // so instead of waiting on that before firing it, fetch a fixed recent window
-  // in parallel with everything else and filter the cycle window client-side.
-  const [userResponse, transactionsResponse] = await Promise.all([
+  // so instead of waiting on that before firing it, fetch a wide-enough window
+  // (6 months, also covers the Monthly Pulse trend chart) in parallel with
+  // everything else and filter the cycle window client-side.
+  const sixMonthsAgoISO = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() - 5, 1)).toISOString();
+  const [userResponse, transactionsResponse, billsResponse] = await Promise.all([
     cachedGet(`/users/${lineUserId}`),
-    cachedGet(`/transactions/${lineUserId}?limit=50`),
+    cachedGet(`/transactions/${lineUserId}?start_date=${encodeURIComponent(sixMonthsAgoISO)}&limit=1000`),
+    cachedGet(`/bills/${lineUserId}`),
   ]);
 
   currentUser = userResponse.user;
@@ -368,7 +524,11 @@ async function loadDashboardTab() {
   });
 
   renderSummary(inPeriod, periodLabel);
-  renderTransactionList(el.transactionList, el.emptyState, allTransactions);
+  renderTrendChart(allTransactions);
+  // allTransactions is newest-first (API default order) across the whole
+  // 6-month window -- the first 50 are still the 50 most recent overall.
+  renderTransactionList(el.transactionList, el.emptyState, allTransactions.slice(0, 50));
+  renderBillsList(billsResponse.bills);
 }
 
 // ---- Add Expense modal ----
@@ -487,7 +647,7 @@ async function handleAddExpenseSubmit(event) {
   clearModalError(el.modalError);
 
   try {
-    await apiRequest(`/transactions/${lineUserId}`, {
+    const response = await apiRequest(`/transactions/${lineUserId}`, {
       method: 'POST',
       body: JSON.stringify({
         // Left empty ("Auto-Categorize"), this key is dropped entirely by
@@ -499,16 +659,313 @@ async function handleAddExpenseSubmit(event) {
         description: el.fieldDescription.value || undefined,
         thumbnail_url: scannedThumbnailPath || undefined,
         transaction_date: new Date(`${el.fieldDate.value}T12:00:00Z`).toISOString(),
+        // Tells the backend to skip its own LINE push for this budget crossing
+        // and hand the alert back here instead -- see transactionCreate.js.
+        channel: 'liff',
       }),
     });
     closeAddExpenseModal();
-    await loadDashboardTab();
+    await loadHomeTab();
+    if (response.budget_alert) {
+      showBudgetAlert(response.budget_alert);
+    }
   } catch (error) {
     // Shown inside the modal, not the top-level banner -- the modal overlay would
     // otherwise hide the banner from view while still open.
     showModalError(el.modalError, error.message);
   } finally {
     submitButton.disabled = false;
+  }
+}
+
+// ---- Shared Bills ----
+//
+// Participants are plain display names, not linked LINE accounts (see migration
+// 010's header comment for why) -- settlement happens either here, by the
+// creator tapping "Mark Paid" on someone's behalf, or by the participant
+// themselves via the public, no-login bill.html share link (the bill's UUID
+// is the only "auth" that page has, same model a payment-split link uses).
+
+function renderBillsList(bills) {
+  el.billsList.innerHTML = '';
+  el.billsEmptyState.hidden = bills.length > 0;
+
+  for (const bill of bills) {
+    const participants = bill.shared_bill_participants || [];
+    const paidCount = participants.filter((p) => p.is_paid).length;
+    const statusText = bill.status === 'settled' ? 'Settled' : `${paidCount}/${participants.length} paid`;
+
+    const li = document.createElement('li');
+    li.className = 'category-row';
+    li.innerHTML = `
+      <div class="category-row-top">
+        <span class="category-name">${escapeHtml(bill.title)}</span>
+        <span class="bill-status-pill ${bill.status === 'settled' ? 'paid' : 'unpaid'}">${statusText}</span>
+      </div>
+      <div class="category-bar-label-row"><span>${parseFloat(bill.total_amount).toFixed(2)}</span></div>
+    `;
+    li.addEventListener('click', () => openBillDetail(bill.id));
+    el.billsList.appendChild(li);
+  }
+}
+
+// ---- Bill create modal ----
+
+function setBillSplitType(type) {
+  billSplitType = type;
+  for (const button of el.billSplitButtons) {
+    button.classList.toggle('active', button.dataset.splitType === type);
+  }
+  el.billItemizedSection.hidden = type !== 'itemized';
+  const showAmount = type === 'custom';
+  el.billParticipantsList.querySelectorAll('.bill-participant-amount').forEach((input) => {
+    input.hidden = !showAmount;
+  });
+}
+
+for (const button of el.billSplitButtons) {
+  button.addEventListener('click', () => setBillSplitType(button.dataset.splitType));
+}
+
+function participantNames() {
+  return Array.from(el.billParticipantsList.querySelectorAll('.bill-participant-name')).map((input) => input.value || 'Unnamed');
+}
+
+// Keeps every item row's participant dropdown in sync with the current
+// participant list/names -- called on add/remove/rename so an item can
+// always be assigned to someone, even if they were added after the item.
+function refreshItemParticipantSelects() {
+  const names = participantNames();
+  el.billItemsList.querySelectorAll('.bill-item-participant').forEach((select) => {
+    const current = select.value;
+    const options = names.map((name, i) => `<option value="${i}">${escapeHtml(name)}</option>`).join('');
+    select.innerHTML = `<option value="">Shared</option>${options}`;
+    if (current !== '' && Number(current) < names.length) select.value = current;
+  });
+}
+
+function addParticipantRow(name = '', amount = '') {
+  const row = document.createElement('div');
+  row.className = 'bill-participant-row';
+  row.innerHTML = `
+    <input type="text" class="bill-participant-name" placeholder="Name" maxlength="128" />
+    <input type="number" class="bill-participant-amount" placeholder="Amount" step="0.01" min="0" ${billSplitType === 'custom' ? '' : 'hidden'} />
+    <button type="button" class="bill-row-remove" aria-label="Remove">&times;</button>
+  `;
+  row.querySelector('.bill-participant-name').value = name;
+  row.querySelector('.bill-participant-amount').value = amount;
+  row.querySelector('.bill-participant-name').addEventListener('input', refreshItemParticipantSelects);
+  row.querySelector('.bill-row-remove').addEventListener('click', () => {
+    row.remove();
+    refreshItemParticipantSelects();
+  });
+  el.billParticipantsList.appendChild(row);
+  refreshItemParticipantSelects();
+}
+
+function addItemRow(name = '', amount = '', participantIndex = null) {
+  const names = participantNames();
+  const options = names.map((n, i) => `<option value="${i}" ${i === participantIndex ? 'selected' : ''}>${escapeHtml(n)}</option>`).join('');
+
+  const row = document.createElement('div');
+  row.className = 'bill-item-row';
+  row.innerHTML = `
+    <input type="text" class="bill-item-name" placeholder="Item" maxlength="128" />
+    <input type="number" class="bill-item-amount" placeholder="Amount" step="0.01" min="0.01" />
+    <select class="bill-item-participant"><option value="" ${participantIndex === null ? 'selected' : ''}>Shared</option>${options}</select>
+    <button type="button" class="bill-row-remove" aria-label="Remove">&times;</button>
+  `;
+  row.querySelector('.bill-item-name').value = name;
+  row.querySelector('.bill-item-amount').value = amount;
+  row.querySelector('.bill-row-remove').addEventListener('click', () => row.remove());
+  el.billItemsList.appendChild(row);
+}
+
+async function handleBillReceiptFileChange(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  clearModalError(el.billModalError);
+  el.billScanStatus.hidden = false;
+  el.billScanStatus.classList.remove('scan-error');
+  el.billScanStatus.textContent = 'Scanning receipt…';
+
+  try {
+    const resizedBlob = await resizeImageToJpegBlob(file);
+    const { base64 } = await blobToBase64AndHash(resizedBlob);
+
+    const response = await apiRequest(`/bills/${lineUserId}/scan-items`, {
+      method: 'POST',
+      body: JSON.stringify({ image_base64: base64 }),
+    });
+
+    const data = response.data;
+    for (const item of data.items) {
+      addItemRow(item.name, item.amount, null);
+    }
+    if (data.tax) addItemRow('Tax', data.tax, null);
+    if (data.service_charge) addItemRow('Service Charge', data.service_charge, null);
+    if (data.total != null) el.billFieldTotal.value = data.total;
+
+    el.billScanStatus.textContent = 'Scanned — assign each item to a person below, or leave it Shared.';
+  } catch (error) {
+    el.billScanStatus.classList.add('scan-error');
+    el.billScanStatus.textContent = error.message;
+  }
+}
+
+function resetBillModal() {
+  el.billFieldTitle.value = '';
+  el.billFieldTotal.value = '';
+  el.billParticipantsList.innerHTML = '';
+  el.billItemsList.innerHTML = '';
+  el.billFieldReceiptImage.value = '';
+  el.billScanStatus.hidden = true;
+  el.billScanStatus.classList.remove('scan-error');
+  setBillSplitType('equal');
+  addParticipantRow();
+}
+
+function openBillModal() {
+  clearModalError(el.billModalError);
+  resetBillModal();
+  el.billModal.hidden = false;
+}
+
+function closeBillModal() {
+  el.billModal.hidden = true;
+}
+
+function collectParticipants() {
+  return Array.from(el.billParticipantsList.querySelectorAll('.bill-participant-row')).map((row) => ({
+    display_name: row.querySelector('.bill-participant-name').value.trim(),
+    amount_owed: parseFloat(row.querySelector('.bill-participant-amount').value) || 0,
+  }));
+}
+
+function collectItems() {
+  return Array.from(el.billItemsList.querySelectorAll('.bill-item-row')).map((row) => {
+    const participantValue = row.querySelector('.bill-item-participant').value;
+    return {
+      name: row.querySelector('.bill-item-name').value.trim(),
+      amount: parseFloat(row.querySelector('.bill-item-amount').value),
+      participant_index: participantValue === '' ? null : Number(participantValue),
+    };
+  });
+}
+
+async function handleBillSubmit(event) {
+  event.preventDefault();
+  const submitButton = event.submitter;
+  submitButton.disabled = true;
+  clearModalError(el.billModalError);
+
+  try {
+    const participants = collectParticipants();
+    if (participants.length === 0 || participants.some((p) => !p.display_name)) {
+      throw new Error('Every participant needs a name.');
+    }
+
+    const payload = {
+      title: el.billFieldTitle.value,
+      total_amount: parseFloat(el.billFieldTotal.value),
+      split_type: billSplitType,
+      participants: participants.map((p) => (billSplitType === 'custom' ? p : { display_name: p.display_name })),
+    };
+    if (billSplitType === 'itemized') {
+      payload.items = collectItems();
+    }
+
+    await apiRequest(`/bills/${lineUserId}`, { method: 'POST', body: JSON.stringify(payload) });
+    closeBillModal();
+    await loadHomeTab();
+  } catch (error) {
+    showModalError(el.billModalError, error.message);
+  } finally {
+    submitButton.disabled = false;
+  }
+}
+
+// ---- Bill detail modal ----
+
+async function openBillDetail(billId) {
+  openBillDetailId = billId;
+  clearModalError(el.billDetailError);
+  el.billDetailModal.hidden = false;
+  try {
+    const response = await apiRequest(`/bills/${lineUserId}/${billId}`);
+    renderBillDetail(response.bill);
+  } catch (error) {
+    showModalError(el.billDetailError, error.message);
+  }
+}
+
+function renderBillDetail(bill) {
+  el.billDetailTitle.textContent = bill.title;
+  el.billDetailMeta.textContent = `${parseFloat(bill.total_amount).toFixed(2)} total — ${bill.split_type} split`;
+
+  el.billDetailParticipants.innerHTML = '';
+  for (const participant of bill.shared_bill_participants) {
+    const li = document.createElement('li');
+    li.className = 'category-row';
+    li.innerHTML = `
+      <div class="bill-participant-detail-row">
+        <span class="category-name">${escapeHtml(participant.display_name)}</span>
+        <span>${parseFloat(participant.amount_owed).toFixed(2)}</span>
+        <button type="button" class="bill-participant-toggle ${participant.is_paid ? 'active' : ''}">${participant.is_paid ? 'Paid' : 'Mark Paid'}</button>
+      </div>
+    `;
+    li.querySelector('.bill-participant-toggle').addEventListener('click', () =>
+      toggleParticipantPaid(bill.id, participant.id, !participant.is_paid)
+    );
+    el.billDetailParticipants.appendChild(li);
+  }
+}
+
+async function toggleParticipantPaid(billId, participantId, isPaid) {
+  clearModalError(el.billDetailError);
+  try {
+    await apiRequest(`/bills/${lineUserId}/${billId}/participants/${participantId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ is_paid: isPaid }),
+    });
+    const response = await apiRequest(`/bills/${lineUserId}/${billId}`);
+    renderBillDetail(response.bill);
+    await loadHomeTab();
+  } catch (error) {
+    showModalError(el.billDetailError, error.message);
+  }
+}
+
+function closeBillDetailModal() {
+  el.billDetailModal.hidden = true;
+  openBillDetailId = null;
+}
+
+async function handleDeleteBill() {
+  if (!openBillDetailId) return;
+  const confirmed = await confirmAction('Delete this shared bill? This cannot be undone.');
+  if (!confirmed) return;
+  try {
+    await apiRequest(`/bills/${lineUserId}/${openBillDetailId}`, { method: 'DELETE' });
+    closeBillDetailModal();
+    await loadHomeTab();
+  } catch (error) {
+    showModalError(el.billDetailError, error.message);
+  }
+}
+
+async function handleCopyShareLink() {
+  if (!openBillDetailId) return;
+  const url = `${location.origin}/liff/bill.html?id=${openBillDetailId}`;
+  try {
+    await navigator.clipboard.writeText(url);
+    el.billCopyLink.textContent = 'Link Copied';
+    setTimeout(() => {
+      el.billCopyLink.textContent = 'Copy Share Link';
+    }, 2000);
+  } catch (error) {
+    showModalError(el.billDetailError, `Could not copy automatically — copy this link manually: ${url}`);
   }
 }
 
@@ -588,24 +1045,216 @@ function renderCategoryBreakdown(transactions, periodStart, periodEnd) {
   return rows.length > 0;
 }
 
-async function loadAnalyticsTab() {
+// Shared by loadBudgetsTab and loadNetWorthTab -- both need "surplus this
+// period" (Budgets for the category breakdown context, Net Worth for the
+// emergency-fund allocation nudge), and both need currentUser's billing cycle
+// loaded first.
+async function ensureCurrentUser() {
   if (!currentUser) {
     const userResponse = await cachedGet(`/users/${lineUserId}`);
     currentUser = userResponse.user;
   }
+  return currentUser;
+}
 
-  // One fetch covering a wide-enough window for both charts: the trend chart
-  // needs the last 6 months, the breakdown needs the current billing cycle
-  // (which the trend window always contains).
-  const sixMonthsAgoISO = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() - 5, 1)).toISOString();
-  const response = await cachedGet(`/transactions/${lineUserId}?start_date=${encodeURIComponent(sixMonthsAgoISO)}&limit=1000`);
-  const transactions = response.transactions;
-
-  renderTrendChart(transactions);
-
+async function computeCurrentPeriodSurplus() {
+  await ensureCurrentUser();
   const { startISO, endISO } = getBillingCycleRange(currentUser.billing_cycle_start_day);
-  const hasBreakdown = renderCategoryBreakdown(transactions, new Date(startISO), new Date(endISO));
-  el.analyticsEmptyState.hidden = transactions.length > 0 || hasBreakdown;
+  const periodStart = new Date(startISO);
+  const periodEnd = new Date(endISO);
+  const response = await cachedGet(`/transactions/${lineUserId}?start_date=${encodeURIComponent(startISO)}&end_date=${encodeURIComponent(endISO)}&limit=1000`);
+  const surplus = response.transactions.reduce(
+    (sum, t) => sum + (t.type === 'income' ? 1 : t.type === 'expense' ? -1 : 0) * parseFloat(t.amount),
+    0
+  );
+  return { surplus, periodStart, periodEnd };
+}
+
+// ---- Portfolio & Net Worth (Analytics tab) ----
+
+const ASSET_TYPE_LABELS = { stock: 'Stock', etf: 'ETF', crypto: 'Crypto', mutual_fund: 'Mutual Fund', gold: 'Gold' };
+
+function renderPortfolio(data, surplus) {
+  el.portfolioTotalValue.textContent = data.totals.total_value.toFixed(2);
+  el.portfolioTotalCost.textContent = data.totals.total_cost_basis.toFixed(2);
+  el.portfolioTotalGain.textContent = data.totals.total_gain.toFixed(2);
+  el.portfolioTotalGain.style.color = data.totals.total_gain >= 0 ? 'var(--color-income)' : 'var(--color-expense)';
+
+  const allocationEntries = Object.entries(data.allocation_by_type).sort((a, b) => b[1] - a[1]);
+  const maxAllocation = Math.max(1, ...allocationEntries.map(([, pct]) => pct));
+  el.portfolioAllocationChart.innerHTML = allocationEntries
+    .map(
+      ([type, pct]) => `
+        <div class="category-bar-row">
+          <div class="category-bar-label-row">
+            <span>${escapeHtml(ASSET_TYPE_LABELS[type] || type)}</span>
+            <span>${pct.toFixed(1)}%</span>
+          </div>
+          <div class="category-bar-track">
+            <div class="category-bar-fill" style="width:${Math.round((pct / maxAllocation) * 100)}%"></div>
+          </div>
+        </div>
+      `
+    )
+    .join('');
+
+  renderEmergencyFund(data.emergency_fund, surplus);
+  renderHoldingsList(data.holdings);
+}
+
+// Deliberately does nothing (no suggestion, no progress bar) until the user
+// has actually configured a goal + account in Settings -- an unconfigured
+// emergency fund has nothing true to say about progress.
+function renderEmergencyFund(fund, surplus) {
+  if (!fund || fund.goal_amount === null || !fund.account_id) {
+    el.emergencyFundCard.hidden = true;
+    return;
+  }
+  el.emergencyFundCard.hidden = false;
+
+  const current = fund.current_amount || 0;
+  const pct = fund.percent_funded || 0;
+  el.emergencyFundLabel.textContent = `${current.toFixed(2)} / ${fund.goal_amount.toFixed(2)} (${pct.toFixed(0)}%)`;
+  el.emergencyFundFill.style.width = `${Math.min(100, pct)}%`;
+
+  if (pct >= 100) {
+    el.emergencyFundSuggestion.textContent = 'Goal reached — consider directing any surplus toward your portfolio instead.';
+  } else if (surplus > 0) {
+    el.emergencyFundSuggestion.textContent = `Surplus this period: ${surplus.toFixed(2)}. Consider adding it to "${fund.account_name}" (${pct.toFixed(0)}% funded) or your portfolio.`;
+  } else {
+    el.emergencyFundSuggestion.textContent = '';
+  }
+}
+
+function renderHoldingsList(holdings) {
+  el.holdingsList.innerHTML = '';
+  el.holdingsEmptyState.hidden = holdings.length > 0;
+
+  for (const holding of holdings) {
+    const li = document.createElement('li');
+    li.className = 'category-row';
+    const gainSign = holding.gain >= 0 ? '+' : '';
+    li.innerHTML = `
+      <div class="category-row-top">
+        <span class="category-name">${escapeHtml(holding.symbol)}${holding.name ? ` — ${escapeHtml(holding.name)}` : ''}</span>
+        <span class="category-budget-label">${holding.market_value.toFixed(2)}</span>
+      </div>
+      <div class="category-bar-label-row">
+        <span>${ASSET_TYPE_LABELS[holding.asset_type]} · ${parseFloat(holding.quantity)} units</span>
+        <span style="color:${holding.gain >= 0 ? 'var(--color-income)' : 'var(--color-expense)'}">${gainSign}${holding.gain.toFixed(2)} (${gainSign}${holding.gain_percent.toFixed(1)}%)</span>
+      </div>
+      <div class="bill-participant-detail-row" style="margin-top: 6px;">
+        <button type="button" class="link-button holding-edit">Edit</button>
+        <button type="button" class="category-delete holding-delete">Delete</button>
+      </div>
+    `;
+    li.querySelector('.holding-edit').addEventListener('click', () => openHoldingModal(holding));
+    li.querySelector('.holding-delete').addEventListener('click', () => handleDeleteHolding(holding.id));
+    el.holdingsList.appendChild(li);
+  }
+}
+
+async function handleDeleteHolding(holdingId) {
+  const confirmed = await confirmAction('Remove this holding from your portfolio?');
+  if (!confirmed) return;
+  try {
+    await apiRequest(`/portfolio/${lineUserId}/${holdingId}`, { method: 'DELETE' });
+    await loadNetWorthTab();
+  } catch (error) {
+    showError(error.message);
+  }
+}
+
+async function handleRefreshPrices() {
+  el.refreshPricesButton.disabled = true;
+  el.refreshPricesButton.textContent = 'Refreshing…';
+  try {
+    const response = await apiRequest(`/portfolio/${lineUserId}/refresh-all`, { method: 'POST' });
+    const failed = response.results.filter((r) => !r.success);
+    await loadNetWorthTab();
+    if (failed.length > 0) {
+      showError(`Could not refresh: ${failed.map((f) => f.symbol).join(', ')}`);
+    }
+  } catch (error) {
+    showError(error.message);
+  } finally {
+    el.refreshPricesButton.disabled = false;
+    el.refreshPricesButton.textContent = 'Refresh Prices';
+  }
+}
+
+// ---- Holding modal ----
+
+function updateHoldingFieldsForType() {
+  const isManual = MANUAL_PRICE_ASSET_TYPES.includes(el.holdingFieldType.value);
+  el.holdingPriceField.hidden = !isManual;
+  el.holdingSymbolHint.textContent =
+    el.holdingFieldType.value === 'crypto'
+      ? 'Use the CoinGecko id (e.g. "bitcoin"), not a ticker like "BTC".'
+      : isManual
+        ? 'No live price source for this type -- enter the current price manually.'
+        : 'Use the exchange ticker (e.g. "AAPL", "VOO").';
+}
+
+function openHoldingModal(holding) {
+  editingHoldingId = holding ? holding.id : null;
+  el.holdingFieldType.value = holding ? holding.asset_type : 'stock';
+  el.holdingFieldType.disabled = !!holding;
+  el.holdingFieldSymbol.value = holding ? holding.symbol : '';
+  el.holdingFieldSymbol.disabled = !!holding;
+  el.holdingFieldName.value = holding ? holding.name || '' : '';
+  el.holdingFieldQuantity.value = holding ? holding.quantity : '';
+  el.holdingFieldCost.value = holding ? holding.average_cost : '';
+  el.holdingFieldPrice.value = holding ? holding.current_price || '' : '';
+  updateHoldingFieldsForType();
+  clearModalError(el.holdingModalError);
+  el.holdingModal.hidden = false;
+}
+
+function closeHoldingModal() {
+  el.holdingModal.hidden = true;
+  el.holdingFieldType.disabled = false;
+  el.holdingFieldSymbol.disabled = false;
+}
+
+async function handleHoldingSubmit(event) {
+  event.preventDefault();
+  const submitButton = event.submitter;
+  submitButton.disabled = true;
+  clearModalError(el.holdingModalError);
+
+  try {
+    const isManual = MANUAL_PRICE_ASSET_TYPES.includes(el.holdingFieldType.value);
+    if (editingHoldingId) {
+      await apiRequest(`/portfolio/${lineUserId}/${editingHoldingId}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          name: el.holdingFieldName.value || null,
+          quantity: parseFloat(el.holdingFieldQuantity.value),
+          average_cost: parseFloat(el.holdingFieldCost.value),
+          current_price: isManual && el.holdingFieldPrice.value ? parseFloat(el.holdingFieldPrice.value) : undefined,
+        }),
+      });
+    } else {
+      await apiRequest(`/portfolio/${lineUserId}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          asset_type: el.holdingFieldType.value,
+          symbol: el.holdingFieldSymbol.value,
+          name: el.holdingFieldName.value || undefined,
+          quantity: parseFloat(el.holdingFieldQuantity.value),
+          average_cost: parseFloat(el.holdingFieldCost.value),
+          current_price: isManual && el.holdingFieldPrice.value ? parseFloat(el.holdingFieldPrice.value) : undefined,
+        }),
+      });
+    }
+    closeHoldingModal();
+    await loadNetWorthTab();
+  } catch (error) {
+    showModalError(el.holdingModalError, error.message);
+  } finally {
+    submitButton.disabled = false;
+  }
 }
 
 // ---- Categories & Budgets tab ----
@@ -614,18 +1263,138 @@ function setCategoriesTabType(type) {
   categoriesTabType = type;
   el.categoriesTypeExpense.classList.toggle('active', type === 'expense');
   el.categoriesTypeIncome.classList.toggle('active', type === 'income');
-  loadCategoriesTab().catch((error) => showError(error.message));
+  loadBudgetsTab().catch((error) => showError(error.message));
 }
 
-async function loadCategoriesTab() {
-  const [categoriesResponse, transactionsResponse, accountsResponse] = await Promise.all([
+// ---- Budgets tab: recurring-period categories, this period's breakdown,
+// event/occasion buckets, and (collapsed by default) recurring rules ----
+async function loadBudgetsTab() {
+  await ensureCurrentUser();
+  const { startISO, endISO } = getBillingCycleRange(currentUser.billing_cycle_start_day);
+  const periodStart = new Date(startISO);
+  const periodEnd = new Date(endISO);
+
+  const [categoriesResponse, transactionsResponse, eventsResponse] = await Promise.all([
     cachedGet(`/categories/${lineUserId}?type=${categoriesTabType}`),
     cachedGet(`/transactions/${lineUserId}?limit=200`),
-    cachedGet(`/accounts/${lineUserId}`),
+    cachedGet(`/budget-events/${lineUserId}?month=${currentMonthFirstDay()}`),
   ]);
 
   renderCategoriesList(categoriesResponse.categories, transactionsResponse.transactions);
-  renderAccountsList(accountsResponse.accounts);
+  const hasBreakdown = renderCategoryBreakdown(transactionsResponse.transactions, periodStart, periodEnd);
+  el.analyticsEmptyState.hidden = transactionsResponse.transactions.length > 0 || hasBreakdown;
+  renderEventBudgetsList(eventsResponse.budget_events);
+
+  if (!el.advancedSection.hidden) {
+    await loadRecurringList();
+  }
+}
+
+// ---- Event/Occasion budgets (Budgets tab) ----
+//
+// A category's budget_amount/budget_period (categories table) is the
+// recurring, predictable limit. This is the one-off, specific-month limit
+// layered on top of it -- e.g. a one-off clinic visit stacked on top of a
+// regular monthly skincare budget. Always tied to an existing category;
+// "spent" is computed server-side from that category's transactions within
+// the target month (see backend/controllers/budgetEventController.js).
+
+function renderEventBudgetsList(events) {
+  el.eventsList.innerHTML = '';
+  el.eventsEmptyState.hidden = events.length > 0;
+
+  for (const event of events) {
+    const li = document.createElement('li');
+    li.className = 'category-row';
+    li.innerHTML = `
+      <div class="category-row-top">
+        <span class="category-name">${escapeHtml(event.title)}</span>
+        <span class="category-budget-label">${event.spent.toFixed(2)} / ${parseFloat(event.amount).toFixed(2)}</span>
+      </div>
+      <div class="category-bar-label-row"><span>${escapeHtml(event.categories?.name || '')}</span></div>
+      <div class="category-budget-track">
+        <div class="category-budget-fill${event.spent >= event.amount ? ' over' : ''}" style="width:${Math.round(event.percent)}%"></div>
+      </div>
+      <div class="bill-participant-detail-row" style="margin-top: 6px;">
+        <span></span>
+        <button type="button" class="category-delete event-delete">Delete</button>
+      </div>
+    `;
+    li.querySelector('.event-delete').addEventListener('click', () => handleDeleteEvent(event.id));
+    el.eventsList.appendChild(li);
+  }
+}
+
+async function populateEventCategoryOptions() {
+  // Event buckets apply to expense categories only -- an "occasion" is
+  // always a spending bucket, never an income one.
+  const response = await cachedGet(`/categories/${lineUserId}?type=expense`);
+  el.eventFieldCategory.innerHTML = response.categories.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+}
+
+async function openEventModal() {
+  el.eventFieldTitle.value = '';
+  el.eventFieldAmount.value = '';
+  el.eventFieldMonth.value = currentMonthFirstDay().slice(0, 7);
+  clearModalError(el.eventModalError);
+  el.eventModal.hidden = false;
+  try {
+    await populateEventCategoryOptions();
+  } catch (error) {
+    showModalError(el.eventModalError, error.message);
+  }
+}
+
+function closeEventModal() {
+  el.eventModal.hidden = true;
+}
+
+async function handleEventSubmit(event) {
+  event.preventDefault();
+  const submitButton = event.submitter;
+  submitButton.disabled = true;
+  clearModalError(el.eventModalError);
+
+  try {
+    await apiRequest(`/budget-events/${lineUserId}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        category_id: el.eventFieldCategory.value,
+        title: el.eventFieldTitle.value,
+        amount: parseFloat(el.eventFieldAmount.value),
+        period_month: `${el.eventFieldMonth.value}-01`,
+      }),
+    });
+    closeEventModal();
+    await loadBudgetsTab();
+    showBudgetsStatus('Event budget added.');
+  } catch (error) {
+    showModalError(el.eventModalError, error.message);
+  } finally {
+    submitButton.disabled = false;
+  }
+}
+
+async function handleDeleteEvent(eventId) {
+  const confirmed = await confirmAction('Delete this event budget?', 'Delete');
+  if (!confirmed) return;
+  try {
+    await apiRequest(`/budget-events/${lineUserId}/${eventId}`, { method: 'DELETE' });
+    await loadBudgetsTab();
+    showBudgetsStatus('Event budget deleted.');
+  } catch (error) {
+    showBudgetsStatus(error.message);
+  }
+}
+
+// ---- Advanced section toggle (Budgets tab -> Recurring rules) ----
+function toggleAdvancedSection() {
+  const isOpen = el.advancedToggle.getAttribute('aria-expanded') === 'true';
+  el.advancedToggle.setAttribute('aria-expanded', String(!isOpen));
+  el.advancedSection.hidden = isOpen;
+  if (!isOpen) {
+    loadRecurringList().catch((error) => showBudgetsStatus(error.message));
+  }
 }
 
 const ACCOUNT_TYPE_LABELS = { bank: 'Bank', credit_card: 'Credit Card', e_wallet: 'E-Wallet', cash: 'Cash' };
@@ -646,6 +1415,24 @@ function renderAccountsList(accounts) {
     `;
     el.accountsList.appendChild(li);
   }
+}
+
+// ---- Net Worth tab: accounts/savings, investments, emergency fund ----
+async function loadNetWorthTab() {
+  const [accountsResponse, portfolioResponse, { surplus }] = await Promise.all([
+    cachedGet(`/accounts/${lineUserId}`),
+    cachedGet(`/portfolio/${lineUserId}`),
+    computeCurrentPeriodSurplus(),
+  ]);
+
+  renderAccountsList(accountsResponse.accounts);
+  renderPortfolio(portfolioResponse, surplus);
+
+  el.settingEfGoal.value = currentUser.emergency_fund_goal_amount || '';
+  el.settingEfAccount.innerHTML =
+    '<option value="">None</option>' +
+    accountsResponse.accounts.map((a) => `<option value="${a.id}">${escapeHtml(a.account_name)}</option>`).join('');
+  el.settingEfAccount.value = currentUser.emergency_fund_account_id || '';
 }
 
 async function populateAccountSelects() {
@@ -684,7 +1471,7 @@ async function handleAccountSubmit(event) {
       }),
     });
     closeAccountModal();
-    await loadCategoriesTab();
+    await loadNetWorthTab();
   } catch (error) {
     showModalError(el.accountModalError, error.message);
   } finally {
@@ -735,7 +1522,7 @@ async function handleTransferSubmit(event) {
       }),
     });
     closeTransferModal();
-    await loadCategoriesTab();
+    await loadNetWorthTab();
   } catch (error) {
     showModalError(el.transferModalError, error.message);
   } finally {
@@ -839,7 +1626,7 @@ async function handleCategorySubmit(event) {
       });
     }
     closeCategoryModal();
-    await loadCategoriesTab();
+    await loadBudgetsTab();
   } catch (error) {
     showModalError(el.categoryModalError, error.message);
   } finally {
@@ -853,7 +1640,7 @@ async function handleDeleteCategory(category) {
 
   try {
     await apiRequest(`/categories/${lineUserId}/${category.id}`, { method: 'DELETE' });
-    await loadCategoriesTab();
+    await loadBudgetsTab();
   } catch (error) {
     showError(error.message);
   }
@@ -903,24 +1690,109 @@ async function handleExportEmail() {
 // ---- Settings tab ----
 
 async function loadSettingsTab() {
-  if (!currentUser) {
-    const userResponse = await cachedGet(`/users/${lineUserId}`);
-    currentUser = userResponse.user;
-  }
+  await ensureCurrentUser();
   el.settingNotifications.checked = currentUser.notifications_enabled !== false;
   el.settingThumbnails.checked = currentUser.thumbnails_enabled !== false;
   el.settingCycleDay.value = currentUser.billing_cycle_start_day || 1;
   el.settingEmail.value = currentUser.email || '';
+  renderGoogleConnectState();
+}
 
-  await loadRecurringList();
+// LINE Login is still the only identity/auth model (Phase 2A) -- this is NOT
+// a sign-in flow, only a way to get a verified email for CSV export. Shown
+// as connected once google_email is set; the legacy manual email field stays
+// available underneath as a fallback for anyone who hasn't linked Google.
+function renderGoogleConnectState() {
+  const connected = !!currentUser.google_email;
+  el.googleConnectedRow.hidden = !connected;
+  el.connectGoogleButton.hidden = connected;
+  el.legacyEmailField.hidden = connected;
+  if (connected) {
+    el.googleConnectedEmail.textContent = currentUser.google_email;
+  }
+}
+
+// Google blocks its own OAuth consent screen inside embedded webviews
+// (LINE's in-app browser included -- error 403 disallowed_useragent), so
+// this MUST open in the real system browser via openWindowExternal(url, true),
+// never inline. The backend's callback renders a plain "connected, close this
+// tab" page; there's no way back into the LIFF app directly from there, so
+// the user just switches back and this tab's Settings re-fetch (next load,
+// or the manual refresh below) picks up the new google_email.
+let awaitingGoogleConnectReturn = false;
+
+async function handleConnectGoogle() {
+  el.googleConnectStatus.hidden = false;
+  el.googleConnectStatus.classList.remove('scan-error');
+  el.googleConnectStatus.textContent = 'Opening Google sign-in in your browser…';
+  try {
+    const response = await apiRequest(`/google/login-url/${lineUserId}`);
+    awaitingGoogleConnectReturn = true;
+    liff.openWindowExternal(response.login_url, true);
+    el.googleConnectStatus.textContent = 'After connecting, switch back to this tab.';
+  } catch (error) {
+    el.googleConnectStatus.classList.add('scan-error');
+    el.googleConnectStatus.textContent = error.message;
+  }
+}
+
+// Picks the connection back up automatically once the user returns from the
+// external browser -- backgrounding/foregrounding a tab fires visibilitychange
+// reliably, so there's no need for a manual "I'm done" button.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !awaitingGoogleConnectReturn) return;
+  awaitingGoogleConnectReturn = false;
+  getCache.delete(`/users/${lineUserId}`);
+  apiRequest(`/users/${lineUserId}`)
+    .then((response) => {
+      currentUser = response.user;
+      renderGoogleConnectState();
+      el.googleConnectStatus.hidden = true;
+      showSettingsStatus(currentUser.google_email ? 'Google connected.' : 'Not connected yet.');
+    })
+    .catch((error) => showSettingsStatus(error.message));
+});
+
+async function handleSaveEmergencyFund() {
+  el.saveEmergencyFund.disabled = true;
+  try {
+    const response = await apiRequest(`/users/${lineUserId}/emergency-fund`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        goal_amount: el.settingEfGoal.value ? parseFloat(el.settingEfGoal.value) : null,
+        account_id: el.settingEfAccount.value || null,
+      }),
+    });
+    currentUser = response.user;
+    showNetWorthStatus('Saved.');
+  } catch (error) {
+    showNetWorthStatus(error.message);
+  } finally {
+    el.saveEmergencyFund.disabled = false;
+  }
+}
+
+// Generic -- each tab that can trigger a background save (Settings, Budgets'
+// recurring/event CRUD, Net Worth's emergency fund) has its own status
+// paragraph, since #settings-status itself is invisible while on another tab.
+function showStatus(targetEl, message) {
+  targetEl.textContent = message;
+  targetEl.hidden = false;
+  setTimeout(() => {
+    targetEl.hidden = true;
+  }, 2500);
 }
 
 function showSettingsStatus(message) {
-  el.settingsStatus.textContent = message;
-  el.settingsStatus.hidden = false;
-  setTimeout(() => {
-    el.settingsStatus.hidden = true;
-  }, 2500);
+  showStatus(el.settingsStatus, message);
+}
+
+function showBudgetsStatus(message) {
+  showStatus(el.budgetsStatus, message);
+}
+
+function showNetWorthStatus(message) {
+  showStatus(el.networthStatus, message);
 }
 
 async function handlePreferenceToggle(key, checkbox) {
@@ -1079,7 +1951,7 @@ async function handleRecurringSubmit(event) {
     });
     closeRecurringModal();
     await loadRecurringList();
-    showSettingsStatus('Recurring expense added.');
+    showBudgetsStatus('Recurring expense added.');
   } catch (error) {
     showModalError(el.recurringModalError, error.message);
   } finally {
@@ -1095,7 +1967,7 @@ async function handleToggleRecurringActive(recurringId, isActive) {
     });
     await loadRecurringList();
   } catch (error) {
-    showSettingsStatus(error.message);
+    showBudgetsStatus(error.message);
     await loadRecurringList(); // revert the optimistic checkbox state on failure
   }
 }
@@ -1107,9 +1979,9 @@ async function handleDeleteRecurring(recurringId) {
   try {
     await apiRequest(`/recurring/${lineUserId}/${recurringId}`, { method: 'DELETE' });
     await loadRecurringList();
-    showSettingsStatus('Recurring expense deleted.');
+    showBudgetsStatus('Recurring expense deleted.');
   } catch (error) {
-    showSettingsStatus(error.message);
+    showBudgetsStatus(error.message);
   }
 }
 
@@ -1137,7 +2009,7 @@ async function init() {
     });
 
     renderProfile(profile);
-    await loadDashboardTab();
+    await loadHomeTab();
 
     el.loading.hidden = true;
     el.app.hidden = false;
@@ -1155,6 +2027,16 @@ el.addExpenseButton.addEventListener('click', openAddExpenseModal);
 el.cancelAddExpense.addEventListener('click', closeAddExpenseModal);
 el.addExpenseForm.addEventListener('submit', handleAddExpenseSubmit);
 el.fieldReceiptImage.addEventListener('change', handleReceiptFileChange);
+
+el.addBillButton.addEventListener('click', openBillModal);
+el.cancelBill.addEventListener('click', closeBillModal);
+el.billForm.addEventListener('submit', handleBillSubmit);
+el.billAddParticipant.addEventListener('click', () => addParticipantRow());
+el.billAddItem.addEventListener('click', () => addItemRow());
+el.billFieldReceiptImage.addEventListener('change', handleBillReceiptFileChange);
+el.billCopyLink.addEventListener('click', handleCopyShareLink);
+el.billDelete.addEventListener('click', handleDeleteBill);
+el.closeBillDetail.addEventListener('click', closeBillDetailModal);
 
 el.categoriesTypeExpense.addEventListener('click', () => setCategoriesTabType('expense'));
 el.categoriesTypeIncome.addEventListener('click', () => setCategoriesTabType('income'));
@@ -1179,7 +2061,14 @@ el.settingNotifications.addEventListener('change', () => handlePreferenceToggle(
 el.settingThumbnails.addEventListener('change', () => handlePreferenceToggle('thumbnails_enabled', el.settingThumbnails));
 el.saveCycleDay.addEventListener('click', handleSaveCycleDay);
 el.saveEmail.addEventListener('click', handleSaveEmail);
+el.saveEmergencyFund.addEventListener('click', handleSaveEmergencyFund);
 el.clearHistoryButton.addEventListener('click', handleClearHistory);
+
+el.refreshPricesButton.addEventListener('click', handleRefreshPrices);
+el.addHoldingButton.addEventListener('click', () => openHoldingModal(null));
+el.cancelHolding.addEventListener('click', closeHoldingModal);
+el.holdingForm.addEventListener('submit', handleHoldingSubmit);
+el.holdingFieldType.addEventListener('change', updateHoldingFieldsForType);
 
 el.addRecurringButton.addEventListener('click', openRecurringModal);
 el.cancelRecurring.addEventListener('click', closeRecurringModal);
@@ -1187,5 +2076,22 @@ el.recurringForm.addEventListener('submit', handleRecurringSubmit);
 el.recurringFieldType.addEventListener('change', () =>
   populateRecurringCategoryOptions().catch((error) => showModalError(el.recurringModalError, error.message))
 );
+
+el.advancedToggle.addEventListener('click', toggleAdvancedSection);
+
+el.addEventButton.addEventListener('click', () => openEventModal().catch((error) => showModalError(el.eventModalError, error.message)));
+el.cancelEvent.addEventListener('click', closeEventModal);
+el.eventForm.addEventListener('submit', handleEventSubmit);
+
+el.txnScanButton.addEventListener('click', () => {
+  // el.fieldReceiptImage.click() must run synchronously inside this handler --
+  // mobile browsers only honor a programmatic file-picker click within the
+  // same tick as a real user gesture, not after an awaited promise resolves.
+  openAddExpenseModal().catch((error) => showError(error.message));
+  el.fieldReceiptImage.click();
+});
+
+el.connectGoogleButton.addEventListener('click', handleConnectGoogle);
+el.disconnectGoogle.addEventListener('click', handleConnectGoogle);
 
 init();

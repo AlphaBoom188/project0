@@ -100,12 +100,15 @@ const transactionController = {
 
       const { data: user, error: userError } = await supabase
         .from('users')
-        .select('email')
+        .select('email, google_email')
         .eq('line_user_id', line_user_id)
         .single();
       if (userError) throw userError;
 
-      if (!user?.email) {
+      // Prefers the verified Google email (migration 013) over the legacy
+      // free-text field -- same export, just a safer address when available.
+      const toEmail = user?.google_email || user?.email;
+      if (!toEmail) {
         return res.status(400).json({ error: 'No email address saved. Add one in Settings first.' });
       }
 
@@ -113,13 +116,13 @@ const transactionController = {
       const csv = buildTransactionsCsv(transactions);
 
       await sendCsvByEmail({
-        to: user.email,
+        to: toEmail,
         subject: 'Your Expense Export',
         filename: `transactions-${line_user_id}.csv`,
         csv,
       });
 
-      res.json({ success: true, message: `Export emailed to ${user.email}.` });
+      res.json({ success: true, message: `Export emailed to ${toEmail}.` });
     } catch (error) {
       if (error.notConfigured) {
         return res.status(501).json({ error: error.message });
@@ -167,7 +170,7 @@ const transactionController = {
     try {
       const { line_user_id } = req.params;
       let { category_id } = req.body;
-      const { amount, type, description, slip_hash, thumbnail_url, transaction_date, from_account_id, to_account_id } = req.body;
+      const { amount, type, description, slip_hash, thumbnail_url, transaction_date, from_account_id, to_account_id, channel } = req.body;
 
       if (!amount || !type || !transaction_date) {
         return res.status(400).json({
@@ -205,9 +208,14 @@ const transactionController = {
         transactionDate: transaction_date,
         fromAccountId: from_account_id,
         toAccountId: to_account_id,
+        channel,
       });
+      // budget_alert is surfaced as its own response field, not left nested in
+      // the transaction row, so the LIFF client can show it without reaching
+      // into transaction internals.
+      const { budget_alert, ...transactionFields } = transaction;
 
-      res.status(201).json({ success: true, transaction: await withSignedThumbnails(transaction) });
+      res.status(201).json({ success: true, transaction: await withSignedThumbnails(transactionFields), budget_alert: budget_alert || null });
     } catch (error) {
       if (error instanceof InvalidCategoryError || error instanceof InvalidAccountError) {
         return res.status(400).json({ error: error.message });
