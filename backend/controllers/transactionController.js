@@ -40,7 +40,11 @@ function applyAccountFilter(query, accountIdParam) {
 async function queryTransactionsForExport(lineUserId, { type, category_id, start_date, end_date, q, account_id }) {
   let query = supabase
     .from('transactions')
-    .select('transaction_date, type, amount, description, payment_method, categories ( name )')
+    .select(`
+      transaction_date, type, amount, description, payment_method, categories ( name ),
+      from_account:accounts!transactions_from_account_id_fkey ( account_name ),
+      to_account:accounts!transactions_to_account_id_fkey ( account_name )
+    `)
     .eq('line_user_id', lineUserId)
     .order('transaction_date', { ascending: false });
 
