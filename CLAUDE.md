@@ -37,6 +37,7 @@ npm start  # Starts server on port 3000
 - `POST /api/transactions/:line_user_id` - Create transaction (`category_id` optional for an expense with a `description` -- auto-categorized). Optional `channel: 'liff'` returns a crossed `budget_alert` in the response instead of pushing it via LINE (see Dual-Channel Alert Routing below)
 - `GET /api/transactions/:line_user_id` - Get transactions (`type`/`category_id`/`start_date`/`end_date`, plus `q` for a case-insensitive substring search on `description` and `account_id` (comma-separated, matches either side of a transfer); the export endpoints accept both too)
 - `DELETE /api/transactions/:line_user_id/all` - Delete every transaction for a user (irreversible; client must confirm first)
+- `GET/PUT/DELETE /api/transactions/:line_user_id/:transaction_id` - Single transaction; a malformed (non-UUID) id gets a 400 from a `router.param` check in `transactionRoutes.js` before any handler runs. Without it, Postgres's raw `invalid input syntax for type uuid` error surfaced as a 500. `services/uuid.js` (`isUuid`) is shared with the `account_id` filter
 - `GET /api/transactions/:line_user_id/export` - Export transactions as CSV (UTF-8 BOM), accepts `type`/`category_id`/`start_date`/`end_date` filters
 - `POST /api/transactions/:line_user_id/export/email` - Same filtered export, emailed via the Apps Script relay (501 if not configured)
 - `GET/POST /api/recurring/:line_user_id`, `PUT/DELETE /api/recurring/:line_user_id/:recurring_id` - Recurring expense/income rules (now with optional `pay_start_day`/`pay_end_day`)

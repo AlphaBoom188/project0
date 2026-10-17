@@ -9,6 +9,7 @@ const { withSignedThumbnails } = require('../services/signedUrl');
 const { autoCategorize } = require('../services/autoCategorize');
 const { buildTransactionsCsv } = require('../services/csvExport');
 const { sendCsvByEmail } = require('../services/emailRelay');
+const { isUuid } = require('../services/uuid');
 
 // Free-text search over description (case-insensitive substring). LIKE wildcards
 // in the user's text are escaped so "50%" means a literal percent sign; capped
@@ -23,14 +24,13 @@ function applySearch(query, q) {
 // so transfers show up under both accounts. Each id is validated as a UUID before
 // being interpolated into the PostgREST or() expression -- an unvalidated value
 // could otherwise inject extra filter clauses into it.
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 class InvalidFilterError extends Error {}
 
 function applyAccountFilter(query, accountIdParam) {
   if (!accountIdParam) return query;
   const ids = String(accountIdParam).split(',').map((id) => id.trim()).filter(Boolean);
   if (ids.length === 0) return query;
-  if (ids.length > 50 || !ids.every((id) => UUID_RE.test(id))) {
+  if (ids.length > 50 || !ids.every(isUuid)) {
     throw new InvalidFilterError('account_id must be a comma-separated list of account ids');
   }
   return query.or(ids.flatMap((id) => [`from_account_id.eq.${id}`, `to_account_id.eq.${id}`]).join(','));
