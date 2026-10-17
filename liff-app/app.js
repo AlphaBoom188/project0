@@ -552,13 +552,23 @@ function renderTransactionList(target, emptyStateEl, transactions, { showPayment
   }
 }
 
+// Where the money moved: the account(s) when one is attributed, falling back to
+// payment_method only when none is -- payment_method defaults to "cash", so on
+// its own it would mislabel e.g. a bank-account expense as CASH.
+function transactionSourceLabel(t) {
+  const from = t.from_account?.account_name;
+  const to = t.to_account?.account_name;
+  if (t.type === 'transfer' && from && to) return `${from} → ${to}`;
+  return from || to || t.payment_method || '';
+}
+
 function buildTransactionRow(t, showPaymentMethod) {
   const li = document.createElement('li');
   li.className = 'transaction-row';
 
   const thumbHtml = t.thumbnail_url ? `<img class="transaction-thumbnail" src="${t.thumbnail_url}" alt="" />` : '';
-  const paymentHtml =
-    showPaymentMethod && t.payment_method ? `<div class="transaction-date">${escapeHtml(t.payment_method)}</div>` : '';
+  const sourceLabel = transactionSourceLabel(t);
+  const paymentHtml = showPaymentMethod && sourceLabel ? `<div class="transaction-date">${escapeHtml(sourceLabel)}</div>` : '';
 
   li.innerHTML = `
     ${thumbHtml}

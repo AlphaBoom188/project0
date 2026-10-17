@@ -71,7 +71,9 @@ const transactionController = {
             id,
             name,
             type
-          )
+          ),
+          from_account:accounts!transactions_from_account_id_fkey ( id, account_name ),
+          to_account:accounts!transactions_to_account_id_fkey ( id, account_name )
         `)
         .eq('line_user_id', line_user_id)
         .order('transaction_date', { ascending: false })
@@ -179,7 +181,9 @@ const transactionController = {
             id,
             name,
             type
-          )
+          ),
+          from_account:accounts!transactions_from_account_id_fkey ( id, account_name ),
+          to_account:accounts!transactions_to_account_id_fkey ( id, account_name )
         `)
         .eq('id', transaction_id)
         .eq('line_user_id', line_user_id)
@@ -301,7 +305,9 @@ const transactionController = {
             id,
             name,
             type
-          )
+          ),
+          from_account:accounts!transactions_from_account_id_fkey ( id, account_name ),
+          to_account:accounts!transactions_to_account_id_fkey ( id, account_name )
         `)
         .single();
 
