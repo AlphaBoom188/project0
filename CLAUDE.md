@@ -55,6 +55,22 @@ npm start  # Starts server on port 3000
 - `POST /api/ocr/scan/:line_user_id` - Scan a receipt image (OpenAI Vision), extract amount/date/merchant/category, and check `slip_hash` for duplicates
 - `POST /api/line/webhook` - LINE Bot webhook (signature-verified). Handles `follow` (provisions the user), text messages (free-text expense parsing, e.g. "coffee 120", plus a "summary"/"สรุป" command), image messages (same OCR pipeline as the REST endpoint), and `postback` (Confirm/Cancel on the resulting Flex card)
 
+### Tests
+
+```bash
+cd backend
+npm start                 # in another terminal -- suites go through the real HTTP API
+npm test                  # api + liff suites, free (~3 min)
+npm test -- bills         # only suites whose path contains "bills"
+npm test -- -v            # full output of every suite
+npm run test:openai       # line_webhook + preferences_opt_out: real OpenAI calls (a few cents)
+```
+
+- **Suites run against the real Supabase project** in `backend/.env`; there's no separate test database. Every suite only creates users with a `test_` prefix (or a random `U<hex>` id), deletes everything it created, and the runner runs suites one at a time. When adding a suite, keep both rules, and never call a job's all-users entry point without scoping it. `processDueRecurringTransactions({ lineUserId })` exists for exactly that, so a test can't fire real users' due rules early.
+- **Layout.** `backend/tests/api/` holds REST/backend suites. `tests/liff/` holds headless-Chrome suites (`playwright-core` with `channel: 'chrome'`, so it needs Google Chrome installed); they route `static.line-scdn.net` to a stub `liff` object, which is how LIFF client code gets tested without a phone. Screenshots go to `tests/.output/` (gitignored). `tests/openai/` holds opt-in suites with real OpenAI calls. `tests/fixtures/receipt.jpg` is a synthetic receipt (GREENLEAF CAFE, 320.00). `tests/lib.js` gives `BASE` (`TEST_BASE_URL`, default `http://localhost:$PORT`), `BACKEND`, `FIXTURES`, `OUTPUT`.
+- **Suite contract**: a plain Node script that prints `PASS: ...` / `FAIL: ...` lines and exits non-zero on failure. `tests/run.js` counts those lines, and a suite with zero PASS lines counts as failed.
+- **Not included, on purpose**: the old `email_export_test` (it sends a real email), the old full `ocr_harness` (covered by `openai/line_webhook`), and the seed-fixtures helper (`api/ocr_dedup` now sets up its own data). The "ad hoc, not committed" test scripts named in the phase notes below now live here, apart from those exclusions.
+
 ### iOS App (Swift/Xcode)
 
 ```bash

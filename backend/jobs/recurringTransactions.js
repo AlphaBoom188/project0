@@ -23,14 +23,19 @@ function computeNextRunDate(fromISO, frequency) {
   return date.toISOString();
 }
 
-async function processDueRecurringTransactions() {
+// `lineUserId` scopes a run to one user -- used by tests so a test run can never
+// fire real users' due rules early. The cron calls it with no argument (all users).
+async function processDueRecurringTransactions({ lineUserId } = {}) {
   const nowISO = new Date().toISOString();
 
-  const { data: dueRules, error } = await supabase
+  let query = supabase
     .from('recurring_transactions')
     .select('*')
     .eq('is_active', true)
     .lte('next_run_date', nowISO);
+  if (lineUserId) query = query.eq('line_user_id', lineUserId);
+
+  const { data: dueRules, error } = await query;
 
   if (error) {
     console.error('[recurring] failed to list due rules:', error.message);

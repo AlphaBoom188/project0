@@ -23,3 +23,6 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# Test output (LIFF suite screenshots)
+tests/.output/
