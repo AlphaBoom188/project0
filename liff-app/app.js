@@ -123,6 +123,23 @@ const el = {
   holdingsEmptyState: document.getElementById('holdings-empty-state'),
   addHoldingButton: document.getElementById('add-holding-button'),
 
+  // Performance card (Net Worth tab) + Home investments card
+  perfCard: document.getElementById('perf-card'),
+  perfTotalValue: document.getElementById('perf-total-value'),
+  perfGainToday: document.getElementById('perf-gain-today'),
+  perfGainYesterday: document.getElementById('perf-gain-yesterday'),
+  perfGainAll: document.getElementById('perf-gain-all'),
+  perfRangePills: document.querySelectorAll('[data-perf-range]'),
+  perfViewButtons: document.querySelectorAll('[data-perf-view]'),
+  perfChartWrap: document.getElementById('perf-chart-wrap'),
+  perfChartCanvas: document.getElementById('perf-chart'),
+  perfNote: document.getElementById('perf-note'),
+  perfBenchmarkSp500: document.getElementById('perf-benchmark-sp500'),
+  perfBenchmarkSet: document.getElementById('perf-benchmark-set'),
+  homeInvestmentsCard: document.getElementById('home-investments-card'),
+  homeInvestmentsValue: document.getElementById('home-investments-value'),
+  homeInvestmentsToday: document.getElementById('home-investments-today'),
+
   // Holding modal
   holdingModal: document.getElementById('holding-modal'),
   holdingForm: document.getElementById('holding-form'),
@@ -304,6 +321,13 @@ let holdingCurrencyTouched = false; // the Add Holding currency follows symbol/t
 let detailHolding = null; // holding shown in the detail sheet (with computed fields)
 let editingLot = null; // lot open in the lot sheet, null when adding
 let lotSide = 'buy';
+// Performance chart state -- declared up here because applyTheme() (which
+// re-renders the chart) already runs while this script is still loading.
+let perfRange = '1y';
+let perfView = 'value'; // 'value' | 'return'
+let perfData = null; // last GET /portfolio/:u/performance response
+let perfChart = null; // Chart.js instance, destroyed before every re-render
+let perfLoadSeq = 0;
 const MANUAL_PRICE_ASSET_TYPES = ['mutual_fund', 'gold']; // mirrors backend/services/marketPrices.js -- no live price source for these
 
 // ---- API + in-memory cache ----
@@ -530,6 +554,8 @@ function applyTheme(choice) {
   for (const button of el.themeOptionButtons) {
     button.classList.toggle('active', button.dataset.themeOption === choice);
   }
+  // Chart colors are read from the tokens at render time, so redraw.
+  renderPerfChart();
 }
 
 function setTheme(choice) {
@@ -546,6 +572,8 @@ for (const button of el.themeOptionButtons) {
 }
 
 applyTheme(localStorage.getItem('theme') || 'system');
+// "System" follows the OS live, without going through applyTheme().
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => renderPerfChart());
 
 // ---- Tab navigation ----
 //
@@ -748,6 +776,21 @@ async function loadHomeTab() {
   // 6-month window -- the first 50 are still the 50 most recent overall.
   renderTransactionList(el.transactionList, el.emptyState, allTransactions.slice(0, 50));
   renderBillsList(billsResponse.bills);
+  renderHomeInvestments().catch(() => {
+    el.homeInvestmentsCard.hidden = true;
+  });
+}
+
+// Compact "Investments" card, only for users with holdings; tapping it opens
+// Net Worth. Same cached GET the Net Worth tab uses, and never blocks Home.
+async function renderHomeInvestments() {
+  const portfolio = await cachedGet(`/portfolio/${lineUserId}`);
+  el.homeInvestmentsCard.hidden = portfolio.holdings.length === 0;
+  if (portfolio.holdings.length === 0) return;
+  const { total_value: totalValue, day_gain: dayGain } = portfolio.totals;
+  el.homeInvestmentsValue.textContent = formatMoney(totalValue, 'THB');
+  el.homeInvestmentsToday.textContent = dayGain === null ? '—' : formatSignedMoney(dayGain, 'THB');
+  el.homeInvestmentsToday.style.color = dayGain === null ? '' : gainColor(dayGain);
 }
 
 // ---- Add Expense modal ----
@@ -1949,6 +1992,152 @@ function renderAccountsList(accounts) {
   }
 }
 
+// ---- Performance card (Net Worth tab) ----
+//
+// GET /portfolio/:u/performance does all the math (backend/services/
+// performanceMath.js); this only draws it. Fetched when the tab loads and
+// when the range changes, through cachedGet, with the same stale-response
+// guard as loadTransactionsTab(). Chart.js comes from a CDN: if it's blocked,
+// everything except the chart still renders, with a short note instead.
+const PERF_RANGE_LABELS = { '1m': '1M', '3m': '3M', '6m': '6M', ytd: 'YTD', '1y': '1Y', '3y': '3Y', '5y': '5Y', all: 'All' };
+const cssToken = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+// Point dates are Bangkok calendar dates already -- format them as-is (UTC).
+const formatPerfDate = (ymd, withYear = false) =>
+  new Date(`${ymd}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...(withYear ? { year: 'numeric' } : {}), timeZone: 'UTC' });
+const formatPerfPercent = (pct) => (pct === null || pct === undefined ? '—' : formatSignedPercent(pct));
+
+function showPerfNote(message) {
+  el.perfNote.textContent = message;
+  el.perfNote.hidden = !message;
+}
+
+function showPerfError(error) {
+  el.perfCard.hidden = false;
+  showPerfNote(`Performance unavailable: ${error.message}`);
+}
+
+function setGainCell(target, value, pct) {
+  target.textContent = value === null || value === undefined ? '—' : `${formatSignedMoney(value, 'THB')}${pct === null || pct === undefined ? '' : ` (${formatSignedPercent(pct)})`}`;
+  target.style.color = value === null || value === undefined ? '' : gainColor(value);
+}
+
+function renderBenchmarkCard(target, benchmark) {
+  const level = target.querySelector('.perf-benchmark-level');
+  const change = target.querySelector('.perf-benchmark-change');
+  if (!benchmark) {
+    level.textContent = '—';
+    change.textContent = 'Unavailable';
+    change.style.color = '';
+    return;
+  }
+  level.textContent = benchmark.level.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  change.innerHTML = `<span style="color:${gainColor(benchmark.day_change_pct || 0)}">${escapeHtml(formatPerfPercent(benchmark.day_change_pct))}</span> today · `
+    + `<span style="color:${gainColor(benchmark.range_change_pct || 0)}">${escapeHtml(formatPerfPercent(benchmark.range_change_pct))}</span> ${PERF_RANGE_LABELS[perfRange]}`;
+}
+
+async function loadPerformance() {
+  const seq = ++perfLoadSeq;
+  el.perfRangePills.forEach((pill) => pill.classList.toggle('active', pill.dataset.perfRange === perfRange));
+  const data = await cachedGet(`/portfolio/${lineUserId}/performance?range=${perfRange}`);
+  if (seq !== perfLoadSeq) return;
+  perfData = data;
+  el.perfCard.hidden = data.points.length === 0;
+  if (data.points.length === 0) return;
+
+  el.perfTotalValue.textContent = formatMoney(data.summary.total_value_thb, 'THB');
+  setGainCell(el.perfGainToday, data.summary.today_gain_thb, data.summary.today_pct);
+  setGainCell(el.perfGainYesterday, data.summary.yesterday_gain_thb, data.summary.yesterday_pct);
+  setGainCell(el.perfGainAll, data.summary.all_gain_thb, data.summary.all_pct);
+  renderBenchmarkCard(el.perfBenchmarkSp500, data.benchmarks.sp500);
+  renderBenchmarkCard(el.perfBenchmarkSet, data.benchmarks.set);
+  renderPerfChart();
+}
+
+function setPerfRange(range) {
+  perfRange = range;
+  loadPerformance().catch(showPerfError);
+}
+
+function setPerfView(view) {
+  perfView = view;
+  el.perfViewButtons.forEach((button) => button.classList.toggle('active', button.dataset.perfView === view));
+  renderPerfChart();
+}
+
+// Value: portfolio THB value vs net amount invested (dashed). Return: TWR vs
+// S&P 500 vs SET, all rebased to 0% at the range start.
+function perfDatasets(points) {
+  const line = (label, data, colorToken, extra = {}) => ({
+    label, data, borderColor: cssToken(colorToken), backgroundColor: cssToken(colorToken),
+    borderWidth: 2, pointRadius: 0, pointHoverRadius: 3, tension: 0.2, spanGaps: true, ...extra,
+  });
+  if (perfView === 'value') {
+    return [
+      line('Portfolio', points.map((p) => p.value_thb), '--color-accent'),
+      line('Invested', points.map((p) => p.invested_thb), '--color-text-secondary', { borderDash: [6, 4], borderWidth: 1.5 }),
+    ];
+  }
+  return [
+    line('Portfolio', points.map((p) => p.twr_pct), '--color-accent'),
+    line('S&P 500', points.map((p) => p.sp500_pct), '--color-warning', { borderWidth: 1.5 }),
+    line('SET', points.map((p) => p.set_pct), '--color-text-primary', { borderWidth: 1.5 }),
+  ];
+}
+
+function renderPerfChart() {
+  if (perfChart) {
+    perfChart.destroy();
+    perfChart = null;
+  }
+  if (!perfData || perfData.points.length === 0) return;
+  if (typeof window.Chart === 'undefined') {
+    el.perfChartWrap.hidden = true;
+    showPerfNote('Chart unavailable');
+    return;
+  }
+  el.perfChartWrap.hidden = false;
+  showPerfNote(perfData.missing.length ? `No price history for ${perfData.missing.map((m) => m.symbol).join(', ')}; shown at the last known price.` : '');
+
+  const { points } = perfData;
+  const isValue = perfView === 'value';
+  const formatValue = (v) => (v === null || v === undefined ? '—' : isValue ? formatMoney(v, 'THB') : formatSignedPercent(v));
+  const textColor = cssToken('--color-text-secondary');
+  const gridColor = cssToken('--color-border');
+  perfChart = new window.Chart(el.perfChartCanvas, {
+    type: 'line',
+    data: { labels: points.map((p) => p.date), datasets: perfDatasets(points) },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { color: textColor, boxWidth: 12, boxHeight: 2 } },
+        tooltip: {
+          callbacks: {
+            title: (items) => formatPerfDate(points[items[0].dataIndex].date, true),
+            label: (item) => `${item.dataset.label}: ${formatValue(item.raw)}`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { color: textColor, maxTicksLimit: 5, maxRotation: 0, callback: (_, i) => formatPerfDate(points[i].date, perfRange !== '1m' && perfRange !== '3m') },
+          grid: { display: false },
+        },
+        y: {
+          ticks: {
+            color: textColor,
+            maxTicksLimit: 5,
+            callback: (v) => (isValue ? `฿${Number(v).toLocaleString('en-US', { notation: 'compact', maximumFractionDigits: 1 })}` : `${v}%`),
+          },
+          grid: { color: gridColor },
+        },
+      },
+    },
+  });
+}
+
 // ---- Net Worth tab: accounts/savings, investments, emergency fund ----
 async function loadNetWorthTab() {
   const [accountsResponse, portfolioResponse, { surplus }] = await Promise.all([
@@ -1959,6 +2148,8 @@ async function loadNetWorthTab() {
 
   renderAccountsList(accountsResponse.accounts);
   renderPortfolio(portfolioResponse, surplus);
+  if (portfolioResponse.holdings.length === 0) el.perfCard.hidden = true;
+  else loadPerformance().catch(showPerfError);
   autoRefreshStalePrices(portfolioResponse.holdings);
 
   el.settingEfGoal.value = currentUser.emergency_fund_goal_amount || '';
@@ -2777,6 +2968,9 @@ el.saveEmergencyFund.addEventListener('click', handleSaveEmergencyFund);
 el.clearHistoryButton.addEventListener('click', handleClearHistory);
 
 el.refreshPricesButton.addEventListener('click', handleRefreshPrices);
+el.perfRangePills.forEach((pill) => pill.addEventListener('click', () => setPerfRange(pill.dataset.perfRange)));
+el.perfViewButtons.forEach((button) => button.addEventListener('click', () => setPerfView(button.dataset.perfView)));
+el.homeInvestmentsCard.addEventListener('click', () => switchTab('networth'));
 el.addHoldingButton.addEventListener('click', () => openHoldingModal(null));
 el.cancelHolding.addEventListener('click', closeHoldingModal);
 el.holdingForm.addEventListener('submit', handleHoldingSubmit);

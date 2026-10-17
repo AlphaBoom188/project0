@@ -61,6 +61,17 @@
           <p class="streak-hint" id="streak-hint"></p>
         </section>
 
+        <button type="button" class="summary-card home-investments-card" id="home-investments-card" hidden>
+          <div class="summary-item">
+            <span class="summary-label">Investments</span>
+            <span class="summary-value" id="home-investments-value">฿0.00</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">Today</span>
+            <span class="summary-value" id="home-investments-today">—</span>
+          </div>
+        </button>
+
         <div class="quick-actions-row">
           <button type="button" id="add-bill-button" class="quick-action-button">
             <span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></span>
@@ -193,6 +204,44 @@
           <h2 class="section-title">Investments</h2>
           <button type="button" id="refresh-prices-button" class="link-button">Refresh Prices</button>
         </div>
+        <!-- Performance: value vs invested, or TWR vs S&P 500 / SET (Portseido Home & Benchmark) -->
+        <section class="perf-card" id="perf-card" hidden>
+          <span class="summary-label">Portfolio value</span>
+          <div class="perf-total" id="perf-total-value">฿0.00</div>
+          <div class="perf-gain-row">
+            <div class="perf-gain"><span class="perf-gain-value" id="perf-gain-today">—</span><span class="summary-label">Today</span></div>
+            <div class="perf-gain"><span class="perf-gain-value" id="perf-gain-yesterday">—</span><span class="summary-label">Yesterday</span></div>
+            <div class="perf-gain"><span class="perf-gain-value" id="perf-gain-all">—</span><span class="summary-label">All</span></div>
+          </div>
+          <div class="range-pills perf-range-pills" role="group" aria-label="Performance range">
+            <button type="button" class="range-pill" data-perf-range="1m">1M</button>
+            <button type="button" class="range-pill" data-perf-range="3m">3M</button>
+            <button type="button" class="range-pill" data-perf-range="6m">6M</button>
+            <button type="button" class="range-pill" data-perf-range="ytd">YTD</button>
+            <button type="button" class="range-pill active" data-perf-range="1y">1Y</button>
+            <button type="button" class="range-pill" data-perf-range="3y">3Y</button>
+            <button type="button" class="range-pill" data-perf-range="5y">5Y</button>
+            <button type="button" class="range-pill" data-perf-range="all">All</button>
+          </div>
+          <div class="type-toggle perf-view-toggle" role="group" aria-label="Chart view">
+            <button type="button" class="type-toggle-button active" data-perf-view="value">Value</button>
+            <button type="button" class="type-toggle-button" data-perf-view="return">Return</button>
+          </div>
+          <div class="perf-chart-wrap" id="perf-chart-wrap"><canvas id="perf-chart" aria-label="Portfolio performance chart"></canvas></div>
+          <p class="perf-note" id="perf-note" hidden></p>
+          <div class="perf-benchmarks">
+            <div class="perf-benchmark" id="perf-benchmark-sp500">
+              <span class="summary-label">S&amp;P 500</span>
+              <span class="perf-benchmark-level">—</span>
+              <span class="perf-benchmark-change"></span>
+            </div>
+            <div class="perf-benchmark" id="perf-benchmark-set">
+              <span class="summary-label">SET</span>
+              <span class="perf-benchmark-level">—</span>
+              <span class="perf-benchmark-change"></span>
+            </div>
+          </div>
+        </section>
         <section class="summary-card" id="portfolio-summary-card">
           <div class="summary-item">
             <span class="summary-label">Value</span>
@@ -758,6 +807,8 @@
 
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script src="/liff-config.js"></script>
+  <!-- Chart.js for the Net Worth performance chart; app.js renders everything else without it if this is blocked. -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -3,6 +3,10 @@ const { fetchQuoteForHolding, MANUAL_ONLY_TYPES } = require('../services/marketP
 const { getUsdThbRate } = require('../services/fxRates');
 const { computeLotSummary, sortLots, lotTotal, LotValidationError, round6 } = require('../services/lotMath');
 const { getBangkokYmd } = require('../services/bangkokDay');
+const { getYahooDailyCloses, getHoldingHistory } = require('../services/priceHistory');
+const {
+  PERFORMANCE_RANGES, rangeStartYmd, eachDay, forwardFill, dailySeries, netInvested, chainTwr, rebasePercent, downsample, fallbackPrice,
+} = require('../services/performanceMath');
 
 const ASSET_TYPES = ['stock', 'etf', 'crypto', 'mutual_fund', 'gold'];
 const CURRENCIES = ['THB', 'USD'];
@@ -188,49 +192,198 @@ async function saveQuote(holding) {
   return { updated: data, price: quote.price };
 }
 
+class FxUnavailableError extends Error {}
+
+// Holdings with their computed fields plus THB totals -- shared by the
+// portfolio GET and the performance chart (whose Today / All gains are these
+// same totals). Throws FxUnavailableError (-> 502) when there are USD
+// holdings and no USD->THB rate: totals are in THB, never a silent 1:1.
+async function loadPortfolio(lineUserId) {
+  const [{ data: holdings, error }, { data: lots, error: lotsError }] = await Promise.all([
+    supabase.from('asset_holdings').select('*').eq('line_user_id', lineUserId).order('created_at', { ascending: true }),
+    supabase.from('asset_lots').select('*').eq('line_user_id', lineUserId),
+  ]);
+  if (error) throw error;
+  if (lotsError) throw lotsError;
+
+  // Without USD holdings the rate is only informational.
+  const hasUsd = (holdings || []).some((h) => h.currency !== 'THB');
+  let fxRate = null;
+  try {
+    fxRate = await getUsdThbRate();
+  } catch (fxError) {
+    if (hasUsd) throw new FxUnavailableError(fxError.message);
+  }
+
+  const lotsByHolding = {};
+  for (const lot of lots || []) (lotsByHolding[lot.holding_id] = lotsByHolding[lot.holding_id] || []).push(lot);
+  const computed = (holdings || []).map((h) => withComputedFields(h, lotsByHolding[h.id] || [], fxRate));
+
+  const sum = (key) => round6(computed.reduce((acc, h) => acc + h[key], 0));
+  const totalValue = sum('market_value_thb');
+  const unrealizedGain = sum('unrealized_gain_thb');
+  const realizedGain = sum('realized_gain_thb');
+  const dayGains = computed.filter((h) => h.day_gain_thb !== null);
+  const dayGain = dayGains.length > 0 ? round6(dayGains.reduce((acc, h) => acc + h.day_gain_thb, 0)) : null;
+
+  const allocationByType = {};
+  for (const h of computed) {
+    allocationByType[h.asset_type] = (allocationByType[h.asset_type] || 0) + h.market_value_thb;
+  }
+  for (const type of Object.keys(allocationByType)) {
+    allocationByType[type] = totalValue > 0 ? (allocationByType[type] / totalValue) * 100 : 0;
+  }
+
+  return {
+    holdings: computed,
+    lotsByHolding,
+    fxRate,
+    totals: {
+      currency: 'THB',
+      total_value: totalValue,
+      total_cost_basis: sum('cost_basis_thb'),
+      unrealized_gain: unrealizedGain,
+      realized_gain: realizedGain,
+      total_gain: round6(unrealizedGain + realizedGain),
+      day_gain: dayGain,
+      fees: sum('fees_thb'),
+    },
+    allocationByType,
+  };
+}
+
+const PERFORMANCE_MAX_POINTS = 120;
+const BENCHMARKS = { sp500: '^GSPC', set: '^SET.BK' };
+const round2 = (value) => (value === null ? null : Math.round(value * 100) / 100);
+const round4 = (value) => (value === null ? null : Math.round(value * 1e4) / 1e4);
+const percentOf = (value, base) => (value !== null && base > 0 ? round4((value / base) * 100) : null);
+
+// Benchmark card: latest close, change vs the previous trading day, and the
+// change over the range (the chart's last rebased point).
+function benchmarkCard(history, rangePct) {
+  if (!history) return null;
+  const { closes } = history;
+  const last = closes[closes.length - 1];
+  const previous = closes[closes.length - 2];
+  return {
+    level: round2(last.close),
+    as_of: last.date,
+    day_change_pct: previous ? round4((last.close / previous.close - 1) * 100) : null,
+    range_change_pct: round4(rangePct[rangePct.length - 1]),
+    history_start: closes[0].date,
+  };
+}
+
+async function buildPerformance({ holdings, lotsByHolding, fxRate, totals }, range) {
+  const today = getBangkokYmd();
+  const allLots = Object.values(lotsByHolding).flat();
+  const emptySummary = {
+    today_gain_thb: null, today_pct: null, yesterday_gain_thb: null, yesterday_pct: null,
+    all_gain_thb: 0, all_pct: null, total_value_thb: 0,
+  };
+  if (allLots.length === 0) {
+    return { range, start_date: null, end_date: today, points: [], summary: emptySummary, benchmarks: { sp500: null, set: null }, missing: [] };
+  }
+
+  // The whole history from the first trade is valued (net invested needs
+  // every earlier flow); the range is sliced out of it afterwards.
+  const firstTrade = allLots.reduce((min, l) => (l.trade_date < min ? l.trade_date : min), allLots[0].trade_date);
+  const startDate = rangeStartYmd(range, today, firstTrade);
+  const days = eachDay(firstTrade, today);
+  const missing = [];
+  const attempt = (symbol, promise) =>
+    Promise.resolve(promise).catch((error) => {
+      missing.push({ symbol, error: error.message });
+      return null;
+    });
+
+  const owned = holdings.filter((h) => (lotsByHolding[h.id] || []).length > 0);
+  const hasUsd = owned.some((h) => h.currency !== 'THB');
+  const [fxHistory, sp500History, setHistory, ...holdingHistories] = await Promise.all([
+    hasUsd ? attempt('USDTHB=X', getYahooDailyCloses('USDTHB=X', firstTrade)) : null,
+    attempt(BENCHMARKS.sp500, getYahooDailyCloses(BENCHMARKS.sp500, startDate)),
+    attempt(BENCHMARKS.set, getYahooDailyCloses(BENCHMARKS.set, startDate)),
+    ...owned.map((h) => attempt(h.symbol, getHoldingHistory(h, firstTrade))),
+  ]);
+
+  // Today is pinned to the live figures the portfolio totals use (current
+  // price, else average cost; the cached USD->THB rate), so the chart's last
+  // point equals summary.total_value_thb.
+  const pinToday = (closes, todayValue) => (todayValue === null ? closes : [...closes.filter((c) => c.date < today), { date: today, close: todayValue }]);
+  const usdThb = forwardFill(pinToday(fxHistory ? fxHistory.closes : [], fxRate), days).map((rate) => (rate === null ? fxRate : rate));
+
+  const positions = owned.map((holding, i) => {
+    const lots = lotsByHolding[holding.id];
+    const history = holdingHistories[i];
+    const todayPrice = holding.current_price !== null ? parseFloat(holding.current_price) : holding.average_cost;
+    // No history (manual-only type, or the fetch failed): a flat line at the
+    // last known price.
+    const prices = history ? forwardFill(pinToday(history.closes, todayPrice), days) : days.map(() => fallbackPrice(holding, lots));
+    return { lots, prices, fx: holding.currency === 'THB' ? days.map(() => 1) : usdThb };
+  });
+  const { value, buys, sells } = dailySeries(days, positions);
+  const invested = netInvested(buys, sells);
+
+  const from = days.indexOf(startDate);
+  const rangeDays = days.slice(from);
+  const twr = chainTwr(value.slice(from), buys.slice(from), sells.slice(from));
+  // Benchmarks aren't backfilled: a day before the index's history starts
+  // (SET only has ~2-3 years, see priceHistory.js) is null, not a flat line.
+  const benchmarkPct = (history) => (history ? rebasePercent(forwardFill(history.closes, rangeDays, { backfill: false })) : rangeDays.map(() => null));
+  const sp500Pct = benchmarkPct(sp500History);
+  const setPct = benchmarkPct(setHistory);
+
+  const points = rangeDays.map((date, i) => ({
+    date,
+    value_thb: round2(value[from + i]),
+    invested_thb: round2(invested[from + i]),
+    twr_pct: round4(twr[i]),
+    sp500_pct: round4(sp500Pct[i]),
+    set_pct: round4(setPct[i]),
+  }));
+
+  // Yesterday: the change on yesterday's Bangkok date, net of that day's lot
+  // cash flows (same formula as one TWR day).
+  const y = days.length - 2;
+  let yesterdayGain = null;
+  let yesterdayPct = null;
+  if (y >= 0) {
+    const previous = y > 0 ? value[y - 1] : 0;
+    yesterdayGain = value[y] - previous - buys[y] + sells[y];
+    yesterdayPct = percentOf(yesterdayGain, previous + buys[y]);
+  }
+
+  // All: total gain against everything ever bought, in THB at today's rate
+  // (the same rate totals.total_gain is converted at).
+  const totalBuyCost = owned.reduce((sum, h) => {
+    const rate = h.currency === 'THB' ? 1 : fxRate || 0;
+    return sum + computeLotSummary(lotsByHolding[h.id]).total_buy_cost * rate;
+  }, 0);
+
+  return {
+    range,
+    start_date: startDate,
+    end_date: today,
+    points: downsample(points, PERFORMANCE_MAX_POINTS),
+    summary: {
+      today_gain_thb: round2(totals.day_gain),
+      today_pct: totals.day_gain === null ? null : percentOf(totals.day_gain, totals.total_value - totals.day_gain),
+      yesterday_gain_thb: round2(yesterdayGain),
+      yesterday_pct: yesterdayPct,
+      all_gain_thb: round2(totals.total_gain),
+      all_pct: percentOf(totals.total_gain, totalBuyCost),
+      total_value_thb: round2(totals.total_value),
+    },
+    benchmarks: { sp500: benchmarkCard(sp500History, sp500Pct), set: benchmarkCard(setHistory, setPct) },
+    missing,
+  };
+}
+
 const portfolioController = {
   async getPortfolio(req, res) {
     try {
       const { line_user_id } = req.params;
-
-      const [{ data: holdings, error }, { data: lots, error: lotsError }] = await Promise.all([
-        supabase.from('asset_holdings').select('*').eq('line_user_id', line_user_id).order('created_at', { ascending: true }),
-        supabase.from('asset_lots').select('*').eq('line_user_id', line_user_id),
-      ]);
-      if (error) throw error;
-      if (lotsError) throw lotsError;
-
-      // Totals are in THB, so a USD holding without a rate can't be summed --
-      // that's a clear error, never a silent 1:1. Without USD holdings the
-      // rate is only informational.
-      const hasUsd = (holdings || []).some((h) => h.currency !== 'THB');
-      let fxRate = null;
-      try {
-        fxRate = await getUsdThbRate();
-      } catch (fxError) {
-        if (hasUsd) return res.status(502).json({ error: fxError.message });
-      }
-
-      const lotsByHolding = {};
-      for (const lot of lots || []) (lotsByHolding[lot.holding_id] = lotsByHolding[lot.holding_id] || []).push(lot);
-      const computed = (holdings || []).map((h) => withComputedFields(h, lotsByHolding[h.id] || [], fxRate));
-
-      const sum = (key) => round6(computed.reduce((acc, h) => acc + h[key], 0));
-      const totalValue = sum('market_value_thb');
-      const totalCostBasis = sum('cost_basis_thb');
-      const unrealizedGain = sum('unrealized_gain_thb');
-      const realizedGain = sum('realized_gain_thb');
-      const dayGains = computed.filter((h) => h.day_gain_thb !== null);
-      const dayGain = dayGains.length > 0 ? round6(dayGains.reduce((acc, h) => acc + h.day_gain_thb, 0)) : null;
-
-      const allocationByType = {};
-      for (const h of computed) {
-        allocationByType[h.asset_type] = (allocationByType[h.asset_type] || 0) + h.market_value_thb;
-      }
-      for (const type of Object.keys(allocationByType)) {
-        allocationByType[type] = totalValue > 0 ? (allocationByType[type] / totalValue) * 100 : 0;
-      }
-
+      const { holdings: computed, fxRate, totals, allocationByType } = await loadPortfolio(line_user_id);
       const emergencyFund = await fetchEmergencyFundStatus(line_user_id);
 
       res.json({
@@ -238,21 +391,35 @@ const portfolioController = {
         holdings: computed,
         fx_usd_thb: fxRate,
         // All in THB. total_gain = unrealized + realized (closed positions count).
-        totals: {
-          currency: 'THB',
-          total_value: totalValue,
-          total_cost_basis: totalCostBasis,
-          unrealized_gain: unrealizedGain,
-          realized_gain: realizedGain,
-          total_gain: round6(unrealizedGain + realizedGain),
-          day_gain: dayGain,
-          fees: sum('fees_thb'),
-        },
+        totals,
         allocation_by_type: allocationByType,
         emergency_fund: emergencyFund,
       });
     } catch (error) {
+      if (error instanceof FxUnavailableError) return res.status(502).json({ error: error.message });
       console.error('Error in getPortfolio:', error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  // GET /api/portfolio/:line_user_id/performance?range=1y -- daily THB value,
+  // net invested, TWR and the two benchmarks over the range, downsampled to
+  // at most PERFORMANCE_MAX_POINTS. The math is performanceMath.js; this only
+  // fetches the history (priceHistory.js) and lines it up. A symbol whose
+  // history can't be fetched is valued at its last known price and listed in
+  // `missing` instead of failing the request.
+  async getPerformance(req, res) {
+    try {
+      const { line_user_id } = req.params;
+      const range = req.query.range || '1y';
+      if (!PERFORMANCE_RANGES.includes(range)) {
+        return res.status(400).json({ error: `range must be one of: ${PERFORMANCE_RANGES.join(', ')}` });
+      }
+      const state = await loadPortfolio(line_user_id);
+      res.json({ success: true, ...(await buildPerformance(state, range)) });
+    } catch (error) {
+      if (error instanceof FxUnavailableError) return res.status(502).json({ error: error.message });
+      console.error('Error in getPerformance:', error);
       res.status(500).json({ error: error.message });
     }
   },

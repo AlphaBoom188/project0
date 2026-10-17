@@ -18,6 +18,9 @@ router.post('/:line_user_id', portfolioController.createHolding);
 // GET /api/portfolio/:line_user_id/lots - Every lot, newest first (Transactions tab "Investments")
 router.get('/:line_user_id/lots', portfolioController.listAllLots);
 
+// GET /api/portfolio/:line_user_id/performance?range=1y - Daily value, net invested, TWR vs S&P 500 / SET
+router.get('/:line_user_id/performance', portfolioController.getPerformance);
+
 // PUT /api/portfolio/:line_user_id/lots/:lot_id - Edit a lot (re-validates the whole history)
 router.put('/:line_user_id/lots/:lot_id', portfolioController.updateLot);
 

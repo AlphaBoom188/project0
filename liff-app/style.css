@@ -1434,6 +1434,106 @@ body {
   text-align: center;
 }
 
+/* ---- Performance card (Net Worth) + Home investments card ---- */
+
+.perf-card {
+  display: block;
+  margin: 0 var(--space-page) var(--space-page);
+  padding: var(--space-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+.perf-total {
+  font-size: 28px;
+  font-weight: 700;
+  margin: var(--space-xs) 0 12px;
+}
+
+.perf-gain-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+
+.perf-gain {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.perf-gain-value {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Reused pill/toggle rows sit inside the card, so no page gutter; tap targets at --tap-min. */
+.perf-card .range-pills,
+.perf-card .type-toggle {
+  margin: 0 0 12px;
+}
+
+.perf-card .range-pill,
+.perf-card .type-toggle-button {
+  min-height: var(--tap-min);
+  min-width: var(--tap-min);
+}
+
+.perf-card .range-pill {
+  padding: var(--space-sm) 12px;
+}
+
+.perf-chart-wrap {
+  position: relative;
+  height: 220px;
+}
+
+.perf-note {
+  margin: var(--space-sm) 0 0;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+.perf-benchmarks {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-sm);
+  margin-top: 12px;
+}
+
+.perf-benchmark {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px;
+  background: var(--color-surface-alt);
+  border-radius: var(--radius-control);
+}
+
+.perf-benchmark-level {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.perf-benchmark-change {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.home-investments-card {
+  width: calc(100% - 2 * var(--space-page));
+  margin-top: 0;
+  min-height: var(--tap-min);
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
 .holding-stats-card {
   background: var(--color-surface-alt);
   border-radius: var(--radius-card);

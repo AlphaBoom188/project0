@@ -8,11 +8,12 @@
 
 const FETCH_TIMEOUT_MS = 10000;
 
-async function fetchWithTimeout(url) {
+// Also used by priceHistory.js (which passes a User-Agent header in `options`).
+async function fetchWithTimeout(url, options = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    return await fetch(url, { signal: controller.signal });
+    return await fetch(url, { ...options, signal: controller.signal });
   } finally {
     clearTimeout(timeout);
   }
@@ -94,6 +95,7 @@ async function fetchPriceForHolding(assetType, symbol, currency) {
 }
 
 module.exports = {
+  fetchWithTimeout,
   fetchYahooQuote,
   fetchStockOrEtfPrice,
   fetchCryptoQuote,

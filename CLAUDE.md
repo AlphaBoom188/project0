@@ -487,6 +487,42 @@ Spec: `docs/master_uxui_specification_finance.md` (the owner's adaptation decisi
 
 **Accepted limitations:** lot writes are read-validate-write, not transactional (same tradeoff as `accountBalance.js`). Investments rows on the Transactions tab can't be tapped; lots are edited from the holding sheet.
 
+### Investments Phase B — Benchmark Performance Chart
+
+Spec: `docs/master_uxui_specification_finance.md` Screen 2.1, adapted. No migration. Built by a subagent, then reviewed and re-verified by the lead (25/25 suites, plus a read-only check against a real portfolio: the last point equals `totals.total_value` exactly).
+
+✅ **Endpoint.** `GET /api/portfolio/:u/performance?range=1m|3m|6m|ytd|1y|3y|5y|all` (default 1y; anything else → 400). The response has:
+- `points`: `date`, `value_thb`, `invested_thb`, `twr_pct`, `sp500_pct`, `set_pct`; at most 120, first and last always kept;
+- `summary`: Today / Yesterday / All gains in THB with %, plus `total_value_thb`;
+- `benchmarks.sp500|set`: `level`, `day_change_pct`, `range_change_pct`, `history_start`;
+- `missing`: symbols with no history.
+
+A user with no lots gets `points: []` with no network calls. The literal route is registered before `/:u/:holding_id`, like `lots`.
+
+✅ **Math (`services/performanceMath.js`, pure).**
+- **Valuation:** every Bangkok day from the first trade is valued as Σ open quantity (lots replayed with `trade_date <= day`) × that day's close × that day's USD→THB. Missing closes are forward-filled. Net invested = buys − sells, each at that day's rate.
+- **Return:** chain-linked daily TWR, each day = (end value + sells − buys − start value) / (start value + buys). Benchmarks are rebased to 0% at the range start. Ranges are clipped to the first trade; YTD starts on Bangkok Jan 1. Only TWR for now: the spec's MWR/SR toggles and "Deposits" benchmark are deferred.
+- **Today is pinned to the live figures** (`current_price`, else average cost, plus cached FX), so the last point equals the portfolio total. Today and All reuse `loadPortfolio()` (the same code as `GET /api/portfolio/:u`). All % is against total buy cost in THB. Yesterday = the change on yesterday's Bangkok date, net of that day's lot cash flows.
+- **Lot dates matter:** a buy priced well below that day's close shows the whole difference as that day's gain. The migrated "Opening balance" lots are dated when the holding was added in the app, so owners should set them to the real purchase date.
+
+✅ **History (`services/priceHistory.js`),** cached in memory for 6h per (source, symbol, window), with concurrent requests merged and the 10s timeout. All limits below were re-verified by the lead:
+- **Stocks/ETFs, `USDTHB=X`, `^GSPC`:** Yahoo daily bars with `User-Agent: Mozilla/5.0`; a full Chrome UA gets HTTP 429. `range=max` with daily bars returns 3-month bars, so a fixed range or `period1=0` is used instead.
+- **`^SET.BK`:** Yahoo has no daily bars for it (every daily range returns 1 point), so daily closes are rebuilt from hourly bars (`range=730d`), which reach back only to Oct 2023. Benchmark days before their history are `null`, not back-filled.
+- **Crypto:** CoinGecko `market_chart`; the free tier refuses more than 365 days (401), so crypto history is capped at a year.
+- **Mutual funds, gold, and failed fetches:** drawn flat at `current_price` (else average cost). A failed symbol goes in `missing` instead of failing the request.
+
+✅ **LIFF.**
+- **Net Worth** has a Performance card at the top of Investments: total ฿, a Today / Yesterday / All row, range pills, a Value | Return toggle, a Chart.js line chart, and S&P 500 and SET cards. The pills and toggle inside the card meet `--tap-min`.
+- **Chart.js 4.4.1** loads from cdnjs. If it's blocked, the card shows "Chart unavailable" and everything else still renders.
+- **Colours** come from tokens: portfolio accent, S&P 500 warning, SET text-primary, invested dashed text-secondary. The chart is destroyed and redrawn on theme change (`applyTheme()` and the OS dark-mode listener). Axis labels are Bangkok dates. Data goes through `cachedGet` with a `perfLoadSeq` stale guard.
+- **Home** shows a compact Investments card (total + today's gain) only when the user has holdings; tapping it opens Net Worth.
+- **Polish item:** on a phone, 5Y/All sit past the edge of the range-pill row and need a sideways scroll.
+
+**Tests:**
+- `api/performance_math` (41, pure).
+- `api/performance` (42, the real endpoint): structure, invariants, a deterministic flat gold portfolio whose TWR stays 0% across a 9× top-up, isolation between users, and `missing`.
+- `liff/performance_chart` (22): includes the CDN-blocked fallback and light/dark screenshots.
+
 ### Event Budgets, Verified Export Email, LIFF Nav Restructure
 
 ✅ **Event/occasion budget buckets** (migration `012_budget_events.sql`, blueprint section 5) — a category's existing `budget_amount`/`budget_period` stays the recurring "normal" limit; `budget_events` is a one-off limit for one specific month (`period_month`, always the 1st) layered on top, always tied to an existing category. `budgetEventController.js`'s `withSpent()` computes `spent`/`remaining`/`percent` on read by summing that category's expenses within the month (UTC month bounds) — no transaction-tagging column added. **Alerts** (decided later: 80% and 100%): `services/eventBudgetAlert.js` `evaluateEventBudgetAlerts()` runs after every expense insert in `transactionCreate.js`, next to the category alert. Like category alerts it is stateless: an alert fires only when *this* expense moves a bucket's month total across 80% (`level: 'warning'`) or 100% (`'over'`; reaching exactly 100% counts), and only the highest line crossed fires, so a 0%→120% jump sends only the used-up alert. No migration was needed. The month is the transaction's own UTC month, matching the progress bar, so a back-dated expense alerts on that month's bucket. Routing is identical to category alerts: `channel: 'liff'` returns `event_budget_alerts` (each with a ready-made `message`, the single source of the wording) in the POST response for the LIFF banner, which is amber when everything is a heads-up and red if anything is over. Every other channel gets a fire-and-forget LINE push gated by `notifications_enabled`. Tests: `tests/api/event_budget_alerts.test.js` (17) and `tests/liff/event_alert_banner.test.js` (5, real Add form). LIFF: "Event & Occasion Budgets" section in the Budgets tab, current month only.
