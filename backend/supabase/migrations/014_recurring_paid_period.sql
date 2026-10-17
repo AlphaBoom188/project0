@@ -1,0 +1,12 @@
+-- Migration 014: paid tracking for recurring pay windows
+--
+-- pay_start_day/pay_end_day (migration 009) were stored but unused. Decided
+-- behavior: auto-logging is unchanged (still fires on next_run_date); on top of
+-- it, monthly rules with a pay window get a LINE reminder on the start day and
+-- an overdue reminder the day after the end day unless marked paid for that
+-- month (jobs/payWindowReminders.js, services/payWindow.js).
+--
+-- paid_period = the first day of the pay period (month) the user last marked
+-- paid. A single column is enough: only the current period ever matters, and a
+-- new month simply doesn't match it -- so "unpaid" needs no reset job.
+ALTER TABLE recurring_transactions ADD COLUMN IF NOT EXISTS paid_period DATE;

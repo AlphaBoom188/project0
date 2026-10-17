@@ -286,6 +286,24 @@ body {
   opacity: 0.5;
 }
 
+.recurring-row {
+  flex-wrap: wrap;
+}
+
+/* Pay window status: its own full-width line under the rule */
+.recurring-pay-row {
+  flex: 0 0 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.recurring-pay-row .recurring-paid-toggle {
+  margin-left: auto;
+}
+
 .recurring-details {
   flex: 1;
   min-width: 0;

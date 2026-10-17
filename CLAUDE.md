@@ -40,7 +40,8 @@ npm start  # Starts server on port 3000
 - `GET/PUT/DELETE /api/transactions/:line_user_id/:transaction_id` - Single transaction. **ID validation applies across the API:** every router with an id param (`transaction_id`, `bill_id`, `participant_id`, `account_id`, `recurring_id`, `category_id`, `holding_id`, `event_id`) registers `router.param(name, requireUuidParam(label))` from `services/uuid.js`, so a malformed id gets `400 "Invalid <label> id"` before any handler runs, instead of Postgres's raw `invalid input syntax for type uuid` error as a 500. Every update handler maps PostgREST `PGRST116` (`.single()` matched zero rows: unknown id, or another user's) to `404 "<X> not found"` instead of a 500 "Cannot coerce the result to a single JSON object". Deletes of an unknown id still silently succeed, as before (`bills_test` relies on that). `isUuid` is also used by the transactions `account_id` filter
 - `GET /api/transactions/:line_user_id/export` - Export transactions as CSV (UTF-8 BOM), accepts `type`/`category_id`/`start_date`/`end_date` filters
 - `POST /api/transactions/:line_user_id/export/email` - Same filtered export, emailed via the Apps Script relay (501 if not configured)
-- `GET/POST /api/recurring/:line_user_id`, `PUT/DELETE /api/recurring/:line_user_id/:recurring_id` - Recurring expense/income rules (now with optional `pay_start_day`/`pay_end_day`)
+- `GET/POST /api/recurring/:line_user_id`, `PUT/DELETE /api/recurring/:line_user_id/:recurring_id` - Recurring expense/income rules (optional `pay_start_day`/`pay_end_day`; monthly rules with a window come back with a computed `pay_status`)
+- `PATCH /api/recurring/:line_user_id/:recurring_id/paid` - `{ paid: true|false }` for the rule's *current* pay period (computed server-side); 400 for rules without a monthly pay window
 - `GET/POST /api/accounts/:line_user_id`, `PUT/DELETE /api/accounts/:line_user_id/:account_id` - Bank/credit card/e-wallet/cash accounts; `POST /api/transactions/:line_user_id` with `type: "transfer"` moves money between two of them
 - `GET/POST /api/bills/:line_user_id`, `GET/DELETE /api/bills/:line_user_id/:bill_id`, `PATCH /api/bills/:line_user_id/:bill_id/participants/:participant_id` - Shared bills (equal/custom/itemized split), creator-scoped
 - `POST /api/bills/:line_user_id/scan-items` - OCR a receipt into itemized line items for an itemized split (no transaction/dedup involved)
@@ -113,6 +114,7 @@ xcrun simctl io "iPhone 17 Pro" screenshot screenshot.png
    - 011_portfolio.sql
    - 012_budget_events.sql
    - 013_google_email_verification.sql
+   - 014_recurring_paid_period.sql
 
 **Note:** after running a migration in the SQL Editor, the REST API layer (PostgREST) caches the schema and can take a bit to notice new tables — if the backend immediately 500s with `Could not find the table '...' in the schema cache` right after a migration, that's this cache, not a failed migration; it clears on its own within roughly a minute, or immediately by running `NOTIFY pgrst, 'reload schema';` in the SQL Editor.
 
@@ -369,7 +371,12 @@ From `docs/phase_2_product_architecture_blueprint.md` — that doc's own migrati
 
 ✅ **Balance tracking** — `services/accountBalance.js` adjusts both sides of a transfer and the relevant side of an account-attributed income/expense. Deliberately a read-modify-write, not an atomic Postgres increment function — acceptable at this app's scale (single user per `line_user_id`, low write concurrency); called out in code as a place to revisit if that assumption ever breaks. Runs *after* the transaction row is committed and is best-effort (logged loudly on failure, doesn't roll back the transaction) — losing a balance update on a rare failure is preferable to losing the transaction record itself.
 
-✅ **Flexible recurring date windows** — `recurring_transactions.pay_start_day`/`pay_end_day` (optional, 1-31), exposed in the LIFF recurring form. Stored as metadata only so far — `jobs/recurringTransactions.js`'s engine still fires purely off `next_run_date`, unchanged. What the window should actually *do* (fire the reminder on the start day but not treat it as overdue until after the end day? something else?) is a real product decision intentionally left for when that behavior is actually built, not guessed at now.
+✅ **Flexible recurring date windows** — `recurring_transactions.pay_start_day`/`pay_end_day` (optional, 1-31), exposed in the LIFF recurring form. **Behavior (decided later):** auto-logging is unchanged and still fires on `next_run_date`. On top of it, **monthly** rules with a window get pay reminders from `jobs/payWindowReminders.js` (09:00 Asia/Bangkok, gated by `notifications_enabled`): "due between X and Y" on the start day, and "overdue" the day after the end day unless that month is marked paid. All date math lives in `services/payWindow.js`, on Bangkok calendar dates as `YYYY-MM-DD` strings:
+  - A window can wrap the month end (28 to 3); the period is the month it starts in.
+  - Days clamp to short months (31 becomes Feb 28).
+  - With only an end day, the window starts on the 1st (no due reminder, overdue only). With only a start day, the window ends that same day.
+
+  Paid tracking is a single `paid_period DATE` column (migration 014): the first day of the period last marked paid. A new month simply doesn't match it, so no reset job is needed. LIFF Budgets → Advanced shows "Due Oct 1 – Oct 5" with Unpaid/Overdue/Paid and Mark Paid/Undo. `sendPayWindowReminders({ lineUserId, now })` is scopable for tests. Tests: `tests/api/pay_window.test.js` (27) and `tests/liff/pay_window_list.test.js` (7).
 
 ✅ **LIFF UI** — Accounts section folded into the existing หมวด/งบ tab (list with live balances, "+Add Account", "Transfer Between Accounts") rather than a 6th nav tab.
 

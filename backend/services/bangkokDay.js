@@ -9,4 +9,9 @@ function getBangkokDayRangeISO(now = new Date()) {
   return { startISO: new Date(startUTC).toISOString(), endISO: new Date(startUTC + DAY_MS).toISOString() };
 }
 
-module.exports = { getBangkokDayRangeISO };
+// Today's Bangkok calendar date as 'YYYY-MM-DD'.
+function getBangkokYmd(now = new Date()) {
+  return new Date(now.getTime() + BANGKOK_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+module.exports = { getBangkokDayRangeISO, getBangkokYmd };

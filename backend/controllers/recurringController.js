@@ -1,4 +1,8 @@
 const supabase = require('../config/supabase');
+const { hasPayWindow, payStatus } = require('../services/payWindow');
+
+// pay_status (current period's window, paid, overdue) is derived on read, never stored.
+const withPayStatus = (rule) => ({ ...rule, pay_status: payStatus(rule) });
 
 const FREQUENCIES = ['daily', 'weekly', 'monthly', 'yearly'];
 
@@ -12,6 +16,42 @@ function validatePayWindow(payStartDay, payEndDay) {
 }
 
 const recurringController = {
+  // Mark (or un-mark) the rule's CURRENT pay period as paid. The period is
+  // computed here, not sent by the client, so a stale screen can't mark the
+  // wrong month.
+  async setPaid(req, res) {
+    try {
+      const { line_user_id, recurring_id } = req.params;
+      const { paid } = req.body;
+      if (typeof paid !== 'boolean') return res.status(400).json({ error: 'paid must be true or false' });
+
+      const { data: rule, error: ruleError } = await supabase
+        .from('recurring_transactions')
+        .select('*')
+        .eq('id', recurring_id)
+        .eq('line_user_id', line_user_id)
+        .maybeSingle();
+      if (ruleError) throw ruleError;
+      if (!rule) return res.status(404).json({ error: 'Recurring rule not found' });
+      if (!hasPayWindow(rule)) return res.status(400).json({ error: 'Only monthly rules with a pay window can be marked paid' });
+
+      const { period } = payStatus(rule);
+      const { data: updated, error } = await supabase
+        .from('recurring_transactions')
+        .update({ paid_period: paid ? period : null })
+        .eq('id', recurring_id)
+        .eq('line_user_id', line_user_id)
+        .select('*, categories ( id, name, type )')
+        .single();
+      if (error) throw error;
+
+      res.json({ success: true, recurring: withPayStatus(updated) });
+    } catch (error) {
+      console.error('Error in setPaid:', error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+
   // List a user's recurring rules
   async getRecurring(req, res) {
     try {
@@ -21,11 +61,12 @@ const recurringController = {
         .from('recurring_transactions')
         .select('*, categories ( id, name, type )')
         .eq('line_user_id', line_user_id)
-        .order('next_run_date', { ascending: true });
+        .order('next_run_date', { ascending: true })
+        .order('created_at', { ascending: true }); // stable order for rules due the same day
 
       if (error) throw error;
 
-      res.json({ success: true, recurring });
+      res.json({ success: true, recurring: (recurring || []).map(withPayStatus) });
     } catch (error) {
       console.error('Error in getRecurring:', error);
       res.status(500).json({ error: error.message });
@@ -82,7 +123,7 @@ const recurringController = {
 
       if (error) throw error;
 
-      res.status(201).json({ success: true, recurring: rule });
+      res.status(201).json({ success: true, recurring: withPayStatus(rule) });
     } catch (error) {
       console.error('Error in createRecurring:', error);
       res.status(500).json({ error: error.message });
@@ -129,7 +170,7 @@ const recurringController = {
         throw error;
       }
 
-      res.json({ success: true, recurring: rule });
+      res.json({ success: true, recurring: withPayStatus(rule) });
     } catch (error) {
       console.error('Error in updateRecurring:', error);
       res.status(500).json({ error: error.message });

@@ -1260,6 +1260,7 @@ function renderCategoryBreakdown(transactions, periodStart, periodEnd, type = 'e
     )
     .join('');
 
+  el.categoryChart.hidden = rows.length === 0; // no empty bordered card when there's nothing to chart
   return rows.length > 0;
 }
 
@@ -2238,11 +2239,13 @@ function renderRecurringList(rules) {
       </div>
       <div class="recurring-amount ${rule.type}">${parseFloat(rule.amount).toFixed(2)}</div>
       <button type="button" class="recurring-delete">Delete</button>
+      ${payStatusHtml(rule.pay_status)}
     `;
     li.querySelector('.recurring-active-toggle').addEventListener('change', (e) =>
       handleToggleRecurringActive(rule.id, e.target.checked)
     );
     li.querySelector('.recurring-delete').addEventListener('click', () => handleDeleteRecurring(rule.id));
+    li.querySelector('.recurring-paid-toggle')?.addEventListener('click', () => handleSetRecurringPaid(rule.id, !rule.pay_status.paid));
     el.recurringList.appendChild(li);
   }
 }
@@ -2302,6 +2305,30 @@ async function handleRecurringSubmit(event) {
     showModalError(el.recurringModalError, error.message);
   } finally {
     submitButton.disabled = false;
+  }
+}
+
+// Monthly rules with a pay window get "Due Oct 1 - Oct 5" plus Unpaid / Paid /
+// Overdue for the current period (computed server-side, services/payWindow.js).
+function payStatusHtml(status) {
+  if (!status) return '';
+  const fmt = (ymdStr) => new Date(`${ymdStr}T00:00:00Z`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  const label = status.paid ? 'Paid' : status.overdue ? 'Overdue' : 'Unpaid';
+  return `
+    <div class="recurring-pay-row">
+      <span>Due ${fmt(status.start)} – ${fmt(status.end)}</span>
+      <span class="bill-status-pill ${status.paid ? 'paid' : 'unpaid'}">${label}</span>
+      <button type="button" class="bill-participant-toggle recurring-paid-toggle">${status.paid ? 'Undo' : 'Mark Paid'}</button>
+    </div>
+  `;
+}
+
+async function handleSetRecurringPaid(recurringId, paid) {
+  try {
+    await apiRequest(`/recurring/${lineUserId}/${recurringId}/paid`, { method: 'PATCH', body: JSON.stringify({ paid }) });
+    await loadRecurringList();
+  } catch (error) {
+    showBudgetsStatus(error.message);
   }
 }
 

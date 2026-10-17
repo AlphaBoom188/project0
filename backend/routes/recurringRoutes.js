@@ -15,6 +15,9 @@ router.post('/:line_user_id', recurringController.createRecurring);
 // PUT /api/recurring/:line_user_id/:recurring_id - Update (or pause/resume via is_active)
 router.put('/:line_user_id/:recurring_id', recurringController.updateRecurring);
 
+// PATCH /api/recurring/:line_user_id/:recurring_id/paid - { paid: true|false } for the rule's current pay period
+router.patch('/:line_user_id/:recurring_id/paid', recurringController.setPaid);
+
 // DELETE /api/recurring/:line_user_id/:recurring_id - Delete a recurring rule
 router.delete('/:line_user_id/:recurring_id', recurringController.deleteRecurring);
 

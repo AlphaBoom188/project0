@@ -19,6 +19,7 @@ const googleRoutes = require('./routes/googleRoutes');
 const { startDailyDigestJob } = require('./jobs/dailyDigest');
 const { startRecurringTransactionsJob } = require('./jobs/recurringTransactions');
 const { startActivityReminderJob } = require('./jobs/activityReminders');
+const { startPayWindowReminderJob } = require('./jobs/payWindowReminders');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -79,4 +80,5 @@ app.listen(PORT, () => {
   startDailyDigestJob();
   startRecurringTransactionsJob();
   startActivityReminderJob();
+  startPayWindowReminderJob();
 });
