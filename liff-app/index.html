@@ -52,6 +52,15 @@
           </div>
         </section>
 
+        <section class="streak-card" aria-label="Logging streak">
+          <div class="streak-top">
+            <span class="streak-count" id="streak-count"></span>
+            <span class="streak-best" id="streak-best"></span>
+          </div>
+          <div class="streak-days" id="streak-days"></div>
+          <p class="streak-hint" id="streak-hint"></p>
+        </section>
+
         <div class="quick-actions-row">
           <button type="button" id="add-bill-button" class="quick-action-button">
             <span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></span>
@@ -118,6 +127,7 @@
             <option value="income">Income</option>
             <option value="transfer">Transfer</option>
           </select>
+          <button type="button" id="txn-account-button" class="filter-select-button" aria-haspopup="dialog">All accounts</button>
         </div>
 
         <div class="export-row">
@@ -610,6 +620,18 @@
         <button type="button" id="bill-delete" class="danger-button">Delete Bill</button>
       </div>
       <button type="button" id="close-bill-detail" class="secondary-button recurring-add-button">Close</button>
+    </div>
+  </div>
+
+  <div id="account-filter-modal" class="modal" hidden>
+    <div class="modal-content">
+      <h2 class="section-title">Filter by Account</h2>
+      <ul id="account-filter-list" class="categories-list"></ul>
+      <p id="account-filter-empty" class="empty-state" hidden>No accounts yet. Add one in Net Worth.</p>
+      <div class="modal-actions">
+        <button type="button" id="account-filter-clear" class="secondary-button">All Accounts</button>
+        <button type="button" id="account-filter-apply" class="primary-button">Show Records</button>
+      </div>
     </div>
   </div>
 

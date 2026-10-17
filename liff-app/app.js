@@ -185,6 +185,16 @@ const el = {
   // Transactions tab
   txnFilterType: document.getElementById('txn-filter-type'),
   txnSearch: document.getElementById('txn-search'),
+  txnAccountButton: document.getElementById('txn-account-button'),
+  accountFilterModal: document.getElementById('account-filter-modal'),
+  accountFilterList: document.getElementById('account-filter-list'),
+  accountFilterEmpty: document.getElementById('account-filter-empty'),
+  accountFilterClear: document.getElementById('account-filter-clear'),
+  accountFilterApply: document.getElementById('account-filter-apply'),
+  streakCount: document.getElementById('streak-count'),
+  streakBest: document.getElementById('streak-best'),
+  streakDays: document.getElementById('streak-days'),
+  streakHint: document.getElementById('streak-hint'),
   breakdownTotalLabel: document.getElementById('breakdown-total-label'),
   breakdownTotalValue: document.getElementById('breakdown-total-value'),
   billShareLine: document.getElementById('bill-share-line'),
@@ -366,6 +376,14 @@ function getPeriodStartDate(period) {
 function formatDate(isoString) {
   const date = new Date(isoString);
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+// Billing-cycle bounds are UTC midnights (getBillingCycleRange) and the end is
+// exclusive, so the label shows the last included day, formatted in UTC -- in
+// local time (UTC+7) the end would otherwise read as the next cycle's first day.
+function formatCycleLabel(startISO, endISO) {
+  const fmt = (iso) => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  return `${fmt(startISO)} – ${fmt(new Date(new Date(endISO).getTime() - 1).toISOString())}`;
 }
 
 // Shared by category budgets and event buckets: amber from 80%, red once over.
@@ -554,6 +572,69 @@ function buildTransactionRow(t, showPaymentMethod) {
   return li;
 }
 
+// ---- Logging streak (Home) ----
+//
+// Consecutive local calendar days with at least one transaction, from the
+// Home tab's existing 6-month fetch (no extra request). A streak is still
+// "alive" if today has nothing yet but yesterday does -- the hint nudges the
+// user to log today instead of showing it as already lost. "Best" is the
+// longest run inside that same 6-month window, and is labelled as such.
+function localDayKey(date) {
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+
+function computeStreak(transactions, today = new Date()) {
+  const loggedDays = new Set(transactions.map((t) => localDayKey(new Date(t.transaction_date))));
+  const dayOffset = (n) => new Date(today.getFullYear(), today.getMonth(), today.getDate() - n);
+
+  const loggedToday = loggedDays.has(localDayKey(today));
+  let current = 0;
+  for (let n = loggedToday ? 0 : 1; loggedDays.has(localDayKey(dayOffset(n))); n++) current++;
+
+  const sortedDays = [...new Set(transactions.map((t) => {
+    const d = new Date(t.transaction_date);
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  }))].sort((a, b) => a - b);
+  let best = 0;
+  let run = 0;
+  for (let i = 0; i < sortedDays.length; i++) {
+    // Compare calendar dates, not a fixed 24h gap, so a DST shift can't break a run.
+    const prev = i > 0 ? new Date(sortedDays[i - 1]) : null;
+    const isNext = prev && localDayKey(new Date(prev.getFullYear(), prev.getMonth(), prev.getDate() + 1)) === localDayKey(new Date(sortedDays[i]));
+    run = isNext ? run + 1 : 1;
+    best = Math.max(best, run);
+  }
+
+  const lastSeven = [6, 5, 4, 3, 2, 1, 0].map((n) => {
+    const date = dayOffset(n);
+    return { date, logged: loggedDays.has(localDayKey(date)), isToday: n === 0 };
+  });
+  return { current, best: Math.max(best, current), loggedToday, lastSeven };
+}
+
+function renderStreak(transactions) {
+  const { current, best, loggedToday, lastSeven } = computeStreak(transactions);
+  el.streakCount.textContent = current === 0 ? 'No streak yet' : `${current}-day logging streak`;
+  el.streakBest.textContent = best > 0 ? `Best: ${best} days (6 mo)` : '';
+  el.streakDays.innerHTML = lastSeven
+    .map(
+      (d) => `
+        <div class="streak-day${d.isToday ? ' today' : ''}">
+          <span class="streak-dot${d.logged ? ' logged' : ''}" aria-label="${d.logged ? 'Logged' : 'Not logged'}"></span>
+          <span>${d.isToday ? 'Today' : d.date.toLocaleDateString(undefined, { weekday: 'narrow' })}</span>
+        </div>
+      `
+    )
+    .join('');
+  if (loggedToday) {
+    el.streakHint.textContent = 'Logged today. Come back tomorrow to keep it going.';
+  } else if (current > 0) {
+    el.streakHint.textContent = `Log something today to keep your ${current}-day streak.`;
+  } else {
+    el.streakHint.textContent = 'Log a transaction today to start a streak.';
+  }
+}
+
 async function loadHomeTab() {
   // The transactions fetch can't be date-filtered server-side until we know the
   // user's billing_cycle_start_day, which only comes back from the /users call --
@@ -570,7 +651,7 @@ async function loadHomeTab() {
   currentUser = userResponse.user;
 
   const { startISO, endISO } = getBillingCycleRange(currentUser.billing_cycle_start_day);
-  const periodLabel = `${formatDate(startISO)} – ${formatDate(endISO)}`;
+  const periodLabel = `This cycle · ${formatCycleLabel(startISO, endISO)}`;
 
   const allTransactions = transactionsResponse.transactions;
   const periodStart = new Date(startISO);
@@ -584,6 +665,7 @@ async function loadHomeTab() {
   });
 
   renderSummary(inPeriod, periodLabel);
+  renderStreak(allTransactions);
   renderTrendChart(allTransactions);
   // allTransactions is newest-first (API default order) across the whole
   // 6-month window -- the first 50 are still the 50 most recent overall.
@@ -1807,12 +1889,14 @@ async function handleDeleteCategory(category) {
 // current, never positive); 'custom' reveals the two date inputs. Both CSV
 // exports read the same params, so they always match what's on screen.
 const txnRange = { mode: 'cycle', offset: 0 };
+let txnAccountIds = []; // empty = all accounts (including transactions with no account)
 
 function buildTransactionFilterQuery() {
   const params = new URLSearchParams();
   if (el.txnFilterType.value) params.set('type', el.txnFilterType.value);
   const search = el.txnSearch.value.trim();
   if (search) params.set('q', search);
+  if (txnAccountIds.length > 0) params.set('account_id', txnAccountIds.join(','));
   if (txnRange.mode === 'cycle') {
     const { startISO, endISO } = getBillingCycleRange(currentUser.billing_cycle_start_day, txnRange.offset);
     params.set('start_date', startISO);
@@ -1834,11 +1918,7 @@ function renderTxnRangeControls() {
   el.txnCustomRange.hidden = txnRange.mode !== 'custom';
   if (txnRange.mode === 'cycle') {
     const { startISO, endISO } = getBillingCycleRange(currentUser.billing_cycle_start_day, txnRange.offset);
-    const lastDay = new Date(new Date(endISO).getTime() - 1).toISOString();
-    // Cycle boundaries are UTC midnights (getBillingCycleRange), so label them in
-    // UTC too -- in local time (UTC+7) the last instant would read as the next day.
-    const fmt = (iso) => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
-    el.txnPeriodLabel.textContent = `${txnRange.offset === 0 ? 'This cycle · ' : ''}${fmt(startISO)} – ${fmt(lastDay)}`;
+    el.txnPeriodLabel.textContent = `${txnRange.offset === 0 ? 'This cycle · ' : ''}${formatCycleLabel(startISO, endISO)}`;
     el.txnPeriodNext.disabled = txnRange.offset >= 0;
   }
 }
@@ -1853,10 +1933,53 @@ function setTxnRange(mode, offset = 0) {
 // or a slow earlier response could land last and show the wrong cycle.
 let txnLoadSeq = 0;
 
+// Bottom-sheet checklist of the user's accounts (MeowJot's account filter).
+// Checkbox state lives in the sheet until "Show Records", so dismissing it
+// changes nothing; "All Accounts" clears the filter outright.
+async function openAccountFilter() {
+  const { accounts } = await cachedGet(`/accounts/${lineUserId}`);
+  el.accountFilterEmpty.hidden = accounts.length > 0;
+  el.accountFilterList.hidden = accounts.length === 0;
+  el.accountFilterApply.disabled = accounts.length === 0;
+  el.accountFilterList.innerHTML = accounts
+    .map(
+      (a) => `
+        <li>
+          <label class="account-filter-row">
+            <input type="checkbox" value="${a.id}" ${txnAccountIds.includes(a.id) ? 'checked' : ''} />
+            <span class="account-filter-name">${escapeHtml(a.account_name)}</span>
+            <span class="account-filter-type">${ACCOUNT_TYPE_LABELS[a.account_type] || ''}</span>
+          </label>
+        </li>
+      `
+    )
+    .join('');
+  el.accountFilterModal.hidden = false;
+}
+
+function applyAccountFilter(ids) {
+  txnAccountIds = ids;
+  el.accountFilterModal.hidden = true;
+  loadTransactionsTab().catch((error) => showError(error.message));
+}
+
+async function renderAccountFilterButton() {
+  if (txnAccountIds.length === 0) {
+    el.txnAccountButton.textContent = 'All accounts';
+  } else if (txnAccountIds.length === 1) {
+    const { accounts } = await cachedGet(`/accounts/${lineUserId}`);
+    el.txnAccountButton.textContent = accounts.find((a) => a.id === txnAccountIds[0])?.account_name || '1 account';
+  } else {
+    el.txnAccountButton.textContent = `${txnAccountIds.length} accounts`;
+  }
+  el.txnAccountButton.classList.toggle('active', txnAccountIds.length > 0);
+}
+
 async function loadTransactionsTab() {
   const seq = ++txnLoadSeq;
   await ensureCurrentUser();
   renderTxnRangeControls();
+  renderAccountFilterButton().catch(() => {});
   const params = buildTransactionFilterQuery();
   params.set('limit', '200');
   const response = await cachedGet(`/transactions/${lineUserId}?${params.toString()}`);
@@ -2257,6 +2380,14 @@ el.cancelTransfer.addEventListener('click', closeTransferModal);
 el.transferForm.addEventListener('submit', handleTransferSubmit);
 
 el.txnFilterType.addEventListener('change', () => loadTransactionsTab().catch((error) => showError(error.message)));
+el.txnAccountButton.addEventListener('click', () => openAccountFilter().catch((error) => showError(error.message)));
+el.accountFilterApply.addEventListener('click', () =>
+  applyAccountFilter(Array.from(el.accountFilterList.querySelectorAll('input:checked')).map((input) => input.value))
+);
+el.accountFilterClear.addEventListener('click', () => applyAccountFilter([]));
+el.accountFilterModal.addEventListener('click', (e) => {
+  if (e.target === el.accountFilterModal) el.accountFilterModal.hidden = true;
+});
 let txnSearchTimer = null;
 el.txnSearch.addEventListener('input', () => {
   clearTimeout(txnSearchTimer);

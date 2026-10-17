@@ -25,10 +25,19 @@
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08);
   --shadow-fab: 0 4px 12px rgba(0, 0, 0, 0.25); /* same in both themes: the button floats over content either way */
 
-  --radius-card: 12px;
-  --radius-control: 10px;
+  /* Spacing + radius scale (docs/master_uxui_specification.md §3.1) */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-page: var(--space-md);
+
   --radius-input: 8px;
-  --space-page: 16px;
+  --radius-control: 12px;
+  --radius-card: 16px;
+  --radius-modal: 24px;
+  --radius-pill: 999px;
   --tap-min: 44px;
 }
 
@@ -214,7 +223,7 @@ body {
   justify-content: space-between;
   align-items: center;
   font-size: 15px;
-  padding: 8px 0;
+  padding: var(--space-sm) 0;
 }
 
 .toggle-row {
@@ -307,7 +316,7 @@ body {
   background: none;
   border: none;
   font-size: 18px;
-  padding: 4px;
+  padding: var(--space-xs);
   color: var(--color-danger-text);
 }
 
@@ -331,7 +340,7 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-xs);
 }
 
 .summary-label {
@@ -403,7 +412,7 @@ body {
   color: var(--color-accent);
   font-size: 14px;
   font-weight: 600;
-  padding: 4px 8px;
+  padding: var(--space-xs) var(--space-sm);
 }
 
 .transaction-list {
@@ -472,7 +481,7 @@ body {
   text-align: center;
   color: var(--color-text-secondary);
   font-size: 14px;
-  padding: 24px;
+  padding: var(--space-lg);
 }
 
 .modal {
@@ -487,7 +496,7 @@ body {
 .modal-content {
   background: var(--color-surface);
   width: 100%;
-  border-radius: 16px 16px 0 0;
+  border-radius: var(--radius-modal) var(--radius-modal) 0 0;
   padding: 20px var(--space-page) calc(20px + env(safe-area-inset-bottom));
 }
 
@@ -502,7 +511,7 @@ body {
 .field select {
   display: block;
   width: 100%;
-  margin-top: 4px;
+  margin-top: var(--space-xs);
   padding: 10px;
   font-size: 16px;
   border: 1px solid var(--color-border);
@@ -532,7 +541,7 @@ body {
   align-items: center;
   justify-content: center;
   width: auto;
-  padding: 10px 16px;
+  padding: 10px var(--space-md);
   margin: 0;
   cursor: pointer;
 }
@@ -557,7 +566,7 @@ body {
 .modal-actions {
   display: flex;
   gap: 12px;
-  margin-top: 8px;
+  margin-top: var(--space-sm);
 }
 
 .modal-actions .primary-button,
@@ -572,7 +581,7 @@ body {
 
 .type-toggle {
   display: flex;
-  gap: 8px;
+  gap: var(--space-sm);
   margin: 0 var(--space-page) var(--space-page);
 }
 
@@ -619,7 +628,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-sm);
 }
 
 .category-name {
@@ -642,11 +651,11 @@ body {
   border: none;
   color: var(--color-danger-text);
   font-size: 14px;
-  padding: 4px 8px;
+  padding: var(--space-xs) var(--space-sm);
 }
 
 .category-budget-track {
-  margin-top: 8px;
+  margin-top: var(--space-sm);
   height: 6px;
   background: var(--color-track);
   border-radius: 3px;
@@ -670,7 +679,7 @@ body {
 
 .filter-row {
   display: flex;
-  gap: 8px;
+  gap: var(--space-sm);
   margin: 0 var(--space-page) 12px;
 }
 
@@ -678,7 +687,7 @@ body {
 .filter-row input {
   flex: 1;
   min-width: 0;
-  padding: 10px 8px;
+  padding: 10px var(--space-sm);
   font-size: 16px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-input);
@@ -688,7 +697,7 @@ body {
 
 .export-row {
   display: flex;
-  gap: 16px;
+  gap: var(--space-md);
   margin: 0 var(--space-page) 12px;
 }
 
@@ -698,7 +707,7 @@ body {
   display: flex;
   align-items: flex-end;
   justify-content: space-around;
-  gap: 8px;
+  gap: var(--space-sm);
   height: 160px;
   margin: 0 var(--space-page) 24px;
   padding: 12px;
@@ -712,7 +721,7 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-xs);
   flex: 1;
 }
 
@@ -752,7 +761,7 @@ body {
 }
 
 .category-bar-row {
-  padding: 8px 0;
+  padding: var(--space-sm) 0;
 }
 
 .category-bar-row:not(:last-child) {
@@ -763,7 +772,7 @@ body {
   display: flex;
   justify-content: space-between;
   font-size: 13px;
-  margin-bottom: 4px;
+  margin-bottom: var(--space-xs);
 }
 
 .category-bar-track {
@@ -784,8 +793,8 @@ body {
 .bill-item-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
 }
 
 .bill-participant-row input,
@@ -820,7 +829,7 @@ body {
 .assign-chip {
   min-height: 36px;
   padding: 6px 12px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   color: var(--color-text-secondary);
@@ -842,15 +851,15 @@ body {
   line-height: 1;
   min-height: var(--tap-min);
   min-width: var(--tap-min);
-  padding: 4px 6px;
+  padding: var(--space-xs) 6px;
   flex: 0 0 auto;
 }
 
 .bill-status-pill {
   font-size: 11px;
   font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 999px;
+  padding: 2px var(--space-sm);
+  border-radius: var(--radius-pill);
   white-space: nowrap;
 }
 
@@ -868,7 +877,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-sm);
 }
 
 .bill-participant-toggle {
@@ -910,7 +919,7 @@ body {
   min-width: var(--tap-min);
   background: none;
   border: none;
-  padding: 4px;
+  padding: var(--space-xs);
   color: var(--color-text-secondary);
 }
 
@@ -970,13 +979,13 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-sm);
 }
 
 .verified-badge {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-xs);
   font-size: 12px;
   font-weight: 600;
   color: var(--color-income);
@@ -991,7 +1000,7 @@ body {
 
 .theme-toggle {
   display: flex;
-  gap: 8px;
+  gap: var(--space-sm);
 }
 
 .theme-toggle-button {
@@ -1015,7 +1024,7 @@ body {
 
 .range-pills {
   display: flex;
-  gap: 8px;
+  gap: var(--space-sm);
   margin: 0 var(--space-page) 12px;
   overflow-x: auto;
 }
@@ -1023,8 +1032,8 @@ body {
 .range-pill {
   flex: 0 0 auto;
   min-height: 36px;
-  padding: 8px 14px;
-  border-radius: 999px;
+  padding: var(--space-sm) 14px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   color: var(--color-text-secondary);
@@ -1110,7 +1119,7 @@ body {
 .bill-participant-detail-row .category-name {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-sm);
 }
 
 /* ---- Quick actions (Home, Transactions) ---- */
@@ -1126,7 +1135,7 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: var(--space-sm);
   min-height: 48px;
   padding: 10px 12px;
   background: var(--color-surface);
@@ -1167,13 +1176,13 @@ body {
 .search-field {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-sm);
   margin: 0 var(--space-page) 12px;
   padding: 0 12px;
   min-height: var(--tap-min);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   color: var(--color-text-secondary);
 }
 
@@ -1203,9 +1212,9 @@ body {
   align-items: center;
   gap: 6px;
   min-height: 52px;
-  padding: 0 20px 0 16px;
+  padding: 0 20px 0 var(--space-md);
   border: none;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--color-accent);
   color: var(--color-text-on-accent);
   font-size: 16px;
@@ -1238,4 +1247,140 @@ body {
 .share-line-button {
   width: 100%;
   margin: 0 0 12px;
+}
+
+/* ---- Logging streak (Home) ---- */
+
+.streak-card {
+  margin: 0 var(--space-page) var(--space-page);
+  padding: var(--space-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+.streak-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 12px;
+}
+
+.streak-count {
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.streak-best {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.streak-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: var(--space-xs);
+  text-align: center;
+}
+
+.streak-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.streak-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-pill);
+  border: 2px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.streak-dot.logged {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.streak-day.today {
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.streak-day.today .streak-dot:not(.logged) {
+  border-style: dashed;
+  border-color: var(--color-accent);
+}
+
+.streak-hint {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+/* ---- Account filter (Transactions) ---- */
+
+.filter-select-button {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--tap-min);
+  padding: 10px var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-input);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: 16px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.filter-select-button.active {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.account-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: var(--tap-min);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--color-track);
+  font-size: 15px;
+}
+
+.account-filter-row:last-child {
+  border-bottom: none;
+}
+
+.account-filter-row input {
+  width: 22px;
+  height: 22px;
+  accent-color: var(--color-accent);
+}
+
+.account-filter-name {
+  flex: 1;
+  font-weight: 600;
+}
+
+.account-filter-type {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+/* Home's cycle label sits on the page background, not the green header */
+#tab-home > .period-label {
+  margin: var(--space-md) var(--space-page) 0;
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 1;
+  color: var(--color-text-secondary);
 }

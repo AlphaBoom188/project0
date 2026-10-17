@@ -19,8 +19,25 @@ function applySearch(query, q) {
   return query.ilike('description', `%${term.replace(/[\\%_]/g, (c) => `\\${c}`)}%`);
 }
 
+// Comma-separated account ids; matches a transaction on either side (from or to),
+// so transfers show up under both accounts. Each id is validated as a UUID before
+// being interpolated into the PostgREST or() expression -- an unvalidated value
+// could otherwise inject extra filter clauses into it.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+class InvalidFilterError extends Error {}
+
+function applyAccountFilter(query, accountIdParam) {
+  if (!accountIdParam) return query;
+  const ids = String(accountIdParam).split(',').map((id) => id.trim()).filter(Boolean);
+  if (ids.length === 0) return query;
+  if (ids.length > 50 || !ids.every((id) => UUID_RE.test(id))) {
+    throw new InvalidFilterError('account_id must be a comma-separated list of account ids');
+  }
+  return query.or(ids.flatMap((id) => [`from_account_id.eq.${id}`, `to_account_id.eq.${id}`]).join(','));
+}
+
 // Shared by both export endpoints so the download and email paths can't filter differently.
-async function queryTransactionsForExport(lineUserId, { type, category_id, start_date, end_date, q }) {
+async function queryTransactionsForExport(lineUserId, { type, category_id, start_date, end_date, q, account_id }) {
   let query = supabase
     .from('transactions')
     .select('transaction_date, type, amount, description, payment_method, categories ( name )')
@@ -32,6 +49,7 @@ async function queryTransactionsForExport(lineUserId, { type, category_id, start
   if (start_date) query = query.gte('transaction_date', start_date);
   if (end_date) query = query.lte('transaction_date', end_date);
   query = applySearch(query, q);
+  query = applyAccountFilter(query, account_id);
 
   const { data, error } = await query;
   if (error) throw error;
@@ -43,7 +61,7 @@ const transactionController = {
   async getTransactions(req, res) {
     try {
       const { line_user_id } = req.params;
-      const { type, category_id, start_date, end_date, q, limit = 50, offset = 0 } = req.query;
+      const { type, category_id, start_date, end_date, q, account_id, limit = 50, offset = 0 } = req.query;
 
       let query = supabase
         .from('transactions')
@@ -76,6 +94,7 @@ const transactionController = {
       }
 
       query = applySearch(query, q);
+      query = applyAccountFilter(query, account_id);
 
       const { data: transactions, error } = await query;
 
@@ -83,6 +102,7 @@ const transactionController = {
 
       res.json({ success: true, transactions: await withSignedThumbnails(transactions) });
     } catch (error) {
+      if (error instanceof InvalidFilterError) return res.status(400).json({ error: error.message });
       console.error('Error in getTransactions:', error);
       res.status(500).json({ error: error.message });
     }
@@ -100,6 +120,7 @@ const transactionController = {
       res.setHeader('Content-Disposition', `attachment; filename="transactions-${line_user_id}.csv"`);
       res.send('\uFEFF' + csv);
     } catch (error) {
+      if (error instanceof InvalidFilterError) return res.status(400).json({ error: error.message });
       console.error('Error in exportTransactions:', error);
       res.status(500).json({ error: error.message });
     }
@@ -136,6 +157,7 @@ const transactionController = {
 
       res.json({ success: true, message: `Export emailed to ${toEmail}.` });
     } catch (error) {
+      if (error instanceof InvalidFilterError) return res.status(400).json({ error: error.message });
       if (error.notConfigured) {
         return res.status(501).json({ error: error.message });
       }
