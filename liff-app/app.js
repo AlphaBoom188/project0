@@ -348,6 +348,20 @@ function clearModalError(target) {
   target.hidden = true;
 }
 
+// All calendar periods (billing cycles, budget periods, months) follow the
+// Asia/Bangkok calendar, mirroring backend/services/bangkokDay.js -- Bangkok
+// has no DST, so a fixed +7h offset is exact, and this doesn't depend on the
+// phone's own timezone setting.
+const BANGKOK_OFFSET_MS = 7 * 60 * 60 * 1000;
+function bangkokParts(date = new Date()) {
+  const b = new Date(date.getTime() + BANGKOK_OFFSET_MS);
+  return { year: b.getUTCFullYear(), month: b.getUTCMonth(), day: b.getUTCDate(), weekday: b.getUTCDay() };
+}
+function bangkokMidnight(year, month, day) {
+  return new Date(Date.UTC(year, month, day) - BANGKOK_OFFSET_MS);
+}
+const bangkokYmd = (date = new Date()) => new Date(date.getTime() + BANGKOK_OFFSET_MS).toISOString().slice(0, 10);
+
 // Mirrors the billing-cycle window used elsewhere in the backend (e.g. the bot's
 // "summary" command): the current cycle starting on the user's configured day.
 // `offset` steps whole cycles back (-1 = previous cycle) for the Transactions
@@ -355,30 +369,26 @@ function clearModalError(target) {
 function getBillingCycleRange(billingCycleStartDay, offset = 0) {
   const day = billingCycleStartDay || 1;
   const now = new Date();
-  let start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), day));
-  if (start > now) {
-    start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, day));
-  }
-  if (offset) start = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + offset, day));
-  const end = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, day));
-  return { startISO: start.toISOString(), endISO: end.toISOString() };
+  const { year } = bangkokParts(now);
+  let { month } = bangkokParts(now);
+  if (bangkokMidnight(year, month, day) > now) month -= 1;
+  month += offset;
+  return { startISO: bangkokMidnight(year, month, day).toISOString(), endISO: bangkokMidnight(year, month + 1, day).toISOString() };
 }
 
 // Mirrors services/budgetAlert.js's getPeriodStartISO on the backend, for
 // client-side "how much spent this period" display on the Categories tab.
 function getPeriodStartDate(period) {
-  const now = new Date();
+  const { year, month, day, weekday } = bangkokParts();
   switch (period) {
     case 'daily':
-      return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-    case 'weekly': {
-      const day = now.getUTCDay();
-      return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - day));
-    }
+      return bangkokMidnight(year, month, day);
+    case 'weekly':
+      return bangkokMidnight(year, month, day - weekday);
     case 'monthly':
-      return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+      return bangkokMidnight(year, month, 1);
     case 'yearly':
-      return new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
+      return bangkokMidnight(year, 0, 1);
     default:
       return null;
   }
@@ -393,7 +403,7 @@ function formatDate(isoString) {
 // exclusive, so the label shows the last included day, formatted in UTC -- in
 // local time (UTC+7) the end would otherwise read as the next cycle's first day.
 function formatCycleLabel(startISO, endISO) {
-  const fmt = (iso) => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  const fmt = (iso) => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'Asia/Bangkok' });
   return `${fmt(startISO)} – ${fmt(new Date(new Date(endISO).getTime() - 1).toISOString())}`;
 }
 
@@ -420,8 +430,7 @@ function dayHeaderLabel(date) {
 
 // YYYY-MM-01, matching backend/controllers/budgetEventController.js's period_month shape.
 function currentMonthFirstDay() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  return `${bangkokYmd().slice(0, 7)}-01`;
 }
 
 function escapeHtml(str) {
@@ -662,7 +671,8 @@ async function loadHomeTab() {
   // so instead of waiting on that before firing it, fetch a wide-enough window
   // (6 months, also covers the Monthly Pulse trend chart) in parallel with
   // everything else and filter the cycle window client-side.
-  const sixMonthsAgoISO = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() - 5, 1)).toISOString();
+  const { year: nowYear, month: nowMonth } = bangkokParts();
+  const sixMonthsAgoISO = bangkokMidnight(nowYear, nowMonth - 5, 1).toISOString();
   const [userResponse, transactionsResponse, billsResponse] = await Promise.all([
     cachedGet(`/users/${lineUserId}`),
     cachedGet(`/transactions/${lineUserId}?start_date=${encodeURIComponent(sixMonthsAgoISO)}&limit=1000`),
@@ -715,7 +725,7 @@ function resetReceiptScanState() {
 async function openAddExpenseModal() {
   el.fieldAmount.value = '';
   el.fieldDescription.value = '';
-  el.fieldDate.value = new Date().toISOString().slice(0, 10);
+  el.fieldDate.value = bangkokYmd();
   el.fieldCategory.value = ''; // defaults to "Auto-Categorize", not whatever was left selected last time
   clearModalError(el.modalError);
   resetReceiptScanState();
@@ -1184,20 +1194,20 @@ async function handleCopyShareLink() {
 // ---- Analytics tab ----
 
 function monthKey(date) {
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+  return bangkokYmd(date).slice(0, 7);
 }
 
 function monthLabel(key) {
   const [year, month] = key.split('-').map(Number);
-  return new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString(undefined, { month: 'short' });
+  return new Date(Date.UTC(year, month - 1, 15)).toLocaleDateString(undefined, { month: 'short', timeZone: 'UTC' });
 }
 
 function renderTrendChart(transactions) {
   const now = new Date();
   const months = [];
+  const { year, month } = bangkokParts(now);
   for (let i = 5; i >= 0; i--) {
-    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
-    months.push(monthKey(d));
+    months.push(monthKey(bangkokMidnight(year, month - i, 1)));
   }
 
   const totals = Object.fromEntries(months.map((m) => [m, { income: 0, expense: 0 }]));
@@ -1738,7 +1748,7 @@ async function handleAccountSubmit(event) {
 
 async function openTransferModal() {
   el.transferFieldAmount.value = '';
-  el.transferFieldDate.value = new Date().toISOString().slice(0, 10);
+  el.transferFieldDate.value = bangkokYmd();
   clearModalError(el.transferModalError);
   el.transferModal.hidden = false;
   try {
@@ -1923,11 +1933,12 @@ function buildTransactionFilterQuery() {
     // The API's end_date is inclusive; the cycle end is the next cycle's start.
     params.set('end_date', new Date(new Date(endISO).getTime() - 1).toISOString());
   } else if (txnRange.mode === '3months') {
-    const now = new Date();
-    params.set('start_date', new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 3, now.getUTCDate())).toISOString());
+    const { year, month, day } = bangkokParts();
+    params.set('start_date', bangkokMidnight(year, month - 3, day).toISOString());
   } else if (txnRange.mode === 'custom') {
-    if (el.txnFilterStart.value) params.set('start_date', new Date(`${el.txnFilterStart.value}T00:00:00Z`).toISOString());
-    if (el.txnFilterEnd.value) params.set('end_date', new Date(`${el.txnFilterEnd.value}T23:59:59Z`).toISOString());
+    // The picked dates are Bangkok calendar days.
+    if (el.txnFilterStart.value) params.set('start_date', new Date(`${el.txnFilterStart.value}T00:00:00+07:00`).toISOString());
+    if (el.txnFilterEnd.value) params.set('end_date', new Date(`${el.txnFilterEnd.value}T23:59:59.999+07:00`).toISOString());
   }
   return params;
 }
@@ -2262,7 +2273,7 @@ async function openRecurringModal() {
   el.recurringFieldAmount.value = '';
   el.recurringFieldDescription.value = '';
   el.recurringFieldFrequency.value = 'monthly';
-  el.recurringFieldStartDate.value = new Date().toISOString().slice(0, 10);
+  el.recurringFieldStartDate.value = bangkokYmd();
   el.recurringFieldPayStartDay.value = '';
   el.recurringFieldPayEndDay.value = '';
   clearModalError(el.recurringModalError);

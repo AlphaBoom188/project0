@@ -1,9 +1,11 @@
 const supabase = require('../config/supabase');
+const { bangkokMidnight } = require('../services/bangkokDay');
 
+// period_month ('YYYY-MM-01') is a Bangkok calendar month: Bangkok midnight on
+// the 1st to Bangkok midnight on the next 1st (same bounds as eventBudgetAlert.js).
 function monthRange(periodMonth) {
-  const start = new Date(periodMonth);
-  const end = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1));
-  return { startISO: start.toISOString(), endISO: end.toISOString() };
+  const [year, month] = String(periodMonth).split('-').map(Number);
+  return { startISO: bangkokMidnight(year, month - 1, 1).toISOString(), endISO: bangkokMidnight(year, month, 1).toISOString() };
 }
 
 async function withSpent(event) {

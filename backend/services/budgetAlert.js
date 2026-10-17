@@ -1,20 +1,22 @@
 const supabase = require('../config/supabase');
 const { getUserPreferences } = require('./userPreferences');
 const { pushText } = require('./lineMessagingClient');
+const { bangkokParts, bangkokMidnight } = require('./bangkokDay');
 
-function getPeriodStartISO(period) {
-  const now = new Date();
+// Budget periods start at Bangkok midnight (weeks on Sunday), not UTC midnight --
+// otherwise a "daily" budget would reset at 07:00 and spending between midnight
+// and 7am would count toward the previous day/month.
+function getPeriodStartISO(period, now = new Date()) {
+  const { year, month, day, weekday } = bangkokParts(now);
   switch (period) {
     case 'daily':
-      return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
-    case 'weekly': {
-      const day = now.getUTCDay();
-      return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - day)).toISOString();
-    }
+      return bangkokMidnight(year, month, day).toISOString();
+    case 'weekly':
+      return bangkokMidnight(year, month, day - weekday).toISOString();
     case 'monthly':
-      return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+      return bangkokMidnight(year, month, 1).toISOString();
     case 'yearly':
-      return new Date(Date.UTC(now.getUTCFullYear(), 0, 1)).toISOString();
+      return bangkokMidnight(year, 0, 1).toISOString();
     default:
       return null;
   }
@@ -74,4 +76,4 @@ async function pushBudgetAlertIfEnabled(lineUserId, alert) {
   }
 }
 
-module.exports = { evaluateBudgetAlert, pushBudgetAlertIfEnabled };
+module.exports = { evaluateBudgetAlert, pushBudgetAlertIfEnabled, getPeriodStartISO };

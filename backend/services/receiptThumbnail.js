@@ -24,4 +24,15 @@ async function uploadThumbnail(lineUserId, imageBuffer) {
   return path;
 }
 
-module.exports = { uploadThumbnail, BUCKET };
+// thumbnail_url arrives from clients (LIFF, iOS) as the path the OCR endpoint
+// handed them. The server later signs whatever path is stored, so a client
+// could otherwise point its own transaction at ANOTHER user's receipt and get a
+// working link to it. Only the exact shape uploadThumbnail() produces, inside
+// the caller's own folder, is accepted.
+function isOwnThumbnailPath(lineUserId, path) {
+  if (typeof path !== 'string') return false;
+  const slash = path.indexOf('/');
+  return path.slice(0, slash) === lineUserId && /^\d+-[0-9a-f]{8}\.jpg$/.test(path.slice(slash + 1));
+}
+
+module.exports = { uploadThumbnail, isOwnThumbnailPath, BUCKET };

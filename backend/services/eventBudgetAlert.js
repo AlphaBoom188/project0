@@ -1,6 +1,7 @@
 const supabase = require('../config/supabase');
 const { getUserPreferences } = require('./userPreferences');
 const { pushText } = require('./lineMessagingClient');
+const { bangkokParts, bangkokMidnight } = require('./bangkokDay');
 
 // Event/occasion budgets (migration 012) alert twice: a heads-up at 80% and
 // again once the bucket is exceeded. Like category budget alerts
@@ -9,13 +10,16 @@ const { pushText } = require('./lineMessagingClient');
 // re-alerting on later expenses while still above it.
 const WARN_RATIO = 0.8;
 
-// UTC month bounds, matching how budgetEventController.withSpent() computes
-// the "spent" shown on the progress bar, so alerts and the bar always agree.
+// The transaction's Bangkok calendar month -- the same bounds
+// budgetEventController.withSpent() uses for the progress bar, so alerts and the
+// bar always agree.
 function monthOf(transactionDateISO) {
-  const d = new Date(transactionDateISO);
-  const start = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
-  const end = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1));
-  return { periodMonth: start.toISOString().slice(0, 10), startISO: start.toISOString(), endISO: end.toISOString() };
+  const { year, month } = bangkokParts(new Date(transactionDateISO));
+  return {
+    periodMonth: `${year}-${String(month + 1).padStart(2, '0')}-01`,
+    startISO: bangkokMidnight(year, month, 1).toISOString(),
+    endISO: bangkokMidnight(year, month + 1, 1).toISOString(),
+  };
 }
 
 // Pure check, no delivery (same split as evaluateBudgetAlert). Returns one

@@ -3,7 +3,10 @@ const { evaluateBudgetAlert, pushBudgetAlertIfEnabled } = require('./budgetAlert
 const { evaluateEventBudgetAlerts, pushEventBudgetAlertsIfEnabled } = require('./eventBudgetAlert');
 const { adjustAccountBalance } = require('./accountBalance');
 
+const { isOwnThumbnailPath } = require('./receiptThumbnail');
+
 class InvalidCategoryError extends Error {}
+class InvalidThumbnailError extends Error {}
 class DuplicateSlipError extends Error {}
 class InvalidAccountError extends Error {}
 
@@ -36,6 +39,9 @@ async function createTransaction({
   // Never both, so one budget crossing never produces two alerts.
   channel,
 }) {
+  if (thumbnailUrl && !isOwnThumbnailPath(lineUserId, thumbnailUrl)) {
+    throw new InvalidThumbnailError('thumbnail_url must be a receipt thumbnail returned for this user by the scan endpoint');
+  }
   if (type === 'transfer') {
     if (!fromAccountId || !toAccountId) {
       throw new InvalidAccountError('A transfer requires both fromAccountId and toAccountId');
@@ -151,4 +157,4 @@ async function createTransaction({
   return { ...transaction, budget_alert: budgetAlert, event_budget_alerts: eventBudgetAlerts };
 }
 
-module.exports = { createTransaction, InvalidCategoryError, DuplicateSlipError, InvalidAccountError };
+module.exports = { createTransaction, InvalidCategoryError, InvalidThumbnailError, DuplicateSlipError, InvalidAccountError };

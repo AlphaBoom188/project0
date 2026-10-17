@@ -15,6 +15,8 @@ function log(...args) {
   console.log('[line-webhook]', ...args);
 }
 
+const { bangkokParts, bangkokMidnight } = require('../services/bangkokDay');
+
 function toTransactionDateISO(dateStr) {
   if (dateStr) {
     const d = new Date(`${dateStr}T12:00:00Z`);
@@ -23,16 +25,14 @@ function toTransactionDateISO(dateStr) {
   return new Date().toISOString();
 }
 
-// Current billing-cycle window [start, end) based on the user's configured cycle start day.
-function getBillingCycleRange(billingCycleStartDay) {
+// Current billing-cycle window [start, end) based on the user's configured cycle
+// start day, at Bangkok midnights (same as the LIFF app's getBillingCycleRange).
+function getBillingCycleRange(billingCycleStartDay, now = new Date()) {
   const day = billingCycleStartDay || 1;
-  const now = new Date();
-  let start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), day));
-  if (start > now) {
-    start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, day));
-  }
-  const end = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, day));
-  return { startISO: start.toISOString(), endISO: end.toISOString() };
+  const { year } = bangkokParts(now);
+  let { month } = bangkokParts(now);
+  if (bangkokMidnight(year, month, day) > now) month -= 1;
+  return { startISO: bangkokMidnight(year, month, day).toISOString(), endISO: bangkokMidnight(year, month + 1, day).toISOString() };
 }
 
 // follow only fires the first time someone adds the bot as a friend -- if this Official

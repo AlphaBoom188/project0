@@ -2,6 +2,7 @@ const supabase = require('../config/supabase');
 const {
   createTransaction: createSharedTransaction,
   InvalidCategoryError,
+  InvalidThumbnailError,
   DuplicateSlipError,
   InvalidAccountError,
 } = require('../services/transactionCreate');
@@ -9,6 +10,7 @@ const { withSignedThumbnails } = require('../services/signedUrl');
 const { autoCategorize } = require('../services/autoCategorize');
 const { buildTransactionsCsv } = require('../services/csvExport');
 const { sendCsvByEmail } = require('../services/emailRelay');
+const { isOwnThumbnailPath } = require('../services/receiptThumbnail');
 const { isUuid } = require('../services/uuid');
 
 // Free-text search over description (case-insensitive substring). LIKE wildcards
@@ -259,7 +261,7 @@ const transactionController = {
 
       res.status(201).json({ success: true, transaction: await withSignedThumbnails(transactionFields), budget_alert: budget_alert || null, event_budget_alerts: event_budget_alerts || [] });
     } catch (error) {
-      if (error instanceof InvalidCategoryError || error instanceof InvalidAccountError) {
+      if (error instanceof InvalidCategoryError || error instanceof InvalidAccountError || error instanceof InvalidThumbnailError) {
         return res.status(400).json({ error: error.message });
       }
       if (error instanceof DuplicateSlipError) {
@@ -281,7 +283,13 @@ const transactionController = {
       if (amount !== undefined) updateData.amount = amount;
       if (type !== undefined) updateData.type = type;
       if (description !== undefined) updateData.description = description;
-      if (thumbnail_url !== undefined) updateData.thumbnail_url = thumbnail_url;
+      if (thumbnail_url !== undefined) {
+        // Same rule as create (services/receiptThumbnail.js isOwnThumbnailPath); null clears it.
+        if (thumbnail_url !== null && !isOwnThumbnailPath(line_user_id, thumbnail_url)) {
+          return res.status(400).json({ error: 'thumbnail_url must be a receipt thumbnail returned for this user by the scan endpoint' });
+        }
+        updateData.thumbnail_url = thumbnail_url;
+      }
       if (transaction_date !== undefined) updateData.transaction_date = transaction_date;
 
       // If updating category_id, verify it belongs to user
