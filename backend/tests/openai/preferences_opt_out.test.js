@@ -66,7 +66,7 @@ async function main() {
 
   // --- 3. Daily digest should skip an opted-out user even though they have today's activity ---
   pushed.length = 0;
-  await sendDailyDigest();
+  await sendDailyDigest({ lineUserId }); // scoped: never runs the digest for real users
   assert(!pushed.some((p) => p.to === lineUserId), 'daily digest skips a notifications_enabled=false user');
 
   // --- cleanup ---

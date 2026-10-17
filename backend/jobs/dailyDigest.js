@@ -1,22 +1,22 @@
 const cron = require('node-cron');
 const supabase = require('../config/supabase');
 const { pushText } = require('../services/lineMessagingClient');
+const { getBangkokDayRangeISO } = require('../services/bangkokDay');
 
-function getTodayRangeISO() {
-  const now = new Date();
-  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
-  return { startISO: start.toISOString(), endISO: end.toISOString() };
-}
-
-async function sendDailyDigest() {
-  const { data: users, error } = await supabase.from('users').select('line_user_id').eq('notifications_enabled', true);
+// "Today" is the Bangkok calendar day. It used to be the UTC day, which at the
+// 21:00 Bangkok run spans 07:00 today -> 07:00 tomorrow, so anything logged
+// between midnight and 7am Bangkok time was missing from that evening's digest.
+// `lineUserId` scopes a run to one user (tests); the cron passes nothing.
+async function sendDailyDigest({ lineUserId } = {}) {
+  let usersQuery = supabase.from('users').select('line_user_id').eq('notifications_enabled', true);
+  if (lineUserId) usersQuery = usersQuery.eq('line_user_id', lineUserId);
+  const { data: users, error } = await usersQuery;
   if (error) {
     console.error('[daily-digest] failed to list users:', error.message);
     return;
   }
 
-  const { startISO, endISO } = getTodayRangeISO();
+  const { startISO, endISO } = getBangkokDayRangeISO();
 
   for (const user of users || []) {
     try {
