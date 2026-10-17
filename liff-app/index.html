@@ -81,19 +81,42 @@
 
       <!-- Transactions: search, filters, OCR ingest, export -->
       <section id="tab-transactions" class="tab-panel" hidden>
-        <button type="button" id="txn-scan-button" class="quick-action-button" style="margin: 0 16px 16px;">
+        <div class="quick-actions-row">
+          <button type="button" id="txn-scan-button" class="quick-action-button">
           <span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></span>
           <span>Scan a Receipt</span>
         </button>
+        </div>
 
-        <div class="filter-row">
-          <select id="txn-filter-type">
-            <option value="">All</option>
-            <option value="expense">Expense</option>
-            <option value="income">Income</option>
-          </select>
+        <div class="range-pills" role="group" aria-label="Date range">
+          <button type="button" class="range-pill active" data-range="cycle">Cycle</button>
+          <button type="button" class="range-pill" data-range="3months">3 Months</button>
+          <button type="button" class="range-pill" data-range="all">All</button>
+          <button type="button" class="range-pill" data-range="custom">Custom</button>
+        </div>
+
+        <div class="period-nav" id="txn-period-nav">
+          <button type="button" class="period-nav-button" id="txn-period-prev" aria-label="Previous cycle">
+            <span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></span>
+          </button>
+          <span class="period-nav-label" id="txn-period-label"></span>
+          <button type="button" class="period-nav-button" id="txn-period-next" aria-label="Next cycle">
+            <span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
+          </button>
+        </div>
+
+        <div class="filter-row" id="txn-custom-range" hidden>
           <input type="date" id="txn-filter-start" aria-label="Start date" />
           <input type="date" id="txn-filter-end" aria-label="End date" />
+        </div>
+
+        <div class="filter-row">
+          <select id="txn-filter-type" aria-label="Transaction type">
+            <option value="">All types</option>
+            <option value="expense">Expense</option>
+            <option value="income">Income</option>
+            <option value="transfer">Transfer</option>
+          </select>
         </div>
 
         <div class="export-row">
@@ -559,6 +582,13 @@
     <div class="modal-content">
       <h2 class="section-title" id="bill-detail-title"></h2>
       <p id="bill-detail-meta" class="transaction-date"></p>
+      <div class="bill-progress">
+        <div class="bill-progress-label">
+          <span id="bill-progress-count"></span>
+          <span id="bill-progress-outstanding"></span>
+        </div>
+        <div class="category-budget-track"><div class="category-budget-fill" id="bill-progress-fill"></div></div>
+      </div>
       <ul id="bill-detail-participants" class="categories-list"></ul>
       <p id="bill-detail-error" class="modal-error" hidden></p>
       <div class="modal-actions">

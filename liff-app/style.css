@@ -18,6 +18,8 @@
   --color-danger-bg: #fdecea;
   --color-danger-text: #b3261e;
   --color-danger-border: #f3c3bf;
+  --color-warning: #f5a623;
+  --color-warning-bg: #fdf3e1;
   --color-success-bg: #e3f7ea;
   --color-overlay: rgba(0, 0, 0, 0.4);
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08);
@@ -26,6 +28,7 @@
   --radius-control: 10px;
   --radius-input: 8px;
   --space-page: 16px;
+  --tap-min: 44px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -40,6 +43,8 @@
     --color-danger-bg: #3a2322;
     --color-danger-text: #ff6b6b;
     --color-danger-border: #5c2e2c;
+    --color-warning: #ffb74d;
+    --color-warning-bg: #3a2f1c;
     --color-success-bg: #1f3327;
     --color-overlay: rgba(0, 0, 0, 0.6);
     --shadow-card: none;
@@ -57,6 +62,8 @@
   --color-danger-bg: #3a2322;
   --color-danger-text: #ff6b6b;
   --color-danger-border: #5c2e2c;
+  --color-warning: #ffb74d;
+  --color-warning-bg: #3a2f1c;
   --color-success-bg: #1f3327;
   --color-overlay: rgba(0, 0, 0, 0.6);
   --shadow-card: none;
@@ -71,6 +78,14 @@
    needs this to actually take effect once it has its own unconditional `display` rule. */
 [hidden] {
   display: none !important;
+}
+
+/* iOS WebKit (LINE's in-app browser included) zooms the whole page in when a
+   field under 16px gets focus -- so every form control is pinned to 16px. */
+input,
+select,
+textarea {
+  font-size: 16px;
 }
 
 body {
@@ -200,9 +215,13 @@ body {
   padding: 8px 0;
 }
 
+.toggle-row {
+  min-height: var(--tap-min);
+}
+
 .toggle-row input[type="checkbox"] {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
 }
 
 .settings-status {
@@ -281,6 +300,8 @@ body {
 }
 
 .recurring-delete {
+  min-height: var(--tap-min);
+  min-width: var(--tap-min);
   background: none;
   border: none;
   font-size: 18px;
@@ -370,12 +391,17 @@ body {
 }
 
 .link-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--tap-min);
+  min-width: var(--tap-min);
   background: none;
   border: none;
   color: var(--color-accent);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  padding: 4px;
+  padding: 4px 8px;
 }
 
 .transaction-list {
@@ -450,6 +476,7 @@ body {
 .modal {
   position: fixed;
   inset: 0;
+  z-index: 20; /* above .bottom-nav (10), or the nav covers the sheet's bottom buttons */
   background: var(--color-overlay);
   display: flex;
   align-items: flex-end;
@@ -475,7 +502,7 @@ body {
   width: 100%;
   margin-top: 4px;
   padding: 10px;
-  font-size: 15px;
+  font-size: 16px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-input);
   background: var(--color-surface);
@@ -532,7 +559,8 @@ body {
 }
 
 .modal-actions .primary-button,
-.modal-actions .secondary-button {
+.modal-actions .secondary-button,
+.modal-actions .danger-button {
   flex: 1;
   margin: 0;
   width: auto;
@@ -606,11 +634,13 @@ body {
 }
 
 .category-delete {
+  min-height: var(--tap-min);
+  min-width: var(--tap-min);
   background: none;
   border: none;
   color: var(--color-danger-text);
-  font-size: 13px;
-  padding: 4px;
+  font-size: 14px;
+  padding: 4px 8px;
 }
 
 .category-budget-track {
@@ -624,6 +654,10 @@ body {
 .category-budget-fill {
   height: 100%;
   background: var(--color-accent);
+}
+
+.category-budget-fill.warn {
+  background: var(--color-warning);
 }
 
 .category-budget-fill.over {
@@ -643,7 +677,7 @@ body {
   flex: 1;
   min-width: 0;
   padding: 10px 8px;
-  font-size: 13px;
+  font-size: 16px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-input);
   background: var(--color-surface);
@@ -758,7 +792,7 @@ body {
   flex: 1;
   min-width: 0;
   padding: 10px;
-  font-size: 14px;
+  font-size: 16px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-input);
   background: var(--color-surface);
@@ -779,6 +813,8 @@ body {
   color: var(--color-danger-text);
   font-size: 20px;
   line-height: 1;
+  min-height: var(--tap-min);
+  min-width: var(--tap-min);
   padding: 4px 6px;
   flex: 0 0 auto;
 }
@@ -810,8 +846,9 @@ body {
 
 .bill-participant-toggle {
   flex: 0 0 auto;
+  min-height: var(--tap-min);
   padding: 6px 12px;
-  font-size: 12px;
+  font-size: 13px;
   border-radius: var(--radius-input);
   border: 1px solid var(--color-border);
   background: var(--color-surface-alt);
@@ -841,6 +878,9 @@ body {
 .row-icon-button {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  min-height: var(--tap-min);
+  min-width: var(--tap-min);
   background: none;
   border: none;
   padding: 4px;
@@ -865,7 +905,7 @@ body {
   width: 100%;
   background: none;
   border: none;
-  padding: 14px 0;
+  padding: 14px var(--space-page);
   font-size: 15px;
   font-weight: 600;
   color: var(--color-text-primary);
@@ -942,4 +982,155 @@ body {
   background: var(--color-accent);
   color: var(--color-text-on-accent);
   border-color: var(--color-accent);
+}
+
+/* ---- Transactions: range pills + billing-cycle navigator ---- */
+
+.range-pills {
+  display: flex;
+  gap: 8px;
+  margin: 0 var(--space-page) 12px;
+  overflow-x: auto;
+}
+
+.range-pill {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.range-pill.active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-text-on-accent);
+}
+
+.period-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 var(--space-page) 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+.period-nav-label {
+  flex: 1;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.period-nav-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--tap-min);
+  min-height: var(--tap-min);
+  background: none;
+  border: none;
+  color: var(--color-text-primary);
+}
+
+.period-nav-button:disabled {
+  color: var(--color-border);
+}
+
+.period-nav-button .icon {
+  width: 20px;
+  height: 20px;
+}
+
+/* ---- Day-grouped transaction timeline ---- */
+
+.transaction-day-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 10px 12px 6px;
+  background: var(--color-surface-alt);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.transaction-day-total {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ---- Bill detail: settlement progress ---- */
+
+.bill-progress {
+  margin: 0 0 12px;
+}
+
+.bill-progress-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+
+.bill-participant-detail-row .category-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ---- Quick actions (Home, Transactions) ---- */
+
+.quick-actions-row {
+  display: flex;
+  gap: 12px;
+  margin: 0 var(--space-page) var(--space-page);
+}
+
+.quick-action-button {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 10px 12px;
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-card);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.quick-action-button .icon {
+  width: 20px;
+  height: 20px;
+  color: var(--color-accent);
+}
+
+/* Full-width tab-level buttons need the page gutter that modal ones get from .modal-content */
+.tab-panel > .recurring-add-button {
+  width: calc(100% - 2 * var(--space-page));
+  margin: 0 var(--space-page) var(--space-page);
+}
+
+/* .modal-content is already padded -- don't add the page gutter a second time */
+.modal-content .section-title,
+.modal-content .categories-list {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+/* Gap between the header and each tab's first block (Home's summary card already has its own margin). */
+.tab-panel > :first-child {
+  margin-top: var(--space-page);
 }

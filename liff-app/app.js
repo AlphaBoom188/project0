@@ -184,6 +184,15 @@ const el = {
 
   // Transactions tab
   txnFilterType: document.getElementById('txn-filter-type'),
+  txnRangePills: document.querySelectorAll('.range-pill'),
+  txnPeriodNav: document.getElementById('txn-period-nav'),
+  txnPeriodLabel: document.getElementById('txn-period-label'),
+  txnPeriodPrev: document.getElementById('txn-period-prev'),
+  txnPeriodNext: document.getElementById('txn-period-next'),
+  txnCustomRange: document.getElementById('txn-custom-range'),
+  billProgressCount: document.getElementById('bill-progress-count'),
+  billProgressOutstanding: document.getElementById('bill-progress-outstanding'),
+  billProgressFill: document.getElementById('bill-progress-fill'),
   txnFilterStart: document.getElementById('txn-filter-start'),
   txnFilterEnd: document.getElementById('txn-filter-end'),
   exportCsvButton: document.getElementById('export-csv-button'),
@@ -316,13 +325,16 @@ function clearModalError(target) {
 
 // Mirrors the billing-cycle window used elsewhere in the backend (e.g. the bot's
 // "summary" command): the current cycle starting on the user's configured day.
-function getBillingCycleRange(billingCycleStartDay) {
+// `offset` steps whole cycles back (-1 = previous cycle) for the Transactions
+// tab's period navigator.
+function getBillingCycleRange(billingCycleStartDay, offset = 0) {
   const day = billingCycleStartDay || 1;
   const now = new Date();
   let start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), day));
   if (start > now) {
     start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, day));
   }
+  if (offset) start = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + offset, day));
   const end = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, day));
   return { startISO: start.toISOString(), endISO: end.toISOString() };
 }
@@ -350,6 +362,27 @@ function getPeriodStartDate(period) {
 function formatDate(isoString) {
   const date = new Date(isoString);
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+// Shared by category budgets and event buckets: amber from 80%, red once over.
+const BUDGET_WARN_RATIO = 0.8;
+function budgetFillClass(spent, budget) {
+  if (spent >= budget) return 'category-budget-fill over';
+  if (spent >= budget * BUDGET_WARN_RATIO) return 'category-budget-fill warn';
+  return 'category-budget-fill';
+}
+
+function dayHeaderLabel(date) {
+  const today = new Date();
+  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+  if (date.toDateString() === today.toDateString()) return 'Today';
+  if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  return date.toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    ...(date.getFullYear() !== today.getFullYear() && { year: 'numeric' }),
+  });
 }
 
 // YYYY-MM-01, matching backend/controllers/budgetEventController.js's period_month shape.
@@ -468,30 +501,52 @@ function renderSummary(transactions, periodLabel) {
   el.summaryNet.style.color = net >= 0 ? 'var(--color-income)' : 'var(--color-expense)';
 }
 
+// Grouped under one header per local calendar day (input is newest-first, so
+// days come out newest-first too), each header carrying that day's spending.
 function renderTransactionList(target, emptyStateEl, transactions, { showPaymentMethod = false } = {}) {
   target.innerHTML = '';
   emptyStateEl.hidden = transactions.length > 0;
+  target.hidden = transactions.length === 0;
 
+  const dayGroups = new Map();
   for (const t of transactions) {
-    const li = document.createElement('li');
-    li.className = 'transaction-row';
-
-    const thumbHtml = t.thumbnail_url ? `<img class="transaction-thumbnail" src="${t.thumbnail_url}" alt="" />` : '';
-    const paymentHtml =
-      showPaymentMethod && t.payment_method ? `<div class="transaction-date">${escapeHtml(t.payment_method)}</div>` : '';
-
-    li.innerHTML = `
-      ${thumbHtml}
-      <div class="transaction-details">
-        <div class="transaction-category">${escapeHtml(t.categories?.name || 'Uncategorized')}</div>
-        ${t.description ? `<div class="transaction-description">${escapeHtml(t.description)}</div>` : ''}
-        <div class="transaction-date">${formatDate(t.transaction_date)}</div>
-        ${paymentHtml}
-      </div>
-      <div class="transaction-amount ${t.type}">${parseFloat(t.amount).toFixed(2)}</div>
-    `;
-    target.appendChild(li);
+    const date = new Date(t.transaction_date);
+    const key = date.toDateString();
+    if (!dayGroups.has(key)) dayGroups.set(key, { date, transactions: [] });
+    dayGroups.get(key).transactions.push(t);
   }
+
+  for (const { date, transactions: dayTransactions } of dayGroups.values()) {
+    const spent = dayTransactions.filter((t) => t.type === 'expense').reduce((sum, t) => sum + parseFloat(t.amount), 0);
+    const header = document.createElement('li');
+    header.className = 'transaction-day-header';
+    header.innerHTML = `
+      <span>${escapeHtml(dayHeaderLabel(date))}</span>
+      ${spent > 0 ? `<span class="transaction-day-total">Spent ${spent.toFixed(2)}</span>` : ''}
+    `;
+    target.appendChild(header);
+    for (const t of dayTransactions) target.appendChild(buildTransactionRow(t, showPaymentMethod));
+  }
+}
+
+function buildTransactionRow(t, showPaymentMethod) {
+  const li = document.createElement('li');
+  li.className = 'transaction-row';
+
+  const thumbHtml = t.thumbnail_url ? `<img class="transaction-thumbnail" src="${t.thumbnail_url}" alt="" />` : '';
+  const paymentHtml =
+    showPaymentMethod && t.payment_method ? `<div class="transaction-date">${escapeHtml(t.payment_method)}</div>` : '';
+
+  li.innerHTML = `
+    ${thumbHtml}
+    <div class="transaction-details">
+      <div class="transaction-category">${escapeHtml(t.type === 'transfer' ? 'Transfer' : t.categories?.name || 'Uncategorized')}</div>
+      ${t.description ? `<div class="transaction-description">${escapeHtml(t.description)}</div>` : ''}
+      ${paymentHtml}
+    </div>
+    <div class="transaction-amount ${t.type}">${parseFloat(t.amount).toFixed(2)}</div>
+  `;
+  return li;
 }
 
 async function loadHomeTab() {
@@ -904,15 +959,26 @@ function renderBillDetail(bill) {
   el.billDetailTitle.textContent = bill.title;
   el.billDetailMeta.textContent = `${parseFloat(bill.total_amount).toFixed(2)} total — ${bill.split_type} split`;
 
+  const participants = bill.shared_bill_participants;
+  const paidCount = participants.filter((p) => p.is_paid).length;
+  const owedTotal = participants.reduce((sum, p) => sum + parseFloat(p.amount_owed), 0);
+  const outstanding = participants.filter((p) => !p.is_paid).reduce((sum, p) => sum + parseFloat(p.amount_owed), 0);
+  el.billProgressCount.textContent = `${paidCount} of ${participants.length} paid`;
+  el.billProgressOutstanding.textContent = outstanding > 0 ? `${outstanding.toFixed(2)} outstanding` : 'Settled';
+  el.billProgressFill.style.width = `${owedTotal > 0 ? Math.round(((owedTotal - outstanding) / owedTotal) * 100) : 100}%`;
+
   el.billDetailParticipants.innerHTML = '';
-  for (const participant of bill.shared_bill_participants) {
+  for (const participant of participants) {
     const li = document.createElement('li');
     li.className = 'category-row';
     li.innerHTML = `
       <div class="bill-participant-detail-row">
-        <span class="category-name">${escapeHtml(participant.display_name)}</span>
+        <span class="category-name">
+          ${escapeHtml(participant.display_name)}
+          <span class="bill-status-pill ${participant.is_paid ? 'paid' : 'unpaid'}">${participant.is_paid ? 'Paid' : 'Unpaid'}</span>
+        </span>
         <span>${parseFloat(participant.amount_owed).toFixed(2)}</span>
-        <button type="button" class="bill-participant-toggle ${participant.is_paid ? 'active' : ''}">${participant.is_paid ? 'Paid' : 'Mark Paid'}</button>
+        <button type="button" class="bill-participant-toggle">${participant.is_paid ? 'Undo' : 'Mark Paid'}</button>
       </div>
     `;
     li.querySelector('.bill-participant-toggle').addEventListener('click', () =>
@@ -1338,6 +1404,7 @@ async function loadBudgetsTab() {
 function renderEventBudgetsList(events) {
   el.eventsList.innerHTML = '';
   el.eventsEmptyState.hidden = events.length > 0;
+  el.eventsList.hidden = events.length === 0;
 
   for (const event of events) {
     const li = document.createElement('li');
@@ -1349,7 +1416,7 @@ function renderEventBudgetsList(events) {
       </div>
       <div class="category-bar-label-row"><span>${escapeHtml(event.categories?.name || '')}</span></div>
       <div class="category-budget-track">
-        <div class="category-budget-fill${event.spent >= event.amount ? ' over' : ''}" style="width:${Math.round(event.percent)}%"></div>
+        <div class="${budgetFillClass(event.spent, parseFloat(event.amount))}" style="width:${Math.round(event.percent)}%"></div>
       </div>
       <div class="bill-participant-detail-row" style="margin-top: 6px;">
         <span></span>
@@ -1585,7 +1652,7 @@ function renderCategoriesList(categories, transactions) {
       const pct = Math.min(100, Math.round((spent / budget) * 100));
       budgetHtml = `
         <div class="category-budget-track">
-          <div class="category-budget-fill${spent >= budget ? ' over' : ''}" style="width:${pct}%"></div>
+          <div class="${budgetFillClass(spent, budget)}" style="width:${pct}%"></div>
         </div>
       `;
     }
@@ -1685,18 +1752,62 @@ async function handleDeleteCategory(category) {
 
 // ---- Transactions tab ----
 
+// 'cycle' steps through billing cycles with the < > navigator (offset 0 =
+// current, never positive); 'custom' reveals the two date inputs. Both CSV
+// exports read the same params, so they always match what's on screen.
+const txnRange = { mode: 'cycle', offset: 0 };
+
 function buildTransactionFilterQuery() {
   const params = new URLSearchParams();
   if (el.txnFilterType.value) params.set('type', el.txnFilterType.value);
-  if (el.txnFilterStart.value) params.set('start_date', new Date(`${el.txnFilterStart.value}T00:00:00Z`).toISOString());
-  if (el.txnFilterEnd.value) params.set('end_date', new Date(`${el.txnFilterEnd.value}T23:59:59Z`).toISOString());
+  if (txnRange.mode === 'cycle') {
+    const { startISO, endISO } = getBillingCycleRange(currentUser.billing_cycle_start_day, txnRange.offset);
+    params.set('start_date', startISO);
+    // The API's end_date is inclusive; the cycle end is the next cycle's start.
+    params.set('end_date', new Date(new Date(endISO).getTime() - 1).toISOString());
+  } else if (txnRange.mode === '3months') {
+    const now = new Date();
+    params.set('start_date', new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 3, now.getUTCDate())).toISOString());
+  } else if (txnRange.mode === 'custom') {
+    if (el.txnFilterStart.value) params.set('start_date', new Date(`${el.txnFilterStart.value}T00:00:00Z`).toISOString());
+    if (el.txnFilterEnd.value) params.set('end_date', new Date(`${el.txnFilterEnd.value}T23:59:59Z`).toISOString());
+  }
   return params;
 }
 
+function renderTxnRangeControls() {
+  el.txnRangePills.forEach((pill) => pill.classList.toggle('active', pill.dataset.range === txnRange.mode));
+  el.txnPeriodNav.hidden = txnRange.mode !== 'cycle';
+  el.txnCustomRange.hidden = txnRange.mode !== 'custom';
+  if (txnRange.mode === 'cycle') {
+    const { startISO, endISO } = getBillingCycleRange(currentUser.billing_cycle_start_day, txnRange.offset);
+    const lastDay = new Date(new Date(endISO).getTime() - 1).toISOString();
+    // Cycle boundaries are UTC midnights (getBillingCycleRange), so label them in
+    // UTC too -- in local time (UTC+7) the last instant would read as the next day.
+    const fmt = (iso) => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
+    el.txnPeriodLabel.textContent = `${txnRange.offset === 0 ? 'This cycle · ' : ''}${fmt(startISO)} – ${fmt(lastDay)}`;
+    el.txnPeriodNext.disabled = txnRange.offset >= 0;
+  }
+}
+
+function setTxnRange(mode, offset = 0) {
+  txnRange.mode = mode;
+  txnRange.offset = offset;
+  loadTransactionsTab().catch((error) => showError(error.message));
+}
+
+// Tapping < > quickly fires overlapping fetches; only the newest one may render,
+// or a slow earlier response could land last and show the wrong cycle.
+let txnLoadSeq = 0;
+
 async function loadTransactionsTab() {
+  const seq = ++txnLoadSeq;
+  await ensureCurrentUser();
+  renderTxnRangeControls();
   const params = buildTransactionFilterQuery();
   params.set('limit', '200');
   const response = await cachedGet(`/transactions/${lineUserId}?${params.toString()}`);
+  if (seq !== txnLoadSeq) return;
   renderTransactionList(el.txnFullList, el.txnEmptyState, response.transactions, { showPaymentMethod: true });
 }
 
@@ -2089,6 +2200,9 @@ el.cancelTransfer.addEventListener('click', closeTransferModal);
 el.transferForm.addEventListener('submit', handleTransferSubmit);
 
 el.txnFilterType.addEventListener('change', () => loadTransactionsTab().catch((error) => showError(error.message)));
+el.txnRangePills.forEach((pill) => pill.addEventListener('click', () => setTxnRange(pill.dataset.range)));
+el.txnPeriodPrev.addEventListener('click', () => setTxnRange('cycle', txnRange.offset - 1));
+el.txnPeriodNext.addEventListener('click', () => setTxnRange('cycle', Math.min(0, txnRange.offset + 1)));
 el.txnFilterStart.addEventListener('change', () => loadTransactionsTab().catch((error) => showError(error.message)));
 el.txnFilterEnd.addEventListener('change', () => loadTransactionsTab().catch((error) => showError(error.message)));
 el.exportCsvButton.addEventListener('click', handleExportCsv);
