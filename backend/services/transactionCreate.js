@@ -1,5 +1,6 @@
 const supabase = require('../config/supabase');
 const { evaluateBudgetAlert, pushBudgetAlertIfEnabled } = require('./budgetAlert');
+const { evaluateEventBudgetAlerts, pushEventBudgetAlertsIfEnabled } = require('./eventBudgetAlert');
 const { adjustAccountBalance } = require('./accountBalance');
 
 class InvalidCategoryError extends Error {}
@@ -117,6 +118,7 @@ async function createTransaction({
   }
 
   let budgetAlert = null;
+  let eventBudgetAlerts = [];
   if (type === 'expense') {
     // Cheap DB-only reads, safe to await (unlike the push itself) -- this is
     // what lets the LIFF channel get the alert back in this same response.
@@ -132,9 +134,21 @@ async function createTransaction({
         console.error('pushBudgetAlertIfEnabled failed:', err.message)
       );
     }
+
+    // Event/occasion buckets for this category + month: same routing rule.
+    try {
+      eventBudgetAlerts = await evaluateEventBudgetAlerts(lineUserId, categoryId, amount, transaction.transaction_date);
+    } catch (err) {
+      console.error('evaluateEventBudgetAlerts failed:', err.message);
+    }
+    if (eventBudgetAlerts.length > 0 && channel !== 'liff') {
+      pushEventBudgetAlertsIfEnabled(lineUserId, eventBudgetAlerts).catch((err) =>
+        console.error('pushEventBudgetAlertsIfEnabled failed:', err.message)
+      );
+    }
   }
 
-  return { ...transaction, budget_alert: budgetAlert };
+  return { ...transaction, budget_alert: budgetAlert, event_budget_alerts: eventBudgetAlerts };
 }
 
 module.exports = { createTransaction, InvalidCategoryError, DuplicateSlipError, InvalidAccountError };

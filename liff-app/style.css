@@ -178,6 +178,11 @@ body {
   font-size: 14px;
 }
 
+.error-banner.warning {
+  background: var(--color-warning-bg);
+  color: var(--color-text-primary);
+}
+
 .header {
   display: flex;
   align-items: center;

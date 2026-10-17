@@ -316,9 +316,20 @@ function showError(message) {
 // came from the LIFF channel -- this banner IS the one and only notification
 // for this budget crossing, so it has to actually show it, not just log it.
 let budgetAlertTimer = null;
-function showBudgetAlert(alert) {
+// One banner for everything the add-expense response flagged: the category
+// budget crossing (budget_alert) plus any event/occasion buckets
+// (event_budget_alerts, 80% heads-up or used up). Amber when everything is
+// only a heads-up, red as soon as anything is over.
+function showBudgetAlerts(budgetAlert, eventAlerts = []) {
+  const messages = [];
+  if (budgetAlert) {
+    messages.push(`Budget alert: your "${budgetAlert.categoryName}" ${budgetAlert.budgetPeriod} budget of ${budgetAlert.budgetAmount.toFixed(2)} has been reached (${budgetAlert.totalSpent.toFixed(2)} spent).`);
+  }
+  for (const a of eventAlerts) messages.push(a.message); // wording comes from services/eventBudgetAlert.js
+  if (messages.length === 0) return;
   clearTimeout(budgetAlertTimer);
-  el.budgetAlertBanner.textContent = `Budget alert: your "${alert.categoryName}" ${alert.budgetPeriod} budget of ${alert.budgetAmount.toFixed(2)} has been reached (${alert.totalSpent.toFixed(2)} spent).`;
+  el.budgetAlertBanner.textContent = messages.join(' ');
+  el.budgetAlertBanner.classList.toggle('warning', !budgetAlert && eventAlerts.every((a) => a.level === 'warning'));
   el.budgetAlertBanner.hidden = false;
   budgetAlertTimer = setTimeout(() => {
     el.budgetAlertBanner.hidden = true;
@@ -625,7 +636,7 @@ function computeStreak(transactions, today = new Date()) {
 function renderStreak(transactions) {
   const { current, best, loggedToday, lastSeven } = computeStreak(transactions);
   el.streakCount.textContent = current === 0 ? 'No streak yet' : `${current}-day logging streak`;
-  el.streakBest.textContent = best > 0 ? `Best: ${best} days (6 mo)` : '';
+  el.streakBest.textContent = best > 0 ? `Best: ${best} day${best === 1 ? '' : 's'} (6 mo)` : '';
   el.streakDays.innerHTML = lastSeven
     .map(
       (d) => `
@@ -818,9 +829,7 @@ async function handleAddExpenseSubmit(event) {
     });
     closeAddExpenseModal();
     await loadHomeTab();
-    if (response.budget_alert) {
-      showBudgetAlert(response.budget_alert);
-    }
+    showBudgetAlerts(response.budget_alert, response.event_budget_alerts);
   } catch (error) {
     // Shown inside the modal, not the top-level banner -- the modal overlay would
     // otherwise hide the banner from view while still open.

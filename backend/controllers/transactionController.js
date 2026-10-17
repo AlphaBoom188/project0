@@ -255,9 +255,9 @@ const transactionController = {
       // budget_alert is surfaced as its own response field, not left nested in
       // the transaction row, so the LIFF client can show it without reaching
       // into transaction internals.
-      const { budget_alert, ...transactionFields } = transaction;
+      const { budget_alert, event_budget_alerts, ...transactionFields } = transaction;
 
-      res.status(201).json({ success: true, transaction: await withSignedThumbnails(transactionFields), budget_alert: budget_alert || null });
+      res.status(201).json({ success: true, transaction: await withSignedThumbnails(transactionFields), budget_alert: budget_alert || null, event_budget_alerts: event_budget_alerts || [] });
     } catch (error) {
       if (error instanceof InvalidCategoryError || error instanceof InvalidAccountError) {
         return res.status(400).json({ error: error.message });
