@@ -1617,3 +1617,68 @@ body {
   width: 100%;
   margin: 0 0 12px;
 }
+
+/* ---- Goal tracker card (Net Worth) ---- */
+
+.goal-empty-text {
+  margin: var(--space-xs) 0 var(--space-md);
+  font-size: 14px;
+  color: var(--color-text-secondary);
+}
+
+.goal-button {
+  display: block;
+  width: 100%;
+  margin: 0;
+  min-height: var(--tap-min);
+}
+
+.goal-status {
+  margin: var(--space-sm) 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* The collapsible row sits inside the card, so no page gutter. */
+.perf-card .goal-table-toggle {
+  min-height: var(--tap-min);
+  padding: 12px 0;
+  margin-top: var(--space-sm);
+}
+
+.goal-table-wrap {
+  overflow-x: auto;
+  margin-bottom: 12px;
+}
+
+.goal-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.goal-table th {
+  text-align: right;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  padding: 6px 0 6px var(--space-sm);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.goal-table td {
+  text-align: right;
+  padding: 6px 0 6px var(--space-sm);
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.goal-table th:first-child,
+.goal-table td:first-child {
+  text-align: left;
+  padding-left: 0;
+}
+
+.goal-table-sub {
+  color: var(--color-text-secondary);
+}

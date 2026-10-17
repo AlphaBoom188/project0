@@ -562,6 +562,32 @@ A user with nothing that can pay a dividend gets zeros with no dividend fetches.
 - `api/dividends` (45, the real endpoint): AAPL bought 2023-01-03 then partly sold, PTT.BK, a bogus symbol, a crypto/gold-only user, the empty user, isolation, and series sums matching summary figures.
 - `liff/dividends_card` (25): includes the CDN-blocked fallback and light/dark screenshots.
 
+### Investments Phase D — Goal Tracker
+
+Spec: `docs/master_uxui_specification_finance.md` Screen 2.4, adapted. Table `investment_goals` from migration 015 (one row per user, `line_user_id` PK; percents stored as percents). Built by a subagent, then reviewed and re-verified by the lead: 31/31 suites, and the projection convention recomputed independently.
+
+✅ **Endpoints.** `GET|PUT|DELETE /api/portfolio/:u/goal`, literal routes registered next to `dividends`, before `/:u/:holding_id`.
+- **GET** returns `{ goal: row|null, projection: null|{...} }`. The projection has `target_value`, `target_is_projected`, `end_date`, `current_value_thb`, `progress_pct`, `status`, `expected_now_thb`, `difference_thb`, `points` (`date 'YYYY-MM'`, `projected_value`, `contributed`; at most 120, first and last kept) and `yearly` (`year_index`, `end_date`, `contributed_total`, `projected_value`).
+- **PUT** upserts the one goal per user after validating every field against the DB constraints, including the NUMERIC sizes; a failure is a 400 with nothing written. `monthly_contribution`/`contribution_growth` default to 0; `target_value` is optional. A missing users row gives 404. Returns the GET shape.
+- **DELETE** removes the goal.
+
+✅ **Math (`services/goalMath.js`, pure).**
+- **Projection:** monthly steps over years × 12 Bangkok calendar months from `start_date`. Monthly rate = (1 + annual%)^(1/12) − 1, i.e. the annual rate is an effective rate. Each month the value grows, then the contribution is added (end of month). The contribution steps up by `contribution_growth`% at each anniversary.
+- **Target and progress:** target = `target_value`, else the projected end value. Progress % = `loadPortfolio()` `totals.total_value` ÷ target; not capped (the bar is).
+- **Status:** current value vs the projection after the whole months elapsed by today (Bangkok). Within ±2% = `on_track`, otherwise `ahead`/`behind`; before `start_date` it is `not_started`.
+- **The spec example** (฿736,500, 30y, 10%, ฿1,000/month, +10%/yr) gives **฿18,819,435.72** under this convention (independently recomputed by the lead). The spec quotes ฿21,270,360 with 3.49% progress, but those two numbers don't agree with each other (736,500 / 21,270,360 = 3.46%), and no standard convention reproduces them. The closest is a nominal 10%/12 monthly rate with contributions at the start of the month, which gives ฿21,029,969. Switching to that is a one-line change if the owner prefers the nominal-rate reading.
+
+✅ **LIFF.** Net Worth has a Goal card below Dividends, shown even with no holdings.
+- **No goal:** a one-line prompt and Set up goal.
+- **With a goal:** target ฿ (marked "projected" when no explicit target), progress % with a budget-style bar (green; amber when behind by up to 10% of plan; red beyond), and status text.
+- **Chart:** projected line in accent, contributed dashed, today's value as one warning-colour point.
+- **Also:** a collapsible year-by-year table and Edit goal.
+- **Goal sheet:** start date (default today), start value (default the current portfolio value), years, return %, monthly contribution, growth %, optional target. Delete goes through `confirmAction()`, and server 400s show inline. Same `cachedGet` stale guard, theme redraw and "Chart unavailable" fallback as Phases B and C.
+
+**Tests:** `api/goal_math` (34), `api/goal` (44), `liff/goal_card` (38).
+
+**Not built:** an explicit-target line on the chart. Also, the goal card loads with the rest of Net Worth, so if the portfolio fetch fails (e.g. a USD→THB 502), the goal card doesn't load either.
+
 ### Event Budgets, Verified Export Email, LIFF Nav Restructure
 
 ✅ **Event/occasion budget buckets** (migration `012_budget_events.sql`, blueprint section 5) — a category's existing `budget_amount`/`budget_period` stays the recurring "normal" limit; `budget_events` is a one-off limit for one specific month (`period_month`, always the 1st) layered on top, always tied to an existing category. `budgetEventController.js`'s `withSpent()` computes `spent`/`remaining`/`percent` on read by summing that category's expenses within the month (UTC month bounds) — no transaction-tagging column added. **Alerts** (decided later: 80% and 100%): `services/eventBudgetAlert.js` `evaluateEventBudgetAlerts()` runs after every expense insert in `transactionCreate.js`, next to the category alert. Like category alerts it is stateless: an alert fires only when *this* expense moves a bucket's month total across 80% (`level: 'warning'`) or 100% (`'over'`; reaching exactly 100% counts), and only the highest line crossed fires, so a 0%→120% jump sends only the used-up alert. No migration was needed. The month is the transaction's own UTC month, matching the progress bar, so a back-dated expense alerts on that month's bucket. Routing is identical to category alerts: `channel: 'liff'` returns `event_budget_alerts` (each with a ready-made `message`, the single source of the wording) in the POST response for the LIFF banner, which is amber when everything is a heads-up and red if anything is over. Every other channel gets a fire-and-forget LINE push gated by `notifications_enabled`. Tests: `tests/api/event_budget_alerts.test.js` (17) and `tests/liff/event_alert_banner.test.js` (5, real Add form). LIFF: "Event & Occasion Budgets" section in the Budgets tab, current month only.

@@ -261,6 +261,39 @@
           <div class="perf-chart-wrap" id="div-chart-wrap"><canvas id="div-chart" aria-label="Dividend income chart"></canvas></div>
           <p class="perf-note" id="div-note"></p>
         </section>
+        <!-- Goal tracker: projection toward a target vs today's portfolio value (Portseido Goal Tracker) -->
+        <section class="perf-card" id="goal-card" hidden>
+          <div id="goal-empty">
+            <span class="summary-label">Goal</span>
+            <p class="goal-empty-text">Set a target and see if your portfolio is on track</p>
+            <button type="button" id="goal-setup-button" class="primary-button goal-button">Set up goal</button>
+          </div>
+          <div id="goal-body" hidden>
+            <span class="summary-label" id="goal-target-label">Goal target</span>
+            <div class="perf-total" id="goal-target">฿0.00</div>
+            <div class="category-row-top">
+              <span class="category-name" id="goal-progress-pct">0%</span>
+              <span class="category-budget-label" id="goal-progress-detail"></span>
+            </div>
+            <div class="category-budget-track">
+              <div class="category-budget-fill" id="goal-progress-fill"></div>
+            </div>
+            <p class="goal-status" id="goal-status"></p>
+            <div class="perf-chart-wrap" id="goal-chart-wrap"><canvas id="goal-chart" aria-label="Goal projection chart"></canvas></div>
+            <p class="perf-note" id="goal-note" hidden></p>
+            <button type="button" id="goal-table-toggle" class="advanced-toggle goal-table-toggle" aria-expanded="false" aria-controls="goal-table-wrap">
+              <span>Year by year</span>
+              <span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
+            </button>
+            <div class="goal-table-wrap" id="goal-table-wrap" hidden>
+              <table class="goal-table">
+                <thead><tr><th>Year</th><th>Contributed</th><th>Projected value</th></tr></thead>
+                <tbody id="goal-table-body"></tbody>
+              </table>
+            </div>
+            <button type="button" id="goal-edit-button" class="secondary-button goal-button">Edit goal</button>
+          </div>
+        </section>
         <section class="summary-card" id="portfolio-summary-card">
           <div class="summary-item">
             <span class="summary-label">Value</span>
@@ -821,6 +854,48 @@
         <div class="modal-actions">
           <button type="button" id="cancel-lot" class="secondary-button">Cancel</button>
           <button type="button" id="lot-delete" class="danger-button" hidden>Delete Lot</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="goal-modal" class="modal" hidden>
+    <div class="modal-content sheet-scroll">
+      <h2 class="section-title" id="goal-modal-title">Set Up Goal</h2>
+      <form id="goal-form">
+        <label class="field">
+          Start date
+          <input id="goal-field-start-date" type="date" required />
+        </label>
+        <label class="field">
+          Start value (฿)
+          <input id="goal-field-start-value" type="number" inputmode="decimal" step="any" required />
+        </label>
+        <label class="field">
+          Time horizon (years)
+          <input id="goal-field-years" type="number" inputmode="numeric" step="1" required />
+        </label>
+        <label class="field">
+          Expected annual return (%)
+          <input id="goal-field-return" type="number" inputmode="decimal" step="any" required />
+        </label>
+        <label class="field">
+          Monthly contribution (฿)
+          <input id="goal-field-contribution" type="number" inputmode="decimal" step="any" />
+        </label>
+        <label class="field">
+          Contribution growth per year (%)
+          <input id="goal-field-growth" type="number" inputmode="decimal" step="any" />
+        </label>
+        <label class="field">
+          Target (฿, optional)
+          <input id="goal-field-target" type="number" inputmode="decimal" step="any" placeholder="Projected value if empty" />
+        </label>
+        <p id="goal-modal-error" class="modal-error" hidden></p>
+        <button type="submit" id="goal-submit" class="primary-button lot-submit-button">Save</button>
+        <div class="modal-actions">
+          <button type="button" id="cancel-goal" class="secondary-button">Cancel</button>
+          <button type="button" id="goal-delete" class="danger-button" hidden>Delete goal</button>
         </div>
       </form>
     </div>

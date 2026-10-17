@@ -56,7 +56,9 @@ Source spec provided by the product owner (2026-10-18). **How it is adapted to t
 
 ### Screen 2.4 — Retirement Goal Tracker
 - Inputs: start date, start value, time horizon (years), expected annual return, additional monthly contribution, contribution growth rate (YoY).
-- Projection: growth curve toward the target with current progress %, plus a year-by-year forecast table.
+- Inputs as given in the spec's example: start value `฿736,500`, horizon `30 Years`, expected annual return `10%`, additional monthly contribution `฿1,000`, contribution growth `10% YoY`.
+- Projection: real-time growth curve toward the target goal (spec example: Target `฿21,270,360`, Current Progress `3.49%`), plus a multi-year forecast table by month/year.
+- Note: the example's numbers are not mutually consistent (฿736,500 / ฿21,270,360 = 3.46%, not 3.49%) and no standard convention reproduces ฿21,270,360 exactly; treat them as illustrative. The app's convention and its result for these inputs are documented in CLAUDE.md, "Investments Phase D".
 
 ---
 

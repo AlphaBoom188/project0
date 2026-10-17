@@ -12,6 +12,7 @@ const {
 const {
   DIVIDEND_MODES, DIVIDEND_ASSET_TYPES, holdingDividends, summarizeDividends, buildDividendSeries,
 } = require('../services/dividendMath');
+const { buildGoalProjection } = require('../services/goalMath');
 
 const ASSET_TYPES = ['stock', 'etf', 'crypto', 'mutual_fund', 'gold'];
 const CURRENCIES = ['THB', 'USD'];
@@ -456,6 +457,74 @@ function cachedDividendFields(holding, lots, firstTrade, fxRate) {
   };
 }
 
+class GoalValidationError extends Error {}
+
+// Validates a goal body against migration 015's constraints (plus the
+// NUMERIC column sizes, so an oversized number is a 400, not a Postgres 500).
+// Throws GoalValidationError -> 400. Percentages are percents (10 = 10%).
+function parseGoalInput(body) {
+  const number = (key, { min, max, minExclusive = false, integer = false, optional = false, nullable = false }, message) => {
+    const raw = body[key];
+    if (isBlank(raw)) {
+      if (nullable) return null;
+      if (optional) return 0;
+      throw new GoalValidationError(`${key} is required`);
+    }
+    const value = Number(raw);
+    if (typeof raw === 'boolean' || !Number.isFinite(value) || (integer && !Number.isInteger(value))
+      || (minExclusive ? value <= min : value < min) || value > max) {
+      throw new GoalValidationError(message);
+    }
+    return value;
+  };
+
+  const startDate = body.start_date;
+  if (typeof startDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(startDate) || Number.isNaN(Date.parse(`${startDate}T00:00:00Z`))
+    || new Date(`${startDate}T00:00:00Z`).toISOString().slice(0, 10) !== startDate) {
+    throw new GoalValidationError('start_date must be a valid YYYY-MM-DD date');
+  }
+
+  return {
+    start_date: startDate,
+    start_value: number('start_value', { min: 0, max: 99999999999999.99 }, 'start_value must be a number of at least 0'),
+    years: number('years', { min: 1, max: 60, integer: true }, 'years must be a whole number from 1 to 60'),
+    expected_annual_return: number('expected_annual_return', { min: -50, max: 100 }, 'expected_annual_return must be a percent from -50 to 100'),
+    monthly_contribution: number('monthly_contribution', { min: 0, max: 999999999999.99, optional: true }, 'monthly_contribution must be a number of at least 0'),
+    contribution_growth: number('contribution_growth', { min: 0, max: 100, optional: true }, 'contribution_growth must be a percent from 0 to 100'),
+    target_value: number('target_value', { min: 0, max: 99999999999999.99, minExclusive: true, nullable: true }, 'target_value must be a number above 0, or empty'),
+  };
+}
+
+// PostgREST can hand NUMERIC columns back as strings; the math wants numbers.
+function normalizeGoal(row) {
+  const num = (value) => (value === null || value === undefined ? null : parseFloat(value));
+  return {
+    ...row,
+    start_value: num(row.start_value),
+    years: Number(row.years),
+    expected_annual_return: num(row.expected_annual_return),
+    monthly_contribution: num(row.monthly_contribution),
+    contribution_growth: num(row.contribution_growth),
+    target_value: num(row.target_value),
+  };
+}
+
+// { goal, projection } for GET and PUT. Progress is measured against the
+// same THB total as GET /api/portfolio/:u (0 with no holdings).
+async function goalResponse(lineUserId, row) {
+  if (!row) return { goal: null, projection: null };
+  const goal = normalizeGoal(row);
+  const { totals } = await loadPortfolio(lineUserId);
+  return { goal, projection: buildGoalProjection(goal, totals.total_value, getBangkokYmd()) };
+}
+
+function sendGoalError(res, where, error) {
+  if (error instanceof GoalValidationError) return res.status(400).json({ error: error.message });
+  if (error instanceof FxUnavailableError) return res.status(502).json({ error: error.message });
+  console.error(`Error in ${where}:`, error);
+  return res.status(500).json({ error: error.message });
+}
+
 const portfolioController = {
   async getPortfolio(req, res) {
     try {
@@ -521,6 +590,55 @@ const portfolioController = {
       if (error instanceof FxUnavailableError) return res.status(502).json({ error: error.message });
       console.error('Error in getDividends:', error);
       res.status(500).json({ error: error.message });
+    }
+  },
+
+  // ---- Goal tracker ----
+
+  // GET /api/portfolio/:line_user_id/goal -- the user's one goal plus its
+  // month-by-month projection, yearly table and on-track status. The math is
+  // goalMath.js; this only reads the row and the portfolio's THB total.
+  async getGoal(req, res) {
+    try {
+      const { line_user_id } = req.params;
+      const { data, error } = await supabase.from('investment_goals').select('*').eq('line_user_id', line_user_id).maybeSingle();
+      if (error) throw error;
+      res.json({ success: true, ...(await goalResponse(line_user_id, data)) });
+    } catch (error) {
+      sendGoalError(res, 'getGoal', error);
+    }
+  },
+
+  // PUT /api/portfolio/:line_user_id/goal -- create or replace the goal (one
+  // per user: line_user_id is the table's primary key). Every field is
+  // validated before anything is written.
+  async putGoal(req, res) {
+    try {
+      const { line_user_id } = req.params;
+      const input = parseGoalInput(req.body || {});
+      const { data, error } = await supabase
+        .from('investment_goals')
+        .upsert({ ...input, line_user_id, updated_at: new Date().toISOString() }, { onConflict: 'line_user_id' })
+        .select()
+        .single();
+      if (error) {
+        if (error.code === '23503') return res.status(404).json({ error: 'User not found' }); // no users row (FK)
+        throw error;
+      }
+      res.json({ success: true, ...(await goalResponse(line_user_id, data)) });
+    } catch (error) {
+      sendGoalError(res, 'putGoal', error);
+    }
+  },
+
+  async deleteGoal(req, res) {
+    try {
+      const { line_user_id } = req.params;
+      const { error } = await supabase.from('investment_goals').delete().eq('line_user_id', line_user_id);
+      if (error) throw error;
+      res.json({ success: true, message: 'Goal deleted' });
+    } catch (error) {
+      sendGoalError(res, 'deleteGoal', error);
     }
   },
 

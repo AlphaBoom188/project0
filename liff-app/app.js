@@ -148,6 +148,38 @@ const el = {
   divChartWrap: document.getElementById('div-chart-wrap'),
   divChartCanvas: document.getElementById('div-chart'),
   divNote: document.getElementById('div-note'),
+  // Goal tracker card + sheet (Net Worth tab)
+  goalCard: document.getElementById('goal-card'),
+  goalEmpty: document.getElementById('goal-empty'),
+  goalBody: document.getElementById('goal-body'),
+  goalSetupButton: document.getElementById('goal-setup-button'),
+  goalTargetLabel: document.getElementById('goal-target-label'),
+  goalTarget: document.getElementById('goal-target'),
+  goalProgressPct: document.getElementById('goal-progress-pct'),
+  goalProgressDetail: document.getElementById('goal-progress-detail'),
+  goalProgressFill: document.getElementById('goal-progress-fill'),
+  goalStatus: document.getElementById('goal-status'),
+  goalChartWrap: document.getElementById('goal-chart-wrap'),
+  goalChartCanvas: document.getElementById('goal-chart'),
+  goalNote: document.getElementById('goal-note'),
+  goalTableToggle: document.getElementById('goal-table-toggle'),
+  goalTableWrap: document.getElementById('goal-table-wrap'),
+  goalTableBody: document.getElementById('goal-table-body'),
+  goalEditButton: document.getElementById('goal-edit-button'),
+  goalModal: document.getElementById('goal-modal'),
+  goalModalTitle: document.getElementById('goal-modal-title'),
+  goalForm: document.getElementById('goal-form'),
+  goalFieldStartDate: document.getElementById('goal-field-start-date'),
+  goalFieldStartValue: document.getElementById('goal-field-start-value'),
+  goalFieldYears: document.getElementById('goal-field-years'),
+  goalFieldReturn: document.getElementById('goal-field-return'),
+  goalFieldContribution: document.getElementById('goal-field-contribution'),
+  goalFieldGrowth: document.getElementById('goal-field-growth'),
+  goalFieldTarget: document.getElementById('goal-field-target'),
+  goalModalError: document.getElementById('goal-modal-error'),
+  goalSubmit: document.getElementById('goal-submit'),
+  cancelGoal: document.getElementById('cancel-goal'),
+  goalDelete: document.getElementById('goal-delete'),
   homeInvestmentsCard: document.getElementById('home-investments-card'),
   homeInvestmentsValue: document.getElementById('home-investments-value'),
   homeInvestmentsToday: document.getElementById('home-investments-today'),
@@ -349,6 +381,11 @@ let divMode = 'monthly'; // 'monthly' | 'quarterly' | 'annual'
 let divData = null; // last GET /portfolio/:u/dividends response
 let divChart = null;
 let divLoadSeq = 0;
+// Goal tracker card state -- same reason.
+let goalData = null; // last GET/PUT /portfolio/:u/goal response
+let goalChart = null;
+let goalLoadSeq = 0;
+let portfolioTotalThb = 0; // the Goal sheet's default start value
 const MANUAL_PRICE_ASSET_TYPES = ['mutual_fund', 'gold']; // mirrors backend/services/marketPrices.js -- no live price source for these
 
 // ---- API + in-memory cache ----
@@ -578,6 +615,7 @@ function applyTheme(choice) {
   // Chart colors are read from the tokens at render time, so redraw.
   renderPerfChart();
   renderDivChart();
+  renderGoalChart();
 }
 
 function setTheme(choice) {
@@ -598,6 +636,7 @@ applyTheme(localStorage.getItem('theme') || 'system');
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
   renderPerfChart();
   renderDivChart();
+  renderGoalChart();
 });
 
 // ---- Tab navigation ----
@@ -2311,6 +2350,206 @@ function renderHoldingDividends(holding) {
   }
 }
 
+// ---- Goal tracker card + sheet (Net Worth tab) ----
+//
+// GET /portfolio/:u/goal does all the math (backend/services/goalMath.js);
+// this only draws it. Same loading pattern as the dividends card (cachedGet
+// with a stale-response guard, theme redraw, "Chart unavailable" fallback),
+// but the card shows even with no holdings: the goal can be set up first.
+const GOAL_STATUS_BEHIND_RED = 0.1; // behind by more than 10% of plan -> red bar, else amber
+
+// 'YYYY-MM' (or a full date) -> "Oct 2026" -- already Bangkok calendar months.
+const formatGoalMonth = (ym) =>
+  new Date(`${ym.slice(0, 7)}-01T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+
+async function loadGoal() {
+  const seq = ++goalLoadSeq;
+  const data = await cachedGet(`/portfolio/${lineUserId}/goal`);
+  if (seq !== goalLoadSeq) return;
+  renderGoal(data);
+}
+
+function showGoalError(error) {
+  el.goalCard.hidden = false;
+  el.goalNote.hidden = false;
+  el.goalNote.textContent = `Goal unavailable: ${error.message}`;
+}
+
+function goalStatusText(p) {
+  if (p.status === 'not_started') return `Starts on ${formatPerfDate(goalData.goal.start_date, true)}`;
+  if (p.status === 'on_track') return 'On track';
+  return `${p.status === 'ahead' ? 'Ahead of' : 'Behind'} plan by ${formatMoney(Math.abs(p.difference_thb), 'THB')}`;
+}
+
+function renderGoal(data) {
+  goalData = data;
+  el.goalCard.hidden = false;
+  el.goalNote.hidden = true;
+  el.goalEmpty.hidden = !!data.goal;
+  el.goalBody.hidden = !data.goal;
+  if (!data.goal) {
+    renderGoalChart();
+    return;
+  }
+
+  const p = data.projection;
+  el.goalTargetLabel.textContent = p.target_is_projected ? 'Goal target (projected)' : 'Goal target';
+  el.goalTarget.textContent = formatMoney(p.target_value, 'THB');
+  el.goalProgressPct.textContent = p.progress_pct === null ? '—' : `${p.progress_pct.toFixed(1)}%`;
+  el.goalProgressDetail.textContent = `${formatMoney(p.current_value_thb, 'THB')} now · goal date ${formatGoalMonth(p.end_date)}`;
+  el.goalProgressFill.style.width = `${Math.min(100, Math.max(0, p.progress_pct || 0))}%`;
+  const behindShare = p.status === 'behind' && p.expected_now_thb > 0 ? -p.difference_thb / p.expected_now_thb : 0;
+  el.goalProgressFill.classList.toggle('warn', p.status === 'behind' && behindShare <= GOAL_STATUS_BEHIND_RED);
+  el.goalProgressFill.classList.toggle('over', p.status === 'behind' && behindShare > GOAL_STATUS_BEHIND_RED);
+  el.goalStatus.textContent = goalStatusText(p);
+  el.goalStatus.style.color = p.status === 'ahead' ? 'var(--color-income)' : p.status === 'behind' ? 'var(--color-expense)' : '';
+
+  el.goalTableBody.innerHTML = p.yearly
+    .map((y) => `<tr><td>${y.year_index} <span class="goal-table-sub">${escapeHtml(formatGoalMonth(y.end_date))}</span></td>`
+      + `<td>${escapeHtml(formatMoney(y.contributed_total, 'THB'))}</td><td>${escapeHtml(formatMoney(y.projected_value, 'THB'))}</td></tr>`)
+    .join('');
+  renderGoalChart();
+}
+
+function toggleGoalTable() {
+  const isOpen = el.goalTableToggle.getAttribute('aria-expanded') === 'true';
+  el.goalTableToggle.setAttribute('aria-expanded', String(!isOpen));
+  el.goalTableWrap.hidden = isOpen;
+}
+
+// Projected value (accent) and contributed (dashed), plus today's actual
+// portfolio value as one highlighted point on the latest month at or
+// before today (none before the goal starts).
+function renderGoalChart() {
+  if (goalChart) {
+    goalChart.destroy();
+    goalChart = null;
+  }
+  if (!goalData || !goalData.goal) return;
+  if (typeof window.Chart === 'undefined') {
+    el.goalChartWrap.hidden = true;
+    el.goalNote.hidden = false;
+    el.goalNote.textContent = 'Chart unavailable';
+    return;
+  }
+  el.goalChartWrap.hidden = false;
+
+  const p = goalData.projection;
+  const { points } = p;
+  const thisMonth = bangkokYmd().slice(0, 7);
+  let todayIndex = -1;
+  if (p.status !== 'not_started') points.forEach((pt, i) => { if (pt.date <= thisMonth) todayIndex = i; });
+  const accent = cssToken('--color-accent');
+  const secondary = cssToken('--color-text-secondary');
+  const highlight = cssToken('--color-warning');
+  const gridColor = cssToken('--color-border');
+  const line = (label, key, color, extra = {}) => ({
+    label, data: points.map((pt) => pt[key]), borderColor: color, backgroundColor: color,
+    borderWidth: 2, pointRadius: 0, pointHoverRadius: 3, tension: 0.2, ...extra,
+  });
+  const datasets = [
+    line('Projected', 'projected_value', accent),
+    line('Contributed', 'contributed', secondary, { borderDash: [6, 4], borderWidth: 1.5 }),
+  ];
+  if (todayIndex >= 0) {
+    datasets.push({
+      label: 'Today', data: points.map((_, i) => (i === todayIndex ? p.current_value_thb : null)),
+      borderColor: highlight, backgroundColor: highlight, showLine: false, pointRadius: 6, pointHoverRadius: 7,
+    });
+  }
+
+  goalChart = new window.Chart(el.goalChartCanvas, {
+    type: 'line',
+    data: { labels: points.map((pt) => pt.date), datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { color: secondary, boxWidth: 12, boxHeight: 2 } },
+        tooltip: {
+          filter: (item) => item.raw !== null && item.raw !== undefined,
+          callbacks: {
+            title: (items) => formatGoalMonth(points[items[0].dataIndex].date),
+            label: (item) => `${item.dataset.label}: ${formatMoney(item.raw, 'THB')}`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { color: secondary, maxTicksLimit: 5, maxRotation: 0, callback: (_, i) => formatGoalMonth(points[i].date) },
+          grid: { display: false },
+        },
+        y: {
+          beginAtZero: true,
+          ticks: { color: secondary, maxTicksLimit: 5, callback: (v) => `฿${Number(v).toLocaleString('en-US', { notation: 'compact', maximumFractionDigits: 1 })}` },
+          grid: { color: gridColor },
+        },
+      },
+    },
+  });
+}
+
+// Set up (defaults: today in Bangkok, the current portfolio value in whole
+// baht) or edit (the saved goal).
+function openGoalModal() {
+  const goal = goalData && goalData.goal;
+  el.goalModalTitle.textContent = goal ? 'Edit Goal' : 'Set Up Goal';
+  el.goalFieldStartDate.value = goal ? goal.start_date : bangkokYmd();
+  el.goalFieldStartValue.value = goal ? goal.start_value : Math.round(portfolioTotalThb);
+  el.goalFieldYears.value = goal ? goal.years : '';
+  el.goalFieldReturn.value = goal ? goal.expected_annual_return : '';
+  el.goalFieldContribution.value = goal ? goal.monthly_contribution : '';
+  el.goalFieldGrowth.value = goal ? goal.contribution_growth : '';
+  el.goalFieldTarget.value = goal && goal.target_value !== null ? goal.target_value : '';
+  el.goalDelete.hidden = !goal;
+  clearModalError(el.goalModalError);
+  el.goalModal.hidden = false;
+}
+
+function closeGoalModal() {
+  el.goalModal.hidden = true;
+}
+
+// Every rule is checked server-side; its 400 message shows inline.
+async function handleGoalSubmit(event) {
+  event.preventDefault();
+  el.goalSubmit.disabled = true;
+  clearModalError(el.goalModalError);
+  const num = (input) => (input.value.trim() === '' ? null : Number(input.value));
+  const body = {
+    start_date: el.goalFieldStartDate.value,
+    start_value: num(el.goalFieldStartValue),
+    years: num(el.goalFieldYears),
+    expected_annual_return: num(el.goalFieldReturn),
+    monthly_contribution: num(el.goalFieldContribution),
+    contribution_growth: num(el.goalFieldGrowth),
+    target_value: num(el.goalFieldTarget),
+  };
+  try {
+    const response = await apiRequest(`/portfolio/${lineUserId}/goal`, { method: 'PUT', body: JSON.stringify(body) });
+    closeGoalModal();
+    renderGoal(response);
+  } catch (error) {
+    showModalError(el.goalModalError, error.message);
+  } finally {
+    el.goalSubmit.disabled = false;
+  }
+}
+
+async function handleDeleteGoal() {
+  const confirmed = await confirmAction('Delete this goal? Your holdings are not affected.');
+  if (!confirmed) return;
+  try {
+    await apiRequest(`/portfolio/${lineUserId}/goal`, { method: 'DELETE' });
+    closeGoalModal();
+    renderGoal({ goal: null, projection: null });
+  } catch (error) {
+    showModalError(el.goalModalError, error.message);
+  }
+}
+
 // ---- Net Worth tab: accounts/savings, investments, emergency fund ----
 async function loadNetWorthTab() {
   const [accountsResponse, portfolioResponse, { surplus }] = await Promise.all([
@@ -2321,6 +2560,8 @@ async function loadNetWorthTab() {
 
   renderAccountsList(accountsResponse.accounts);
   renderPortfolio(portfolioResponse, surplus);
+  portfolioTotalThb = portfolioResponse.totals.total_value;
+  loadGoal().catch(showGoalError);
   if (portfolioResponse.holdings.length === 0) {
     el.perfCard.hidden = true;
     el.divCard.hidden = true;
@@ -3150,6 +3391,12 @@ el.perfRangePills.forEach((pill) => pill.addEventListener('click', () => setPerf
 el.perfViewButtons.forEach((button) => button.addEventListener('click', () => setPerfView(button.dataset.perfView)));
 el.divModeButtons.forEach((button) => button.addEventListener('click', () => setDivMode(button.dataset.divMode)));
 el.homeInvestmentsCard.addEventListener('click', () => switchTab('networth'));
+el.goalSetupButton.addEventListener('click', openGoalModal);
+el.goalEditButton.addEventListener('click', openGoalModal);
+el.goalTableToggle.addEventListener('click', toggleGoalTable);
+el.goalForm.addEventListener('submit', handleGoalSubmit);
+el.cancelGoal.addEventListener('click', closeGoalModal);
+el.goalDelete.addEventListener('click', handleDeleteGoal);
 el.addHoldingButton.addEventListener('click', () => openHoldingModal(null));
 el.cancelHolding.addEventListener('click', closeHoldingModal);
 el.holdingForm.addEventListener('submit', handleHoldingSubmit);

@@ -24,6 +24,15 @@ router.get('/:line_user_id/performance', portfolioController.getPerformance);
 // GET /api/portfolio/:line_user_id/dividends?mode=monthly - Received + projected dividends (THB), chart series, per holding
 router.get('/:line_user_id/dividends', portfolioController.getDividends);
 
+// GET /api/portfolio/:line_user_id/goal - The goal tracker: goal + projection, progress and on-track status
+router.get('/:line_user_id/goal', portfolioController.getGoal);
+
+// PUT /api/portfolio/:line_user_id/goal - Create or replace the user's one goal
+router.put('/:line_user_id/goal', portfolioController.putGoal);
+
+// DELETE /api/portfolio/:line_user_id/goal - Remove the goal
+router.delete('/:line_user_id/goal', portfolioController.deleteGoal);
+
 // PUT /api/portfolio/:line_user_id/lots/:lot_id - Edit a lot (re-validates the whole history)
 router.put('/:line_user_id/lots/:lot_id', portfolioController.updateLot);
 
