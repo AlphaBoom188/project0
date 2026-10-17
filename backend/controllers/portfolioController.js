@@ -3,10 +3,15 @@ const { fetchQuoteForHolding, MANUAL_ONLY_TYPES } = require('../services/marketP
 const { getUsdThbRate } = require('../services/fxRates');
 const { computeLotSummary, sortLots, lotTotal, LotValidationError, round6 } = require('../services/lotMath');
 const { getBangkokYmd } = require('../services/bangkokDay');
-const { getYahooDailyCloses, getHoldingHistory } = require('../services/priceHistory');
+const {
+  getYahooDailyCloses, getHoldingHistory, getHoldingDividends, peekHoldingDividends, peekYahooDailyCloses,
+} = require('../services/priceHistory');
 const {
   PERFORMANCE_RANGES, rangeStartYmd, eachDay, forwardFill, dailySeries, netInvested, chainTwr, rebasePercent, downsample, fallbackPrice,
 } = require('../services/performanceMath');
+const {
+  DIVIDEND_MODES, DIVIDEND_ASSET_TYPES, holdingDividends, summarizeDividends, buildDividendSeries,
+} = require('../services/dividendMath');
 
 const ASSET_TYPES = ['stock', 'etf', 'crypto', 'mutual_fund', 'gold'];
 const CURRENCIES = ['THB', 'USD'];
@@ -379,16 +384,89 @@ async function buildPerformance({ holdings, lotsByHolding, fxRate, totals }, ran
   };
 }
 
+const firstTradeOf = (lots) => (lots.length > 0 ? lots.reduce((min, l) => (l.trade_date < min ? l.trade_date : min), lots[0].trade_date) : null);
+
+async function buildDividends({ holdings, lotsByHolding, fxRate, totals }, mode) {
+  const today = getBangkokYmd();
+  const allLots = Object.values(lotsByHolding).flat();
+  const owned = holdings.filter((h) => (lotsByHolding[h.id] || []).length > 0);
+  const payers = owned.filter((h) => DIVIDEND_ASSET_TYPES.includes(h.asset_type));
+  const firstTrade = firstTradeOf(allLots);
+  const missing = [];
+  const attempt = (symbol, promise) =>
+    Promise.resolve(promise).catch((error) => {
+      missing.push({ symbol, error: error.message });
+      return null;
+    });
+
+  // Nothing that can pay a dividend -> no network calls at all. The USD->THB
+  // history starts at the first trade, the same cache key the performance
+  // chart uses, so the two endpoints share one fetch.
+  const needsFx = payers.some((h) => h.currency !== 'THB');
+  const [fxHistory, ...dividendHistories] = payers.length === 0 ? [null] : await Promise.all([
+    needsFx ? attempt('USDTHB=X', getYahooDailyCloses('USDTHB=X', firstTrade)) : null,
+    ...payers.map((h) => attempt(h.symbol, getHoldingDividends(h))),
+  ]);
+  const fxCloses = fxHistory ? fxHistory.closes : [];
+
+  const perHolding = [];
+  payers.forEach((holding, i) => {
+    const events = dividendHistories[i];
+    if (!events) return; // listed in `missing`
+    const result = holdingDividends({ lots: lotsByHolding[holding.id], events, currency: holding.currency, fxCloses, currentFx: fxRate, today });
+    perHolding.push({
+      holding_id: holding.id,
+      symbol: holding.symbol,
+      currency: holding.currency,
+      received_thb: round2(result.received_thb),
+      received: round6(result.received),
+      projected_12m_thb: round2(result.projected_12m_thb),
+      events: result.events,
+    });
+  });
+
+  const events = perHolding.flatMap((h) => h.events);
+  return {
+    mode,
+    summary: summarizeDividends(events, { today, totalValueThb: totals.total_value, costBasisThb: totals.total_cost_basis }),
+    series: buildDividendSeries(mode, events, today, firstTrade),
+    holdings: perHolding,
+    missing,
+    unsupported_holdings: owned.filter((h) => !DIVIDEND_ASSET_TYPES.includes(h.asset_type)).map((h) => h.symbol),
+  };
+}
+
+// All-time dividends for GET /api/portfolio/:u, only from history that's
+// already cached (the dividends endpoint warms it) -- that read never waits
+// on Yahoo. Null when the history isn't cached, or for types with no
+// dividend source; dividends_received_thb is also null for a USD holding
+// until the USD->THB history is cached.
+function cachedDividendFields(holding, lots, firstTrade, fxRate) {
+  const none = { dividends_received: null, dividends_received_thb: null };
+  if (!DIVIDEND_ASSET_TYPES.includes(holding.asset_type) || lots.length === 0) return none;
+  const events = peekHoldingDividends(holding);
+  if (!events) return none;
+  const fxHistory = holding.currency === 'THB' ? null : peekYahooDailyCloses('USDTHB=X', firstTrade);
+  const result = holdingDividends({
+    lots, events, currency: holding.currency, fxCloses: fxHistory ? fxHistory.closes : [], currentFx: fxRate, today: getBangkokYmd(),
+  });
+  return {
+    dividends_received: round6(result.received),
+    dividends_received_thb: holding.currency === 'THB' || fxHistory ? round2(result.received_thb) : null,
+  };
+}
+
 const portfolioController = {
   async getPortfolio(req, res) {
     try {
       const { line_user_id } = req.params;
-      const { holdings: computed, fxRate, totals, allocationByType } = await loadPortfolio(line_user_id);
+      const { holdings: computed, lotsByHolding, fxRate, totals, allocationByType } = await loadPortfolio(line_user_id);
       const emergencyFund = await fetchEmergencyFundStatus(line_user_id);
+      const firstTrade = firstTradeOf(Object.values(lotsByHolding).flat());
 
       res.json({
         success: true,
-        holdings: computed,
+        holdings: computed.map((h) => ({ ...h, ...cachedDividendFields(h, lotsByHolding[h.id] || [], firstTrade, fxRate) })),
         fx_usd_thb: fxRate,
         // All in THB. total_gain = unrealized + realized (closed positions count).
         totals,
@@ -420,6 +498,28 @@ const portfolioController = {
     } catch (error) {
       if (error instanceof FxUnavailableError) return res.status(502).json({ error: error.message });
       console.error('Error in getPerformance:', error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  // GET /api/portfolio/:line_user_id/dividends?mode=monthly -- dividends
+  // received (from each ex-date's shares held) and projected for the next 12
+  // months, in THB, with the chart series for the mode. The math is
+  // dividendMath.js; this only fetches the events (priceHistory.js, cached
+  // 12h). A symbol whose dividends can't be fetched is left out and listed in
+  // `missing`; holdings with no dividend source in `unsupported_holdings`.
+  async getDividends(req, res) {
+    try {
+      const { line_user_id } = req.params;
+      const mode = req.query.mode || 'monthly';
+      if (!DIVIDEND_MODES.includes(mode)) {
+        return res.status(400).json({ error: `mode must be one of: ${DIVIDEND_MODES.join(', ')}` });
+      }
+      const state = await loadPortfolio(line_user_id);
+      res.json({ success: true, ...(await buildDividends(state, mode)) });
+    } catch (error) {
+      if (error instanceof FxUnavailableError) return res.status(502).json({ error: error.message });
+      console.error('Error in getDividends:', error);
       res.status(500).json({ error: error.message });
     }
   },

@@ -136,6 +136,18 @@ const el = {
   perfNote: document.getElementById('perf-note'),
   perfBenchmarkSp500: document.getElementById('perf-benchmark-sp500'),
   perfBenchmarkSet: document.getElementById('perf-benchmark-set'),
+  // Dividends card (Net Worth tab)
+  divCard: document.getElementById('div-card'),
+  divTrailing: document.getElementById('div-trailing'),
+  divYoy: document.getElementById('div-yoy'),
+  divPortfolioYield: document.getElementById('div-portfolio-yield'),
+  divYieldOnCost: document.getElementById('div-yield-on-cost'),
+  divAvgMonthly: document.getElementById('div-avg-monthly'),
+  divAvgDaily: document.getElementById('div-avg-daily'),
+  divModeButtons: document.querySelectorAll('[data-div-mode]'),
+  divChartWrap: document.getElementById('div-chart-wrap'),
+  divChartCanvas: document.getElementById('div-chart'),
+  divNote: document.getElementById('div-note'),
   homeInvestmentsCard: document.getElementById('home-investments-card'),
   homeInvestmentsValue: document.getElementById('home-investments-value'),
   homeInvestmentsToday: document.getElementById('home-investments-today'),
@@ -172,6 +184,10 @@ const el = {
   holdingStatRealizedGain: document.getElementById('holding-stat-realized-gain'),
   holdingStatWinRate: document.getElementById('holding-stat-win-rate'),
   holdingStatLots: document.getElementById('holding-stat-lots'),
+  holdingStatDividendsRow: document.getElementById('holding-stat-dividends-row'),
+  holdingStatDividends: document.getElementById('holding-stat-dividends'),
+  holdingStatNextDividendRow: document.getElementById('holding-stat-next-dividend-row'),
+  holdingStatNextDividend: document.getElementById('holding-stat-next-dividend'),
   holdingLotsList: document.getElementById('holding-lots-list'),
   holdingLotsEmpty: document.getElementById('holding-lots-empty'),
   holdingDetailError: document.getElementById('holding-detail-error'),
@@ -328,6 +344,11 @@ let perfView = 'value'; // 'value' | 'return'
 let perfData = null; // last GET /portfolio/:u/performance response
 let perfChart = null; // Chart.js instance, destroyed before every re-render
 let perfLoadSeq = 0;
+// Dividends card state -- same reason (applyTheme() redraws this chart too).
+let divMode = 'monthly'; // 'monthly' | 'quarterly' | 'annual'
+let divData = null; // last GET /portfolio/:u/dividends response
+let divChart = null;
+let divLoadSeq = 0;
 const MANUAL_PRICE_ASSET_TYPES = ['mutual_fund', 'gold']; // mirrors backend/services/marketPrices.js -- no live price source for these
 
 // ---- API + in-memory cache ----
@@ -556,6 +577,7 @@ function applyTheme(choice) {
   }
   // Chart colors are read from the tokens at render time, so redraw.
   renderPerfChart();
+  renderDivChart();
 }
 
 function setTheme(choice) {
@@ -573,7 +595,10 @@ for (const button of el.themeOptionButtons) {
 
 applyTheme(localStorage.getItem('theme') || 'system');
 // "System" follows the OS live, without going through applyTheme().
-window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => renderPerfChart());
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+  renderPerfChart();
+  renderDivChart();
+});
 
 // ---- Tab navigation ----
 //
@@ -1557,6 +1582,7 @@ function renderHoldingDetail(holding, lots) {
   el.holdingStatMarketValue.textContent = formatMoney(holding.market_value, cur);
   el.holdingStatWinRate.textContent = holding.win_rate === null ? '—' : `${holding.win_rate.toFixed(2)}%`;
   el.holdingStatLots.textContent = `${holding.lots_open} open / ${holding.lots_closed} closed`;
+  renderHoldingDividends(holding);
 
   if (lots) {
     el.holdingLotsList.innerHTML = '';
@@ -2138,6 +2164,153 @@ function renderPerfChart() {
   });
 }
 
+// ---- Dividends card (Net Worth tab) ----
+//
+// GET /portfolio/:u/dividends does all the math (backend/services/
+// dividendMath.js); this only draws it. Same loading pattern as the
+// performance card: fetched when Net Worth loads and when the mode changes,
+// through cachedGet with a stale-response guard; "Chart unavailable" if
+// Chart.js is blocked. Amounts are gross (before withholding tax), and only
+// stocks/ETFs have a dividend source.
+const DIV_PROJECTED_ALPHA = 0.35;
+
+// A token colour ('#rgb', '#rrggbb' or 'rgb(...)') at the given opacity, so
+// projected bars are a lighter version of the received colour in both
+// themes without a separate literal.
+function withAlpha(color, alpha) {
+  let r;
+  let g;
+  let b;
+  if (color.startsWith('#')) {
+    const hex = color.length === 4 ? color.slice(1).split('').map((c) => c + c).join('') : color.slice(1, 7);
+    [r, g, b] = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  } else {
+    [r, g, b] = (color.match(/\d+(\.\d+)?/g) || []).map(Number);
+  }
+  return [r, g, b].some((v) => Number.isNaN(v) || v === undefined) ? color : `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+const formatPct = (pct) => (pct === null || pct === undefined ? '—' : `${pct.toFixed(2)}%`);
+
+function divNoteText() {
+  const parts = ['Before tax.'];
+  if (divData.unsupported_holdings.length > 0) parts.push("Crypto, funds and gold aren't included.");
+  if (divData.missing.length > 0) parts.push(`No dividend data for ${divData.missing.map((m) => m.symbol).join(', ')}.`);
+  if (typeof window.Chart === 'undefined') parts.push('Chart unavailable');
+  return parts.join(' ');
+}
+
+async function loadDividends() {
+  const seq = ++divLoadSeq;
+  el.divModeButtons.forEach((button) => button.classList.toggle('active', button.dataset.divMode === divMode));
+  const data = await cachedGet(`/portfolio/${lineUserId}/dividends?mode=${divMode}`);
+  if (seq !== divLoadSeq) return;
+  divData = data;
+  // Nothing that could pay a dividend (no stock/ETF at all) -> no card.
+  el.divCard.hidden = data.holdings.length === 0 && data.missing.length === 0;
+  if (detailHolding && !el.holdingDetailModal.hidden) renderHoldingDividends(detailHolding);
+  if (el.divCard.hidden) return;
+
+  const s = data.summary;
+  el.divTrailing.textContent = formatMoney(s.trailing_12m_thb, 'THB');
+  el.divYoy.textContent = s.yoy_pct === null ? 'No dividends in the 12 months before' : `${formatSignedPercent(s.yoy_pct)} vs the 12 months before`;
+  el.divYoy.style.color = s.yoy_pct === null ? '' : gainColor(s.yoy_pct);
+  el.divPortfolioYield.textContent = formatPct(s.portfolio_yield_pct);
+  el.divYieldOnCost.textContent = formatPct(s.yield_on_cost_pct);
+  el.divAvgMonthly.textContent = formatMoney(s.avg_monthly_thb, 'THB');
+  el.divAvgDaily.textContent = formatMoney(s.avg_daily_thb, 'THB');
+  renderDivChart();
+}
+
+function showDivError(error) {
+  el.divCard.hidden = false;
+  el.divChartWrap.hidden = true;
+  el.divNote.textContent = `Dividends unavailable: ${error.message}`;
+}
+
+function setDivMode(mode) {
+  divMode = mode;
+  loadDividends().catch(showDivError);
+}
+
+function renderDivChart() {
+  if (divChart) {
+    divChart.destroy();
+    divChart = null;
+  }
+  if (!divData || el.divCard.hidden) return;
+  el.divNote.textContent = divNoteText();
+  if (typeof window.Chart === 'undefined') {
+    el.divChartWrap.hidden = true;
+    return;
+  }
+  el.divChartWrap.hidden = false;
+
+  const { series } = divData;
+  const received = cssToken('--color-income');
+  const textColor = cssToken('--color-text-secondary');
+  const gridColor = cssToken('--color-border');
+  const bar = (label, key, color) => ({ label, data: series.map((b) => b[key]), backgroundColor: color, borderColor: color, borderWidth: 0, stack: 'dividends' });
+  divChart = new window.Chart(el.divChartCanvas, {
+    type: 'bar',
+    data: {
+      labels: series.map((b) => b.label),
+      datasets: [bar('Received', 'received_thb', received), bar('Projected', 'projected_thb', withAlpha(received, DIV_PROJECTED_ALPHA))],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { color: textColor, boxWidth: 12, boxHeight: 12 } },
+        tooltip: {
+          callbacks: {
+            title: (items) => series[items[0].dataIndex].label,
+            label: (item) => `${item.dataset.label}: ${formatMoney(item.raw || 0, 'THB')}`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          stacked: true,
+          // "Oct 2026" -> "Oct 26" on the axis; the tooltip keeps the full label.
+          ticks: { color: textColor, maxTicksLimit: 6, maxRotation: 0, callback: (_, i) => series[i].label.replace(/ (\d\d)(\d\d)$/, ' $2') },
+          grid: { display: false },
+        },
+        y: {
+          stacked: true,
+          beginAtZero: true,
+          ticks: { color: textColor, maxTicksLimit: 5, callback: (v) => `฿${Number(v).toLocaleString('en-US', { notation: 'compact', maximumFractionDigits: 1 })}` },
+          grid: { color: gridColor },
+        },
+      },
+    },
+  });
+}
+
+// Holding detail sheet: "Dividends" (received, all-time) and the next
+// projected ex-date, from the dividends endpoint's per-holding breakdown.
+// Hidden for types with no dividend source; "—" until that data is in.
+function renderHoldingDividends(holding) {
+  const supported = holding.asset_type === 'stock' || holding.asset_type === 'etf';
+  el.holdingStatDividendsRow.hidden = !supported;
+  el.holdingStatNextDividendRow.hidden = true;
+  if (!supported) return;
+  const entry = divData && divData.holdings.find((h) => h.holding_id === holding.id);
+  if (!entry) {
+    el.holdingStatDividends.textContent = '—';
+    return;
+  }
+  const cur = entry.currency;
+  el.holdingStatDividends.textContent = cur === 'THB' ? formatMoney(entry.received_thb, 'THB') : `${formatMoney(entry.received, cur)} · ${formatMoney(entry.received_thb, 'THB')}`;
+  const next = entry.events.find((e) => e.kind === 'projected');
+  if (next) {
+    el.holdingStatNextDividend.textContent = `${formatTradeDate(next.ex_date)} · ${formatMoney(next.amount, cur)} (projected)`;
+    el.holdingStatNextDividendRow.hidden = false;
+  }
+}
+
 // ---- Net Worth tab: accounts/savings, investments, emergency fund ----
 async function loadNetWorthTab() {
   const [accountsResponse, portfolioResponse, { surplus }] = await Promise.all([
@@ -2148,8 +2321,13 @@ async function loadNetWorthTab() {
 
   renderAccountsList(accountsResponse.accounts);
   renderPortfolio(portfolioResponse, surplus);
-  if (portfolioResponse.holdings.length === 0) el.perfCard.hidden = true;
-  else loadPerformance().catch(showPerfError);
+  if (portfolioResponse.holdings.length === 0) {
+    el.perfCard.hidden = true;
+    el.divCard.hidden = true;
+  } else {
+    loadPerformance().catch(showPerfError);
+    loadDividends().catch(showDivError);
+  }
   autoRefreshStalePrices(portfolioResponse.holdings);
 
   el.settingEfGoal.value = currentUser.emergency_fund_goal_amount || '';
@@ -2970,6 +3148,7 @@ el.clearHistoryButton.addEventListener('click', handleClearHistory);
 el.refreshPricesButton.addEventListener('click', handleRefreshPrices);
 el.perfRangePills.forEach((pill) => pill.addEventListener('click', () => setPerfRange(pill.dataset.perfRange)));
 el.perfViewButtons.forEach((button) => button.addEventListener('click', () => setPerfView(button.dataset.perfView)));
+el.divModeButtons.forEach((button) => button.addEventListener('click', () => setDivMode(button.dataset.divMode)));
 el.homeInvestmentsCard.addEventListener('click', () => switchTab('networth'));
 el.addHoldingButton.addEventListener('click', () => openHoldingModal(null));
 el.cancelHolding.addEventListener('click', closeHoldingModal);

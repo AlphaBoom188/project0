@@ -21,6 +21,9 @@ router.get('/:line_user_id/lots', portfolioController.listAllLots);
 // GET /api/portfolio/:line_user_id/performance?range=1y - Daily value, net invested, TWR vs S&P 500 / SET
 router.get('/:line_user_id/performance', portfolioController.getPerformance);
 
+// GET /api/portfolio/:line_user_id/dividends?mode=monthly - Received + projected dividends (THB), chart series, per holding
+router.get('/:line_user_id/dividends', portfolioController.getDividends);
+
 // PUT /api/portfolio/:line_user_id/lots/:lot_id - Edit a lot (re-validates the whole history)
 router.put('/:line_user_id/lots/:lot_id', portfolioController.updateLot);
 

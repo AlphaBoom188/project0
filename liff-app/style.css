@@ -1525,6 +1525,19 @@ body {
   color: var(--color-text-secondary);
 }
 
+/* Dividends card: same shell as the performance card, metrics in the holding-stats grid. */
+.div-yoy {
+  margin: calc(-1 * var(--space-sm)) 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+/* Two classes so it beats .holding-stats { margin: 0 }, which comes later in this file. */
+.holding-stats.div-metrics {
+  margin-bottom: var(--space-md);
+}
+
 .home-investments-card {
   width: calc(100% - 2 * var(--space-page));
   margin-top: 0;

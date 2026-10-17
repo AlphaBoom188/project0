@@ -8,28 +8,45 @@
 // one entry per trading day, dated on the exchange's own calendar (a US close
 // on Oct 16 New York time is Oct 16 here, not the Bangkok date it lands on).
 //
-// Cached in memory for 6 hours per (source, symbol, window). Concurrent
-// requests for the same key share one fetch; a failed fetch isn't cached.
+// Cached in memory for 6 hours per (source, symbol, window) -- 12 hours for
+// dividend history, which changes a few times a year. Concurrent requests for
+// the same key share one fetch; a failed fetch isn't cached.
 const { fetchWithTimeout } = require('./marketPrices');
 const { getBangkokYmd } = require('./bangkokDay');
 const { daysBetween } = require('./performanceMath');
 
 const CACHE_MS = 6 * 60 * 60 * 1000;
-const cache = new Map(); // key -> { at, promise }
+const DIVIDEND_CACHE_MS = 12 * 60 * 60 * 1000;
+const cache = new Map(); // key -> { at, maxAgeMs, promise, value }
 
 // Yahoo answers a bare node fetch, and a short browser-like User-Agent, but
 // 429s a full desktop-Chrome User-Agent string -- so keep it short.
 const YAHOO_HEADERS = { 'User-Agent': 'Mozilla/5.0' };
 
-function cached(key, loader) {
+function cached(key, loader, maxAgeMs = CACHE_MS) {
   const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < CACHE_MS) return hit.promise;
-  const promise = loader().catch((error) => {
-    cache.delete(key);
-    throw error;
-  });
-  cache.set(key, { at: Date.now(), promise });
-  return promise;
+  if (hit && Date.now() - hit.at < hit.maxAgeMs) return hit.promise;
+  const entry = { at: Date.now(), maxAgeMs, promise: null, value: undefined };
+  entry.promise = loader().then(
+    (value) => {
+      entry.value = value;
+      return value;
+    },
+    (error) => {
+      if (cache.get(key) === entry) cache.delete(key);
+      throw error;
+    }
+  );
+  cache.set(key, entry);
+  return entry.promise;
+}
+
+// The cached value if a fetch for `key` has already finished (and is still
+// fresh), else null -- never starts a fetch. For reads that must stay fast
+// (GET /api/portfolio/:u) and only use history someone else already loaded.
+function peekCached(key) {
+  const hit = cache.get(key);
+  return hit && Date.now() - hit.at < hit.maxAgeMs && hit.value !== undefined ? hit.value : null;
 }
 
 // Smallest Yahoo range that reaches back to startYmd (plus a 10-day margin so
@@ -42,14 +59,14 @@ function yahooRangeFor(startYmd) {
   return match ? match[0] : 'full';
 }
 
-async function fetchYahooChart(symbol, query) {
+async function fetchYahooChart(symbol, query, what = 'price history') {
   const response = await fetchWithTimeout(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?${query}`, {
     headers: YAHOO_HEADERS,
   });
-  if (!response.ok) throw new Error(`Could not fetch price history for "${symbol}" (${response.status})`);
+  if (!response.ok) throw new Error(`Could not fetch ${what} for "${symbol}" (${response.status})`);
   const body = await response.json().catch(() => ({}));
   const result = body?.chart?.result?.[0];
-  if (!result || !Array.isArray(result.timestamp)) throw new Error(`No price history found for "${symbol}"`);
+  if (!result || !Array.isArray(result.timestamp)) throw new Error(`No ${what} found for "${symbol}"`);
   return result;
 }
 
@@ -70,9 +87,10 @@ function closesFromChart(result) {
 // returns a single bar for every daily range -- so a series that comes back
 // with fewer than 2 days is rebuilt from hourly bars instead (Yahoo serves
 // ~2-3 years of those, so SET history doesn't reach back further than that).
+const dailyClosesKey = (symbol, startYmd) => `yahoo:${symbol}:1d:${yahooRangeFor(startYmd)}`;
 function getYahooDailyCloses(symbol, startYmd) {
   const range = yahooRangeFor(startYmd);
-  return cached(`yahoo:${symbol}:1d:${range}`, async () => {
+  return cached(dailyClosesKey(symbol, startYmd), async () => {
     const result = await fetchYahooChart(symbol, range === 'full' ? 'period1=0&period2=9999999999&interval=1d' : `range=${range}&interval=1d`);
     let closes = closesFromChart(result);
     if (closes.length < 2) closes = closesFromChart(await fetchYahooChart(symbol, 'range=730d&interval=1h'));
@@ -119,4 +137,63 @@ async function getHoldingHistory(holding, startYmd) {
   return null;
 }
 
-module.exports = { getYahooDailyCloses, getCoinGeckoDailyCloses, getHoldingHistory, closesFromChart };
+// Already-fetched daily closes for (symbol, startYmd), else null (no fetch).
+const peekYahooDailyCloses = (symbol, startYmd) => peekCached(dailyClosesKey(symbol, startYmd));
+
+// Every dividend Yahoo has for a stock/ETF, as [{ ex_date, amount }] sorted
+// by ex_date: amount is per share in the listing currency, ex_date the
+// Bangkok calendar date of the event. Only Yahoo has dividend data --
+// crypto, mutual funds and gold have no source (see dividendMath.js).
+//
+// From the chart endpoint with events=div. With interval=1mo each event is
+// keyed by the start of its monthly bar, not by its ex-date, so the date is
+// read from the event's own `date` field. range=max is fine here: only the
+// bar size changes with it, and the events come back complete either way.
+// Amounts are split-adjusted by Yahoo (lots aren't, see dividendMath.js).
+// A symbol that pays nothing (e.g. BRK-B) comes back with no events at all.
+function getYahooDividends(symbol) {
+  return cached(`yahoo-div:${symbol}`, async () => {
+    const result = await fetchYahooChart(symbol, 'range=max&interval=1mo&events=div', 'dividend history');
+    const events = Object.values(result.events?.dividends || {})
+      .filter((event) => typeof event.amount === 'number' && typeof event.date === 'number')
+      .map((event) => ({ ex_date: getBangkokYmd(new Date(event.date * 1000)), amount: event.amount }))
+      .sort((a, b) => (a.ex_date < b.ex_date ? -1 : a.ex_date > b.ex_date ? 1 : 0));
+    return { events, currency: result.meta?.currency || null };
+  }, DIVIDEND_CACHE_MS);
+}
+
+// Same currency rule as getHoldingHistory: amounts in another currency than
+// the holding's would be converted wrongly, so they're rejected.
+function checkDividendCurrency(holding, dividends) {
+  if (dividends.currency && dividends.currency !== holding.currency) {
+    throw new Error(`"${holding.symbol}" is quoted in ${dividends.currency}, but this holding is in ${holding.currency}`);
+  }
+  return dividends.events;
+}
+
+async function getHoldingDividends(holding) {
+  return checkDividendCurrency(holding, await getYahooDividends(holding.symbol));
+}
+
+// Already-fetched dividend events for a holding, else null (no fetch, and
+// null on a currency mismatch too).
+function peekHoldingDividends(holding) {
+  const dividends = peekCached(`yahoo-div:${holding.symbol}`);
+  if (!dividends) return null;
+  try {
+    return checkDividendCurrency(holding, dividends);
+  } catch {
+    return null;
+  }
+}
+
+module.exports = {
+  getYahooDailyCloses,
+  getCoinGeckoDailyCloses,
+  getHoldingHistory,
+  closesFromChart,
+  peekYahooDailyCloses,
+  getYahooDividends,
+  getHoldingDividends,
+  peekHoldingDividends,
+};

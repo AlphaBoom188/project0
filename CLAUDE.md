@@ -523,6 +523,45 @@ A user with no lots gets `points: []` with no network calls. The literal route i
 - `api/performance` (42, the real endpoint): structure, invariants, a deterministic flat gold portfolio whose TWR stays 0% across a 9× top-up, isolation between users, and `missing`.
 - `liff/performance_chart` (22): includes the CDN-blocked fallback and light/dark screenshots.
 
+### Investments Phase C — Dividends
+
+Spec: `docs/master_uxui_specification_finance.md` Screen 2.3, adapted. No migration. Built by a subagent, then reviewed and re-verified by the lead: 28/28 suites, the Yahoo key/ex-date finding re-checked, and a read-only hand-check on a real AAPL holding (4 projected payouts × 20 shares × FX = ฿708.50, matching the endpoint to the satang).
+
+✅ **Endpoint.** `GET /api/portfolio/:u/dividends?mode=monthly|quarterly|annual` (default monthly; anything else → 400). The response has:
+- `summary`: `trailing_12m_thb`, `yoy_pct`, `projected_12m_thb`, `portfolio_yield_pct`, `yield_on_cost_pct`, `avg_monthly_thb`, `avg_daily_thb`;
+- `series`: `label`, `period_start`, `received_thb`, `projected_thb`;
+- `holdings`: `received`, `received_thb`, `projected_12m_thb`, and `events` (`ex_date`, `amount_per_share`, `shares`, `amount`, `amount_thb`, `kind: received|projected`);
+- `missing`: symbols whose dividends couldn't be fetched;
+- `unsupported_holdings`: crypto, mutual funds and gold, which have no dividend source.
+
+A user with nothing that can pay a dividend gets zeros with no dividend fetches. The literal route is registered next to `performance`, before `/:u/:holding_id`.
+
+✅ **Math (`services/dividendMath.js`, pure).**
+- **Received:** for each event with Bangkok ex-date D, shares = open quantity replayed from lots with `trade_date < D` (a buy on D doesn't qualify; a sell on D still does) × amount per share × that day's USD→THB (forward-filled; 1 for THB).
+- **Projected:** each event from the last 12 months, moved one calendar year forward, × today's open shares × today's rate. Only dates after today count.
+- **Gross amounts, before withholding tax:** Thai 10% / US 15% depends on the account, so it isn't modeled.
+- **Summary:** trailing 12m = received in the last 365 days. YoY compares it with the 365 days before that (null when there was nothing). Portfolio yield = projected / `totals.total_value`. Yield on cost = projected / `totals.total_cost_basis`. Average monthly = trailing ÷ 12; average daily = trailing ÷ 365.
+- **Bars, on Bangkok calendar periods:** monthly = 11 past months + this month + 12 ahead; quarterly = 3 + this quarter + 4; annual = the first lot's year through next year. The current period stacks received and projected.
+- **Not handled:** stock splits. Yahoo's amounts are split-adjusted and lots aren't.
+
+✅ **Data (`services/priceHistory.js`).** Yahoo chart `range=max&interval=1mo&events=div`, cached 12h per symbol, with the same merge, timeout and `User-Agent: Mozilla/5.0` as Phase B.
+- **Event dates:** with `interval=1mo`, events are **keyed by the monthly bar start, not the ex-date** (e.g. AAPL key 2026-06-01, ex-date 2026-08-10), so the ex-date comes from each event's own `date` field.
+- **Non-payers vs failures:** a non-payer (BRK-B) returns no events; a bogus symbol 404s and goes in `missing`.
+- **Shared FX history:** USD→THB uses the same cache key as `/performance`.
+- **Portfolio GET stays fast:** `GET /api/portfolio/:u` adds `dividends_received` and `dividends_received_thb` per holding, only from already-cached history (`peekHoldingDividends`/`peekYahooDailyCloses`, which never fetch). Otherwise they are null, so that read never waits on Yahoo. `totals` are unchanged.
+
+✅ **LIFF.**
+- **Net Worth:** a Dividends card below the Performance card shows trailing-12m ฿ with YoY, a Portfolio yield / Yield on cost / Avg monthly / Avg daily grid, and a Monthly | Quarterly | Annually toggle (`.type-toggle`, buttons at `--tap-min`).
+- **Chart:** a stacked Chart.js bar chart. Received bars use `--color-income`; projected bars are the same token at 0.35 alpha, derived in JS. The tooltip shows ฿ to 2 decimals.
+- **Notes under the chart:** "Before tax", and "Crypto, funds and gold aren't included" when relevant.
+- **Behaviour:** same `cachedGet` + `divLoadSeq` stale guard, theme redraw and "Chart unavailable" fallback as Phase B. The card is hidden when there is no stock or ETF holding.
+- **Holding detail:** Dividends (received, all-time) and Next dividend. Next dividend is a projected ex-date; Yahoo gives no pay dates.
+
+**Tests:**
+- `api/dividend_math` (44, pure).
+- `api/dividends` (45, the real endpoint): AAPL bought 2023-01-03 then partly sold, PTT.BK, a bogus symbol, a crypto/gold-only user, the empty user, isolation, and series sums matching summary figures.
+- `liff/dividends_card` (25): includes the CDN-blocked fallback and light/dark screenshots.
+
 ### Event Budgets, Verified Export Email, LIFF Nav Restructure
 
 ✅ **Event/occasion budget buckets** (migration `012_budget_events.sql`, blueprint section 5) — a category's existing `budget_amount`/`budget_period` stays the recurring "normal" limit; `budget_events` is a one-off limit for one specific month (`period_month`, always the 1st) layered on top, always tied to an existing category. `budgetEventController.js`'s `withSpent()` computes `spent`/`remaining`/`percent` on read by summing that category's expenses within the month (UTC month bounds) — no transaction-tagging column added. **Alerts** (decided later: 80% and 100%): `services/eventBudgetAlert.js` `evaluateEventBudgetAlerts()` runs after every expense insert in `transactionCreate.js`, next to the category alert. Like category alerts it is stateless: an alert fires only when *this* expense moves a bucket's month total across 80% (`level: 'warning'`) or 100% (`'over'`; reaching exactly 100% counts), and only the highest line crossed fires, so a 0%→120% jump sends only the used-up alert. No migration was needed. The month is the transaction's own UTC month, matching the progress bar, so a back-dated expense alerts on that month's bucket. Routing is identical to category alerts: `channel: 'liff'` returns `event_budget_alerts` (each with a ready-made `message`, the single source of the wording) in the POST response for the LIFF banner, which is amber when everything is a heads-up and red if anything is over. Every other channel gets a fire-and-forget LINE push gated by `notifications_enabled`. Tests: `tests/api/event_budget_alerts.test.js` (17) and `tests/liff/event_alert_banner.test.js` (5, real Add form). LIFF: "Event & Occasion Budgets" section in the Budgets tab, current month only.

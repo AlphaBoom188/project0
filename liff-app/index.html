@@ -242,6 +242,25 @@
             </div>
           </div>
         </section>
+        <!-- Dividends: received (solid) vs projected (light) bars (Portseido Dividend Insights) -->
+        <section class="perf-card" id="div-card" hidden>
+          <span class="summary-label">Dividend income, last 12 months</span>
+          <div class="perf-total" id="div-trailing">฿0.00</div>
+          <p class="div-yoy" id="div-yoy"></p>
+          <dl class="holding-stats div-metrics">
+            <div><dt>Portfolio yield</dt><dd id="div-portfolio-yield">—</dd></div>
+            <div><dt>Yield on cost</dt><dd id="div-yield-on-cost">—</dd></div>
+            <div><dt>Avg monthly</dt><dd id="div-avg-monthly">—</dd></div>
+            <div><dt>Avg daily</dt><dd id="div-avg-daily">—</dd></div>
+          </dl>
+          <div class="type-toggle" role="group" aria-label="Dividend period">
+            <button type="button" class="type-toggle-button active" data-div-mode="monthly">Monthly</button>
+            <button type="button" class="type-toggle-button" data-div-mode="quarterly">Quarterly</button>
+            <button type="button" class="type-toggle-button" data-div-mode="annual">Annually</button>
+          </div>
+          <div class="perf-chart-wrap" id="div-chart-wrap"><canvas id="div-chart" aria-label="Dividend income chart"></canvas></div>
+          <p class="perf-note" id="div-note"></p>
+        </section>
         <section class="summary-card" id="portfolio-summary-card">
           <div class="summary-item">
             <span class="summary-label">Value</span>
@@ -701,6 +720,8 @@
           <div><dt>Realized gain</dt><dd id="holding-stat-realized-gain"></dd></div>
           <div><dt>Win rate</dt><dd id="holding-stat-win-rate"></dd></div>
           <div><dt>Lots</dt><dd id="holding-stat-lots"></dd></div>
+          <div id="holding-stat-dividends-row" hidden><dt>Dividends</dt><dd id="holding-stat-dividends"></dd></div>
+          <div id="holding-stat-next-dividend-row" hidden><dt>Next dividend</dt><dd id="holding-stat-next-dividend"></dd></div>
         </dl>
       </div>
       <h2 class="section-title">Lots</h2>
