@@ -1,13 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const { isUuid } = require('../services/uuid');
+const { requireUuidParam } = require('../services/uuid');
 
-// Every :transaction_id route (GET/PUT/DELETE) gets a clean 400 for a malformed
-// id instead of Postgres's raw uuid-syntax error surfacing as a 500.
-router.param('transaction_id', (req, res, next, transactionId) => {
-  if (!isUuid(transactionId)) return res.status(400).json({ error: 'Invalid transaction id' });
-  next();
-});
+// Every :transaction_id route (GET/PUT/DELETE) gets a clean 400 for a malformed id.
+router.param('transaction_id', requireUuidParam('transaction'));
+
 const transactionController = require('../controllers/transactionController');
 
 // GET /api/transactions/:line_user_id - Get all transactions for a user

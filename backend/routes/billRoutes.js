@@ -1,5 +1,10 @@
 const express = require('express');
 const router = express.Router();
+const { requireUuidParam } = require('../services/uuid');
+
+// Malformed ids get a clean 400 instead of Postgres's uuid-syntax error as a 500.
+router.param('bill_id', requireUuidParam('bill'));
+router.param('participant_id', requireUuidParam('participant'));
 const billController = require('../controllers/billController');
 
 // Public (unauthenticated, bill_id-as-token) routes -- registered before the

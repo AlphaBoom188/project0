@@ -1,5 +1,9 @@
 const express = require('express');
 const router = express.Router();
+const { requireUuidParam } = require('../services/uuid');
+
+// Malformed ids get a clean 400 instead of Postgres's uuid-syntax error as a 500.
+router.param('recurring_id', requireUuidParam('recurring rule'));
 const recurringController = require('../controllers/recurringController');
 
 // GET /api/recurring/:line_user_id - List a user's recurring rules

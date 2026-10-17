@@ -123,7 +123,11 @@ const recurringController = {
         .select('*, categories ( id, name, type )')
         .single();
 
-      if (error) throw error;
+      if (error) {
+        // .single() on zero matched rows (unknown id, or not this user's) -> PGRST116
+        if (error.code === 'PGRST116') return res.status(404).json({ error: 'Recurring rule not found' });
+        throw error;
+      }
 
       res.json({ success: true, recurring: rule });
     } catch (error) {

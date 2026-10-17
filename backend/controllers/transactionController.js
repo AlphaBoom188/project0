@@ -315,7 +315,11 @@ const transactionController = {
         `)
         .single();
 
-      if (error) throw error;
+      if (error) {
+        // .single() on zero matched rows (unknown id, or not this user's) -> PGRST116
+        if (error.code === 'PGRST116') return res.status(404).json({ error: 'Transaction not found' });
+        throw error;
+      }
 
       res.json({ success: true, transaction: await withSignedThumbnails(transaction) });
     } catch (error) {

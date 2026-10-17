@@ -103,7 +103,11 @@ const budgetEventController = {
         .eq('line_user_id', line_user_id)
         .select('*, categories ( id, name )')
         .single();
-      if (error) throw error;
+      if (error) {
+        // .single() on zero matched rows (unknown id, or not this user's) -> PGRST116
+        if (error.code === 'PGRST116') return res.status(404).json({ error: 'Budget event not found' });
+        throw error;
+      }
 
       res.json({ success: true, budget_event: await withSpent(event) });
     } catch (error) {

@@ -1,5 +1,9 @@
 const express = require('express');
 const router = express.Router();
+const { requireUuidParam } = require('../services/uuid');
+
+// Malformed ids get a clean 400 instead of Postgres's uuid-syntax error as a 500.
+router.param('category_id', requireUuidParam('category'));
 const categoryController = require('../controllers/categoryController');
 
 // GET /api/categories/:line_user_id - Get all categories for a user

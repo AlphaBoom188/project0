@@ -146,7 +146,11 @@ const portfolioController = {
         .eq('line_user_id', line_user_id)
         .select()
         .single();
-      if (error) throw error;
+      if (error) {
+        // .single() on zero matched rows (unknown id, or not this user's) -> PGRST116
+        if (error.code === 'PGRST116') return res.status(404).json({ error: 'Holding not found' });
+        throw error;
+      }
 
       res.json({ success: true, holding: withComputedFields(holding) });
     } catch (error) {

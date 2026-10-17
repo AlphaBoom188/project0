@@ -1,5 +1,9 @@
 const express = require('express');
 const router = express.Router();
+const { requireUuidParam } = require('../services/uuid');
+
+// Malformed ids get a clean 400 instead of Postgres's uuid-syntax error as a 500.
+router.param('event_id', requireUuidParam('budget event'));
 const budgetEventController = require('../controllers/budgetEventController');
 
 // GET /api/budget-events/:line_user_id?month=YYYY-MM-01 - List event/occasion buckets (+ computed spend)
