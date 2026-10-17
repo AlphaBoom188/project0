@@ -77,6 +77,12 @@ app.use('/liff', express.static(path.join(__dirname, '../liff-app')));
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
+  // DISABLE_CRON=1 is for extra instances (e.g. a test server on another port):
+  // only ONE process may run the scheduled jobs, or users get every LINE push twice.
+  if (process.env.DISABLE_CRON === '1') {
+    console.log('[cron] DISABLE_CRON=1 -- scheduled jobs NOT started on this instance');
+    return;
+  }
   startDailyDigestJob();
   startRecurringTransactionsJob();
   startActivityReminderJob();
