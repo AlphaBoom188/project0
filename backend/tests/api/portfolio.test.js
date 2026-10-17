@@ -54,18 +54,26 @@ async function main() {
   // --- Get portfolio: totals + allocation ---
   const list1 = await api(`/portfolio/${lineUserId}`);
   assert(list1.status === 200 && list1.body.holdings.length === 2, `list returns both holdings (got ${list1.body.holdings?.length})`);
-  assert(list1.body.totals.total_value === 5500, `totals.total_value sums both holdings (got ${list1.body.totals.total_value})`);
+  // Totals are in THB (migration 015): AAPL defaults to USD, so it's converted at fx_usd_thb; gold is THB.
+  const fx = list1.body.fx_usd_thb;
+  const expectedTotal = 1500 * fx + 4000;
+  assert(Math.abs(list1.body.totals.total_value - expectedTotal) < 0.01, `totals.total_value sums both holdings in THB (got ${list1.body.totals.total_value}, fx ${fx})`);
   assert(
-    Math.abs(list1.body.allocation_by_type.gold - (4000 / 5500) * 100) < 0.01,
+    Math.abs(list1.body.allocation_by_type.gold - (4000 / expectedTotal) * 100) < 0.01,
     `allocation_by_type.gold is correct percentage (got ${list1.body.allocation_by_type.gold})`
   );
 
-  // --- Update a holding (edit quantity/average_cost) ---
+  // --- quantity/average_cost come from lots now: PUT rejects them, adding a lot recomputes cost_basis ---
   const updateRes = await api(`/portfolio/${lineUserId}/${stockId}`, {
     method: 'PUT',
     body: JSON.stringify({ quantity: 20, average_cost: 140 }),
   });
-  assert(updateRes.status === 200 && updateRes.body.holding.cost_basis === 2800, `update holding recomputes cost_basis (got ${updateRes.body.holding.cost_basis})`);
+  assert(updateRes.status === 400, `PUT with quantity/average_cost is rejected -- edit lots instead (got ${updateRes.status})`);
+  const lotRes = await api(`/portfolio/${lineUserId}/${stockId}/lots`, {
+    method: 'POST',
+    body: JSON.stringify({ side: 'buy', quantity: 10, price: 130 }),
+  });
+  assert(lotRes.status === 201 && lotRes.body.holding.cost_basis === 2800, `adding a lot recomputes cost_basis (got ${lotRes.body.holding?.cost_basis})`);
 
   // --- Manual-price type rejected by refresh-price (no live source) ---
   const refreshGold = await api(`/portfolio/${lineUserId}/${goldId}/refresh-price`, { method: 'POST' });

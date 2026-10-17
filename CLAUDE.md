@@ -83,6 +83,7 @@ npm run test:openai       # line_webhook + preferences_opt_out: real OpenAI call
 
 - **Suites run against the real Supabase project** in `backend/.env`; there's no separate test database. Every suite only creates users with a `test_` prefix (or a random `U<hex>` id), deletes everything it created, and the runner runs suites one at a time. When adding a suite, keep both rules, and never call a job's all-users entry point without scoping it. `processDueRecurringTransactions`, `sendDailyDigest` and `sendActivityReminder` all take `{ lineUserId }` for exactly that, so a test can't fire real users' rules or digests; the crons pass nothing.
 - **Layout.** `backend/tests/api/` holds REST/backend suites. `tests/liff/` holds headless-Chrome suites (`playwright-core` with `channel: 'chrome'`, so it needs Google Chrome installed); they route `static.line-scdn.net` to a stub `liff` object, which is how LIFF client code gets tested without a phone. Screenshots go to `tests/.output/` (gitignored). `tests/openai/` holds opt-in suites with real OpenAI calls. `tests/fixtures/receipt.jpg` is a synthetic receipt (GREENLEAF CAFE, 320.00). `tests/lib.js` gives `BASE` (`TEST_BASE_URL`, default `http://localhost:$PORT`), `BACKEND`, `FIXTURES`, `OUTPUT`.
+- **Testing changed backend code without touching the live server:** start a second instance with `DISABLE_CRON=1 PORT=3100 node index.js`, then run `TEST_BASE_URL=http://localhost:3100 npm test`. **`DISABLE_CRON=1` is mandatory** for any extra instance; only one process may run the scheduled jobs, or users get every LINE push twice.
 - **Suite contract**: a plain Node script that prints `PASS: ...` / `FAIL: ...` lines and exits non-zero on failure. `tests/run.js` counts those lines, and a suite with zero PASS lines counts as failed.
 - **Not included, on purpose**: the old `email_export_test` (it sends a real email), the old full `ocr_harness` (covered by `openai/line_webhook`), and the seed-fixtures helper (`api/ocr_dedup` now sets up its own data). The "ad hoc, not committed" test scripts named in the phase notes below now live here, apart from those exclusions.
 
@@ -447,6 +448,44 @@ Maps to `docs/phase_2_product_architecture_blueprint.md` section 8. One delibera
 ✅ **LIFF UI** — folded into the Analytics (วิเคราะห์) tab as a new "Portfolio & Net Worth" section (value/cost/gain summary, allocation-by-type bars reusing the existing category-breakdown chart markup, emergency fund progress bar, holdings list, "+ Add Holding"/"Refresh Prices" buttons), not a new tab — same pattern as Accounts folding into หมวด/งบ and Shared Bills folding into สรุป. The add/edit holding modal locks `asset_type`/`symbol` once editing (same UX precedent as the Category edit modal locking name/type) and swaps between a live-price hint and a manual current-price field depending on the selected type. Emergency Fund goal/account configuration lives in Settings, next to Budget Cycle and Email — same precedent as every other account-level setting.
 
 **Verified**: new `portfolio_test.js` (ad hoc, not committed) — holding creation across types including a manual `current_price` on a gold holding; `market_value` falling back to `cost_basis` with no price; validation (bad `asset_type`, negative `quantity`); totals and allocation-percentage math; an update recomputing `cost_basis`; `refresh-price` correctly rejecting a manual-only type (gold, 400) while a **real, live call to Yahoo Finance for AAPL succeeded** and returned a real-looking market price; `refresh-all` attempting exactly the one live-priced holding and skipping gold; emergency fund status starting unset, then correctly reading a real linked account's balance and computing `percent_funded`, rejecting an account that doesn't belong to the user, and clearing cleanly — 20/20. A separate direct call to `fetchCryptoPrice('bitcoin')` also succeeded live against CoinGecko, and an invalid coin id failed with the intended clear message rather than crashing. Full `accounts_test.js` (14/14), `bills_test.js` (26/26), and `alerts_test.js` (6/6) regressions re-run after these changes — all unaffected. Zero-emoji sweep re-verified across all LIFF files.
+
+### Investments Phase A — Lots & Gains
+
+Spec: `docs/master_uxui_specification_finance.md` (the owner's adaptation decisions are at the top). Migration `015_investment_lots_goals.sql`. Built by a subagent from a written brief, then reviewed and re-verified by the lead before commit.
+
+✅ **Lots are the source of truth.** `asset_lots` stores one row per buy or sell: quantity to 6 decimals, price and fee in the holding's currency, and `trade_date` as a Bangkok calendar date.
+- `asset_holdings.quantity`/`average_cost` are a server-maintained cache of the open position, rewritten after every lot create, update or delete. A fully sold holding stays listed with quantity 0 and its realized gain.
+- `services/lotMath.js` (pure, no DB) replays lots in trade order (trade_date, then created_at) and matches sells to buys **FIFO**. Buy fees add to cost basis; sell fees reduce proceeds. Realized gain = proceeds − matched cost. A buy lot is "closed" once fully consumed. Win rate = closed lots with a positive realized gain ÷ closed lots (null when there are none). Quantities are matched in integer micro-shares so fractional shares never drift.
+- Every lot write first replays the whole history with the change applied. A create, edit or delete that would leave a sell exceeding the shares held at its date returns 400 and writes nothing. Future trade dates are rejected.
+
+✅ **Endpoints.** The literal `lots` routes are registered before `/:u/:holding_id`, with a `router.param('lot_id')` UUID check.
+- `GET /api/portfolio/:u/lots`: all lots, newest first, each with its holding's symbol, name, currency and asset type, plus `total`.
+- `GET|POST /api/portfolio/:u/:holding_id/lots`.
+- `PUT|DELETE /api/portfolio/:u/lots/:lot_id`.
+- `POST /api/portfolio/:u` still takes the old body (quantity + average_cost, plus optional `currency` and `trade_date`) and creates the holding plus one opening buy lot (default today, Bangkok).
+- `PUT` on a holding changes only name, current_price and currency. Sending quantity or average_cost returns 400 ("add or edit a lot instead").
+
+✅ **Currency and THB totals.** `asset_holdings.currency` is 'THB' or 'USD'; it defaults to THB for `.BK` symbols, mutual funds and gold, otherwise USD.
+- `services/fxRates.js` gets USD→THB from Yahoo `USDTHB=X`, cached in memory for 15 minutes. It keeps the last good rate if a refresh fails and backs off before retrying; concurrent fetches are merged into one. If no rate has ever been fetched, it throws: a portfolio GET with USD holdings then returns 502 rather than treating USD as THB.
+- `GET /api/portfolio/:u` returns per holding, computed from lots: quantity, average_cost, cost_basis, market_value, unrealized_gain (+%), realized_gain, fees, day_gain (+%), total_gain (+%, against total buy cost), win_rate, lots_open/closed, plus `*_thb` versions.
+- The top level carries `fx_usd_thb`. `totals` are in THB: `total_value`, `total_cost_basis`, `unrealized_gain`, `realized_gain`, `total_gain`, `day_gain`, `fees`. **`totals.total_gain` now means unrealized + realized**; the old value-minus-cost figure is `totals.unrealized_gain`. Allocation is by THB value.
+
+✅ **Day's gain.** A price refresh also stores `previous_close` (Yahoo `chartPreviousClose`; for CoinGecko it's derived from `usd_24h_change`). Day's gain = (current_price − previous_close) × open quantity, or null if either is missing. Crypto is priced in the holding's own currency. A Yahoo quote in a different currency than the holding is rejected with a clear message.
+
+✅ **LIFF.**
+- **Net Worth:** holding rows show market value (in the holding's currency), total gain and today's gain. Totals are in ฿, with a Today / Realized / USD-THB line underneath.
+- **Holding detail sheet** (tap a holding): a My Holdings card (Day's gain, Total gain, Shares to 5 decimals, Average cost, Market value, Realized gain, Win rate, "Lots: N open / M closed"), the lot list, Add Lot, and Edit/Delete holding.
+- **Add/Edit Lot sheet:** Buy | Sell toggle, Bangkok date defaulting to today, shares, cost per share (prefilled with the current price), fee, comment. Delete is in the edit sheet, through `confirmAction()`; `#confirm-modal` now has `z-index: 30` so it stacks above other sheets.
+- **Add Holding:** a THB/USD select that follows the symbol and type until the user touches it.
+- **Transactions tab:** an "Investments" type option lists lots, filtered client-side (range pills by `trade_date`, search by symbol, name or comment). The account filter and CSV exports are hidden in that view, since exports cover cash transactions only.
+
+**Tests:**
+- `api/lot_math` (37): pure FIFO, covering fees, partial and multi-lot closes, win rate, 6-decimal fractions, overselling, same-day ordering.
+- `api/lots` (63): endpoints, cache recompute, realized gain and win rate via the API, validation, cross-user 404s, currency defaults, day's gain, THB totals against `fx_usd_thb`, cascade on holding delete.
+- `liff/holdings_lots` (23): detail card numbers, adding a buy and a sell through the UI, the inline oversell error, the Investments filter and date range.
+- `api/portfolio` was updated: THB totals via `fx_usd_thb`, and quantity/average_cost changes now go through a lot.
+
+**Accepted limitations:** lot writes are read-validate-write, not transactional (same tradeoff as `accountBalance.js`). Investments rows on the Transactions tab can't be tapped; lots are edited from the holding sheet.
 
 ### Event Budgets, Verified Export Email, LIFF Nav Restructure
 

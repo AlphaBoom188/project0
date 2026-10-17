@@ -12,7 +12,9 @@ async function api(path, o = {}) {
   const r = await fetch(`${BASE}/api${path}`, { headers: { 'Content-Type': 'application/json' }, ...o });
   return { status: r.status, body: await r.json().catch(() => ({})) };
 }
-const day = (y, m, d, h = 12) => new Date(Date.UTC(y, m, d, h)).toISOString();
+// A Bangkok-local hour on a Bangkok calendar date (month/day roll over like Date.UTC) --
+// the app groups and buckets by the Bangkok calendar, so the seed data must too.
+const day = (y, m, d, h = 12) => new Date(Date.UTC(y, m, d, h) - 7 * 3600 * 1000).toISOString();
 
 async function seed() {
   await api('/users', { method: 'POST', body: JSON.stringify({ line_user_id: U, display_name: 'UX Test' }) });
@@ -20,7 +22,7 @@ async function seed() {
   const income = (await api(`/categories/${U}?type=income`)).body.categories[0];
   const [a, b] = cats;
   for (const c of [a, b]) await api(`/categories/${U}/${c.id}`, { method: 'PUT', body: JSON.stringify({ budget_amount: 1000, budget_period: 'monthly' }) });
-  const now = new Date(), y = now.getUTCFullYear(), m = now.getUTCMonth(), d = now.getUTCDate();
+  const bkk = new Date(Date.now() + 7 * 3600 * 1000), y = bkk.getUTCFullYear(), m = bkk.getUTCMonth(), d = bkk.getUTCDate();
   const tx = (category_id, amount, type, date, description) =>
     api(`/transactions/${U}`, { method: 'POST', body: JSON.stringify({ category_id, amount, type, transaction_date: date, description, channel: 'liff' }) });
   await tx(a.id, 850, 'expense', new Date().toISOString(), 'Groceries today');           // 85% -> amber
@@ -90,7 +92,8 @@ async function cleanup() {
   assert(!(await page.textContent('#txn-period-label')).startsWith('This cycle') && JSON.stringify(rowsAfterRapid) === '["Previous cycle item"]', `rapid prev/next taps settle on the matching list (got ${JSON.stringify(rowsAfterRapid)})`);
 
   await page.click('.range-pill[data-range="all"]');
-  await page.waitForTimeout(600);
+  // Wait for the re-fetched list, not a fixed delay (a fixed 600ms lost the race under full-suite load).
+  await page.waitForFunction(() => document.querySelectorAll('#txn-full-list .transaction-row').length === 4, null, { timeout: 8000 }).catch(() => {});
   assert(await page.isHidden('#txn-period-nav'), 'All hides the cycle navigator');
   assert((await page.$$('#txn-full-list .transaction-row')).length === 4, 'All shows all 4 transactions');
 
@@ -100,7 +103,7 @@ async function cleanup() {
 
   await page.click('.range-pill[data-range="cycle"]');
   await page.selectOption('#txn-filter-type', 'transfer');
-  await page.waitForTimeout(600);
+  await page.waitForSelector('#txn-empty-state:not([hidden])', { timeout: 8000 }).catch(() => {});
   assert(await page.isVisible('#txn-empty-state'), 'Transfer filter with no transfers shows empty state');
   assert(await page.isHidden('#txn-full-list'), 'empty list card is hidden');
   await page.selectOption('#txn-filter-type', '');

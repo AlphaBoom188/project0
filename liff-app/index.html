@@ -126,11 +126,12 @@
             <option value="expense">Expense</option>
             <option value="income">Income</option>
             <option value="transfer">Transfer</option>
+            <option value="investments">Investments</option>
           </select>
           <button type="button" id="txn-account-button" class="filter-select-button" aria-haspopup="dialog">All accounts</button>
         </div>
 
-        <div class="export-row">
+        <div class="export-row" id="txn-export-row">
           <button id="export-csv-button" class="link-button">Download CSV</button>
           <button id="export-email-button" class="link-button">Email CSV</button>
         </div>
@@ -206,6 +207,7 @@
             <span class="summary-value" id="portfolio-total-gain">0.00</span>
           </div>
         </section>
+        <p id="portfolio-subline" class="portfolio-subline" hidden></p>
         <div id="portfolio-allocation-chart" class="category-chart"></div>
         <ul id="holdings-list" class="categories-list"></ul>
         <p id="holdings-empty-state" class="empty-state" hidden>No holdings yet.</p>
@@ -635,9 +637,39 @@
     </div>
   </div>
 
+  <div id="holding-detail-modal" class="modal" hidden>
+    <div class="modal-content sheet-scroll">
+      <h2 class="section-title" id="holding-detail-title"></h2>
+      <p id="holding-detail-meta" class="transaction-date"></p>
+      <div class="holding-stats-card">
+        <h3 class="holding-stats-heading">My Holdings</h3>
+        <dl class="holding-stats">
+          <div><dt>Day's gain</dt><dd id="holding-stat-day-gain"></dd></div>
+          <div><dt>Total gain</dt><dd id="holding-stat-total-gain"></dd></div>
+          <div><dt>Shares</dt><dd id="holding-stat-shares"></dd></div>
+          <div><dt>Average cost</dt><dd id="holding-stat-average-cost"></dd></div>
+          <div><dt>Market value</dt><dd id="holding-stat-market-value"></dd></div>
+          <div><dt>Realized gain</dt><dd id="holding-stat-realized-gain"></dd></div>
+          <div><dt>Win rate</dt><dd id="holding-stat-win-rate"></dd></div>
+          <div><dt>Lots</dt><dd id="holding-stat-lots"></dd></div>
+        </dl>
+      </div>
+      <h2 class="section-title">Lots</h2>
+      <ul id="holding-lots-list" class="transaction-list holding-lots-list"></ul>
+      <p id="holding-lots-empty" class="empty-state" hidden>No lots yet.</p>
+      <p id="holding-detail-error" class="modal-error" hidden></p>
+      <button type="button" id="holding-add-lot" class="primary-button btn-icon share-line-button"><span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg></span><span>Add Lot</span></button>
+      <div class="modal-actions">
+        <button type="button" id="holding-detail-edit" class="secondary-button">Edit Holding</button>
+        <button type="button" id="holding-detail-delete" class="danger-button">Delete Holding</button>
+      </div>
+      <button type="button" id="close-holding-detail" class="secondary-button recurring-add-button">Close</button>
+    </div>
+  </div>
+
   <div id="holding-modal" class="modal" hidden>
     <div class="modal-content">
-      <h2 class="section-title">Add Holding</h2>
+      <h2 class="section-title" id="holding-modal-title">Add Holding</h2>
       <form id="holding-form">
         <label class="field">
           Asset type
@@ -659,10 +691,17 @@
           <input id="holding-field-name" type="text" maxlength="128" />
         </label>
         <label class="field">
+          Currency
+          <select id="holding-field-currency">
+            <option value="THB">THB</option>
+            <option value="USD">USD</option>
+          </select>
+        </label>
+        <label class="field" id="holding-quantity-field">
           Quantity
           <input id="holding-field-quantity" type="number" inputmode="decimal" step="0.000001" min="0.000001" required />
         </label>
-        <label class="field">
+        <label class="field" id="holding-cost-field">
           Average cost (per unit)
           <input id="holding-field-cost" type="number" inputmode="decimal" step="0.0001" min="0" required />
         </label>
@@ -674,6 +713,44 @@
         <div class="modal-actions">
           <button type="button" id="cancel-holding" class="secondary-button">Cancel</button>
           <button type="submit" class="primary-button">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="lot-modal" class="modal" hidden>
+    <div class="modal-content sheet-scroll">
+      <h2 class="section-title" id="lot-modal-title">Add Lot</h2>
+      <form id="lot-form">
+        <div class="type-toggle lot-side-toggle" role="group" aria-label="Buy or sell">
+          <button type="button" class="type-toggle-button active" data-lot-side="buy">Buy</button>
+          <button type="button" class="type-toggle-button" data-lot-side="sell">Sell</button>
+        </div>
+        <label class="field">
+          Date
+          <input id="lot-field-date" type="date" required />
+        </label>
+        <label class="field">
+          Shares
+          <input id="lot-field-quantity" type="number" inputmode="decimal" step="0.000001" min="0.000001" required />
+        </label>
+        <label class="field">
+          <span id="lot-field-price-label">Cost per share</span>
+          <input id="lot-field-price" type="number" inputmode="decimal" step="0.0001" min="0" required />
+        </label>
+        <label class="field">
+          Fee (optional)
+          <input id="lot-field-fee" type="number" inputmode="decimal" step="0.0001" min="0" />
+        </label>
+        <label class="field">
+          Comment (optional)
+          <input id="lot-field-comment" type="text" maxlength="200" />
+        </label>
+        <p id="lot-modal-error" class="modal-error" hidden></p>
+        <button type="submit" id="lot-submit" class="primary-button lot-submit-button">Add Lot</button>
+        <div class="modal-actions">
+          <button type="button" id="cancel-lot" class="secondary-button">Cancel</button>
+          <button type="button" id="lot-delete" class="danger-button" hidden>Delete Lot</button>
         </div>
       </form>
     </div>

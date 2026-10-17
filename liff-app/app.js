@@ -132,11 +132,52 @@ const el = {
   holdingFieldSymbol: document.getElementById('holding-field-symbol'),
   holdingSymbolHint: document.getElementById('holding-symbol-hint'),
   holdingFieldName: document.getElementById('holding-field-name'),
+  holdingModalTitle: document.getElementById('holding-modal-title'),
+  holdingFieldCurrency: document.getElementById('holding-field-currency'),
+  holdingQuantityField: document.getElementById('holding-quantity-field'),
+  holdingCostField: document.getElementById('holding-cost-field'),
   holdingFieldQuantity: document.getElementById('holding-field-quantity'),
   holdingFieldCost: document.getElementById('holding-field-cost'),
   holdingPriceField: document.getElementById('holding-price-field'),
   holdingFieldPrice: document.getElementById('holding-field-price'),
   holdingModalError: document.getElementById('holding-modal-error'),
+  portfolioSubline: document.getElementById('portfolio-subline'),
+
+  // Holding detail sheet
+  holdingDetailModal: document.getElementById('holding-detail-modal'),
+  holdingDetailTitle: document.getElementById('holding-detail-title'),
+  holdingDetailMeta: document.getElementById('holding-detail-meta'),
+  holdingStatDayGain: document.getElementById('holding-stat-day-gain'),
+  holdingStatTotalGain: document.getElementById('holding-stat-total-gain'),
+  holdingStatShares: document.getElementById('holding-stat-shares'),
+  holdingStatAverageCost: document.getElementById('holding-stat-average-cost'),
+  holdingStatMarketValue: document.getElementById('holding-stat-market-value'),
+  holdingStatRealizedGain: document.getElementById('holding-stat-realized-gain'),
+  holdingStatWinRate: document.getElementById('holding-stat-win-rate'),
+  holdingStatLots: document.getElementById('holding-stat-lots'),
+  holdingLotsList: document.getElementById('holding-lots-list'),
+  holdingLotsEmpty: document.getElementById('holding-lots-empty'),
+  holdingDetailError: document.getElementById('holding-detail-error'),
+  holdingAddLot: document.getElementById('holding-add-lot'),
+  holdingDetailEdit: document.getElementById('holding-detail-edit'),
+  holdingDetailDelete: document.getElementById('holding-detail-delete'),
+  closeHoldingDetail: document.getElementById('close-holding-detail'),
+
+  // Lot sheet
+  lotModal: document.getElementById('lot-modal'),
+  lotModalTitle: document.getElementById('lot-modal-title'),
+  lotForm: document.getElementById('lot-form'),
+  lotSideButtons: document.querySelectorAll('[data-lot-side]'),
+  lotFieldDate: document.getElementById('lot-field-date'),
+  lotFieldQuantity: document.getElementById('lot-field-quantity'),
+  lotFieldPriceLabel: document.getElementById('lot-field-price-label'),
+  lotFieldPrice: document.getElementById('lot-field-price'),
+  lotFieldFee: document.getElementById('lot-field-fee'),
+  lotFieldComment: document.getElementById('lot-field-comment'),
+  lotModalError: document.getElementById('lot-modal-error'),
+  lotSubmit: document.getElementById('lot-submit'),
+  cancelLot: document.getElementById('cancel-lot'),
+  lotDelete: document.getElementById('lot-delete'),
 
   // Emergency Fund settings (Settings tab)
   settingEfGoal: document.getElementById('setting-ef-goal'),
@@ -184,6 +225,7 @@ const el = {
 
   // Transactions tab
   txnFilterType: document.getElementById('txn-filter-type'),
+  txnExportRow: document.getElementById('txn-export-row'),
   txnSearch: document.getElementById('txn-search'),
   txnAccountButton: document.getElementById('txn-account-button'),
   accountFilterModal: document.getElementById('account-filter-modal'),
@@ -258,6 +300,10 @@ let editingCategoryId = null;
 let billSplitType = 'equal';
 let openBillDetailId = null;
 let editingHoldingId = null;
+let holdingCurrencyTouched = false; // the Add Holding currency follows symbol/type until the user picks one
+let detailHolding = null; // holding shown in the detail sheet (with computed fields)
+let editingLot = null; // lot open in the lot sheet, null when adding
+let lotSide = 'buy';
 const MANUAL_PRICE_ASSET_TYPES = ['mutual_fund', 'gold']; // mirrors backend/services/marketPrices.js -- no live price source for these
 
 // ---- API + in-memory cache ----
@@ -1303,11 +1349,35 @@ async function computeCurrentPeriodSurplus() {
 
 const ASSET_TYPE_LABELS = { stock: 'Stock', etf: 'ETF', crypto: 'Crypto', mutual_fund: 'Mutual Fund', gold: 'Gold' };
 
+// Each holding has its own currency (THB or USD); portfolio totals are THB.
+const CURRENCY_SYMBOLS = { THB: '฿', USD: '$' };
+function formatMoney(value, currency, maxDigits = 2) {
+  const abs = Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: maxDigits });
+  return `${value < 0 ? '-' : ''}${CURRENCY_SYMBOLS[currency] || ''}${abs}`;
+}
+const formatSignedMoney = (value, currency) => `${value >= 0 ? '+' : ''}${formatMoney(value, currency)}`;
+const formatSignedPercent = (pct) => `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
+// Fractional shares to 5 decimals, like Yahoo Finance's lot view.
+const formatShares = (quantity) => parseFloat(quantity).toLocaleString('en-US', { maximumFractionDigits: 5 });
+const gainColor = (value) => (value >= 0 ? 'var(--color-income)' : 'var(--color-expense)');
+
+// Mirrors portfolioController.js's defaultCurrency: Thai listings (.BK),
+// mutual funds and gold are THB, everything else USD.
+function defaultHoldingCurrency(assetType, symbol) {
+  return /\.BK$/i.test(symbol) || MANUAL_PRICE_ASSET_TYPES.includes(assetType) ? 'THB' : 'USD';
+}
+
 function renderPortfolio(data, surplus) {
-  el.portfolioTotalValue.textContent = data.totals.total_value.toFixed(2);
-  el.portfolioTotalCost.textContent = data.totals.total_cost_basis.toFixed(2);
-  el.portfolioTotalGain.textContent = data.totals.total_gain.toFixed(2);
-  el.portfolioTotalGain.style.color = data.totals.total_gain >= 0 ? 'var(--color-income)' : 'var(--color-expense)';
+  el.portfolioTotalValue.textContent = formatMoney(data.totals.total_value, 'THB');
+  el.portfolioTotalCost.textContent = formatMoney(data.totals.total_cost_basis, 'THB');
+  el.portfolioTotalGain.textContent = formatSignedMoney(data.totals.total_gain, 'THB');
+  el.portfolioTotalGain.style.color = gainColor(data.totals.total_gain);
+  const subline = [];
+  if (data.totals.day_gain !== null && data.totals.day_gain !== undefined) subline.push(`Today ${formatSignedMoney(data.totals.day_gain, 'THB')}`);
+  if (data.totals.realized_gain) subline.push(`Realized ${formatSignedMoney(data.totals.realized_gain, 'THB')}`);
+  if (data.fx_usd_thb && data.holdings.some((h) => h.currency === 'USD')) subline.push(`USD/THB ${data.fx_usd_thb.toFixed(2)}`);
+  el.portfolioSubline.textContent = subline.join(' · ');
+  el.portfolioSubline.hidden = subline.length === 0;
 
   const allocationEntries = Object.entries(data.allocation_by_type).sort((a, b) => b[1] - a[1]);
   const maxAllocation = Math.max(1, ...allocationEntries.map(([, pct]) => pct));
@@ -1363,50 +1433,229 @@ function formatPricedAt(holding) {
   return `Live, ${sameDay ? t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : t.toLocaleDateString()}`;
 }
 
+// Tapping a row opens its detail sheet (My Holdings card + lots), which is
+// also where Edit / Delete live now.
 function renderHoldingsList(holdings) {
   el.holdingsList.innerHTML = '';
   el.holdingsEmptyState.hidden = holdings.length > 0;
 
   for (const holding of holdings) {
     const li = document.createElement('li');
-    li.className = 'category-row';
-    const gainSign = holding.gain >= 0 ? '+' : '';
+    li.className = 'category-row holding-row';
+    li.setAttribute('role', 'button');
+    li.tabIndex = 0;
+    const closed = holding.quantity === 0;
+    const dayGainHtml =
+      holding.day_gain !== null && !closed
+        ? `<span style="color:${gainColor(holding.day_gain)}">Today ${formatSignedMoney(holding.day_gain, holding.currency)} (${formatSignedPercent(holding.day_gain_percent)})</span>`
+        : '<span></span>';
     li.innerHTML = `
       <div class="category-row-top">
         <span class="category-name">${escapeHtml(holding.symbol)}${holding.name ? ` — ${escapeHtml(holding.name)}` : ''}</span>
-        <span class="category-budget-label">${holding.market_value.toFixed(2)}</span>
+        <span class="category-budget-label">${formatMoney(holding.market_value, holding.currency)}</span>
       </div>
       <div class="category-bar-label-row">
-        <span>${ASSET_TYPE_LABELS[holding.asset_type]} · ${parseFloat(holding.quantity)} units</span>
+        <span>${ASSET_TYPE_LABELS[holding.asset_type]} · ${closed ? 'Closed position' : `${formatShares(holding.quantity)} shares`}</span>
         ${
-          holding.current_price === null
+          holding.current_price === null && !closed
             ? '<span class="empty-state">No price yet</span>'
-            : `<span style="color:${holding.gain >= 0 ? 'var(--color-income)' : 'var(--color-expense)'}">${gainSign}${holding.gain.toFixed(2)} (${gainSign}${holding.gain_percent.toFixed(1)}%)</span>`
+            : `<span style="color:${gainColor(holding.total_gain)}">${formatSignedMoney(holding.total_gain, holding.currency)} (${formatSignedPercent(holding.total_gain_percent)})</span>`
         }
       </div>
       <div class="category-bar-label-row">
-        <span>${holding.current_price === null ? '' : `Price ${parseFloat(holding.current_price).toFixed(2)}`}</span>
-        <span>${formatPricedAt(holding)}</span>
-      </div>
-      <div class="bill-participant-detail-row" style="margin-top: 6px;">
-        <button type="button" class="link-button holding-edit">Edit</button>
-        <button type="button" class="category-delete holding-delete">Delete</button>
+        ${dayGainHtml}
+        <span>${holding.current_price === null ? '' : `${formatMoney(parseFloat(holding.current_price), holding.currency, 4)} · `}${formatPricedAt(holding)}</span>
       </div>
     `;
-    li.querySelector('.holding-edit').addEventListener('click', () => openHoldingModal(holding));
-    li.querySelector('.holding-delete').addEventListener('click', () => handleDeleteHolding(holding.id));
+    li.addEventListener('click', () => openHoldingDetail(holding));
+    li.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') openHoldingDetail(holding);
+    });
     el.holdingsList.appendChild(li);
   }
 }
 
 async function handleDeleteHolding(holdingId) {
-  const confirmed = await confirmAction('Remove this holding from your portfolio?');
+  const confirmed = await confirmAction('Remove this holding and all of its lots from your portfolio?');
   if (!confirmed) return;
   try {
     await apiRequest(`/portfolio/${lineUserId}/${holdingId}`, { method: 'DELETE' });
+    closeHoldingDetail();
     await loadNetWorthTab();
   } catch (error) {
-    showError(error.message);
+    showModalError(el.holdingDetailError, error.message);
+  }
+}
+
+// ---- Holding detail sheet (My Holdings card + lots) ----
+
+function renderHoldingDetail(holding, lots) {
+  detailHolding = holding;
+  const cur = holding.currency;
+  el.holdingDetailTitle.textContent = `${holding.symbol}${holding.name ? ` — ${holding.name}` : ''}`;
+  el.holdingDetailMeta.textContent = `${ASSET_TYPE_LABELS[holding.asset_type]} · ${cur}${
+    holding.current_price !== null ? ` · Price ${formatMoney(parseFloat(holding.current_price), cur, 4)}` : ''
+  }`;
+
+  const setGain = (target, value, pct) => {
+    if (value === null || value === undefined) {
+      target.textContent = '—';
+      target.style.color = '';
+      return;
+    }
+    target.textContent = `${formatSignedMoney(value, cur)}${pct === null || pct === undefined ? '' : ` (${formatSignedPercent(pct)})`}`;
+    target.style.color = gainColor(value);
+  };
+  setGain(el.holdingStatDayGain, holding.day_gain, holding.day_gain_percent);
+  setGain(el.holdingStatTotalGain, holding.total_gain, holding.total_gain_percent);
+  setGain(el.holdingStatRealizedGain, holding.realized_gain, null);
+  el.holdingStatShares.textContent = formatShares(holding.quantity);
+  el.holdingStatAverageCost.textContent = holding.quantity > 0 ? formatMoney(holding.average_cost, cur, 4) : '—';
+  el.holdingStatMarketValue.textContent = formatMoney(holding.market_value, cur);
+  el.holdingStatWinRate.textContent = holding.win_rate === null ? '—' : `${holding.win_rate.toFixed(2)}%`;
+  el.holdingStatLots.textContent = `${holding.lots_open} open / ${holding.lots_closed} closed`;
+
+  if (lots) {
+    el.holdingLotsList.innerHTML = '';
+    el.holdingLotsEmpty.hidden = lots.length > 0;
+    el.holdingLotsList.hidden = lots.length === 0;
+    for (const lot of lots) {
+      const state = lot.side === 'buy' ? (lot.is_closed ? 'Closed' : lot.remaining_quantity < parseFloat(lot.quantity) ? `${formatShares(lot.remaining_quantity)} left` : 'Open') : '';
+      const row = buildLotRow(lot, holding, `${formatTradeDate(lot.trade_date)}${state ? ` · ${state}` : ''}`);
+      row.classList.add('lot-row');
+      row.setAttribute('role', 'button');
+      row.tabIndex = 0;
+      row.addEventListener('click', () => openLotModal(lot));
+      row.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') openLotModal(lot);
+      });
+      el.holdingLotsList.appendChild(row);
+    }
+  }
+}
+
+// A lot's trade_date is already a Bangkok calendar date ('YYYY-MM-DD').
+const formatTradeDate = (ymd) =>
+  new Date(`${ymd}T00:00:00+07:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'Asia/Bangkok' });
+
+// One Buy/Sell lot row, shared by the detail sheet and the Transactions tab's
+// "Investments" view: "Buy NVDA" badge, "0.43186 shares • $311.69", total
+// (shares x price, + fee on a buy / - fee on a sell) on the right.
+function buildLotRow(lot, holding, rightSubline = '') {
+  const li = document.createElement('li');
+  li.className = 'transaction-row';
+  li.innerHTML = `
+    <div class="transaction-details">
+      <div class="transaction-category"><span class="lot-badge ${lot.side}">${lot.side === 'buy' ? 'Buy' : 'Sell'} ${escapeHtml(holding.symbol)}</span></div>
+      <div class="transaction-description">${formatShares(lot.quantity)} ${parseFloat(lot.quantity) === 1 ? 'share' : 'shares'} • ${formatMoney(parseFloat(lot.price), holding.currency, 4)}${
+        parseFloat(lot.fee) > 0 ? ` • fee ${formatMoney(parseFloat(lot.fee), holding.currency)}` : ''
+      }</div>
+      ${lot.comment ? `<div class="transaction-date">${escapeHtml(lot.comment)}</div>` : ''}
+    </div>
+    <div class="lot-row-right">
+      <div class="transaction-amount">${formatMoney(lot.total, holding.currency)}</div>
+      ${rightSubline ? `<div class="transaction-date">${escapeHtml(rightSubline)}</div>` : ''}
+    </div>
+  `;
+  return li;
+}
+
+async function openHoldingDetail(holding) {
+  clearModalError(el.holdingDetailError);
+  el.holdingLotsList.innerHTML = '';
+  el.holdingLotsEmpty.hidden = true;
+  renderHoldingDetail(holding, null); // the card is already known; lots follow
+  el.holdingDetailModal.hidden = false;
+  await refreshHoldingDetail();
+}
+
+async function refreshHoldingDetail() {
+  if (!detailHolding) return;
+  try {
+    const response = await cachedGet(`/portfolio/${lineUserId}/${detailHolding.id}/lots`);
+    renderHoldingDetail(response.holding, response.lots);
+  } catch (error) {
+    showModalError(el.holdingDetailError, error.message);
+  }
+}
+
+function closeHoldingDetail() {
+  el.holdingDetailModal.hidden = true;
+  detailHolding = null;
+}
+
+// ---- Lot sheet (Add / Edit Lot) ----
+
+function setLotSide(side) {
+  lotSide = side;
+  for (const button of el.lotSideButtons) button.classList.toggle('active', button.dataset.lotSide === side);
+  el.lotFieldPriceLabel.textContent = side === 'buy' ? 'Cost per share' : 'Sale price per share';
+}
+
+function openLotModal(lot) {
+  editingLot = lot || null;
+  const today = bangkokYmd();
+  setLotSide(lot ? lot.side : 'buy');
+  el.lotModalTitle.textContent = lot ? `Edit Lot · ${detailHolding.symbol}` : `Add Lot · ${detailHolding.symbol}`;
+  el.lotFieldDate.max = today;
+  el.lotFieldDate.value = lot ? lot.trade_date : today;
+  el.lotFieldQuantity.value = lot ? parseFloat(lot.quantity) : '';
+  // A new lot starts at the current price when there is one (Yahoo's Add Lot does the same).
+  el.lotFieldPrice.value = lot ? parseFloat(lot.price) : detailHolding.current_price !== null ? parseFloat(detailHolding.current_price) : '';
+  el.lotFieldFee.value = lot && parseFloat(lot.fee) > 0 ? parseFloat(lot.fee) : '';
+  el.lotFieldComment.value = lot ? lot.comment || '' : '';
+  el.lotSubmit.textContent = lot ? 'Save Lot' : 'Add Lot';
+  el.lotDelete.hidden = !lot;
+  clearModalError(el.lotModalError);
+  el.lotModal.hidden = false;
+}
+
+function closeLotModal() {
+  el.lotModal.hidden = true;
+  editingLot = null;
+}
+
+// Lot writes answer with the holding's recomputed figures + lot list, so the
+// detail sheet re-renders straight from the response; the Net Worth list
+// behind it reloads in the background.
+function afterLotWrite(response) {
+  closeLotModal();
+  renderHoldingDetail(response.holding, response.lots);
+  loadNetWorthTab().catch((error) => showError(error.message));
+}
+
+async function handleLotSubmit(event) {
+  event.preventDefault();
+  el.lotSubmit.disabled = true;
+  clearModalError(el.lotModalError);
+  const body = {
+    side: lotSide,
+    trade_date: el.lotFieldDate.value,
+    quantity: parseFloat(el.lotFieldQuantity.value),
+    price: parseFloat(el.lotFieldPrice.value),
+    fee: el.lotFieldFee.value ? parseFloat(el.lotFieldFee.value) : 0,
+    comment: el.lotFieldComment.value.trim() || null,
+  };
+  try {
+    const response = editingLot
+      ? await apiRequest(`/portfolio/${lineUserId}/lots/${editingLot.id}`, { method: 'PUT', body: JSON.stringify(body) })
+      : await apiRequest(`/portfolio/${lineUserId}/${detailHolding.id}/lots`, { method: 'POST', body: JSON.stringify(body) });
+    afterLotWrite(response);
+  } catch (error) {
+    showModalError(el.lotModalError, error.message);
+  } finally {
+    el.lotSubmit.disabled = false;
+  }
+}
+
+async function handleDeleteLot() {
+  if (!editingLot) return;
+  const confirmed = await confirmAction('Delete this lot? Gains for this holding are recalculated without it.');
+  if (!confirmed) return;
+  try {
+    afterLotWrite(await apiRequest(`/portfolio/${lineUserId}/lots/${editingLot.id}`, { method: 'DELETE' }));
+  } catch (error) {
+    showModalError(el.lotModalError, error.message);
   }
 }
 
@@ -1461,8 +1710,22 @@ function updateHoldingFieldsForType() {
         : 'Use the exchange ticker (e.g. "AAPL", "VOO").';
 }
 
+function syncHoldingCurrencyDefault() {
+  if (!holdingCurrencyTouched && !editingHoldingId) {
+    el.holdingFieldCurrency.value = defaultHoldingCurrency(el.holdingFieldType.value, el.holdingFieldSymbol.value.trim());
+  }
+}
+
+// Editing changes name / currency / manual price only: shares and cost come
+// from the holding's lots, so those two fields are hidden (and not required).
 function openHoldingModal(holding) {
   editingHoldingId = holding ? holding.id : null;
+  holdingCurrencyTouched = false;
+  el.holdingModalTitle.textContent = holding ? 'Edit Holding' : 'Add Holding';
+  el.holdingQuantityField.hidden = !!holding;
+  el.holdingCostField.hidden = !!holding;
+  el.holdingFieldQuantity.required = !holding;
+  el.holdingFieldCost.required = !holding;
   el.holdingFieldType.value = holding ? holding.asset_type : 'stock';
   el.holdingFieldType.disabled = !!holding;
   el.holdingFieldSymbol.value = holding ? holding.symbol : '';
@@ -1472,6 +1735,8 @@ function openHoldingModal(holding) {
   el.holdingFieldCost.value = holding ? holding.average_cost : '';
   el.holdingFieldPrice.value = holding ? holding.current_price || '' : '';
   updateHoldingFieldsForType();
+  if (holding) el.holdingFieldCurrency.value = holding.currency;
+  else syncHoldingCurrencyDefault();
   clearModalError(el.holdingModalError);
   el.holdingModal.hidden = false;
 }
@@ -1495,8 +1760,7 @@ async function handleHoldingSubmit(event) {
         method: 'PUT',
         body: JSON.stringify({
           name: el.holdingFieldName.value || null,
-          quantity: parseFloat(el.holdingFieldQuantity.value),
-          average_cost: parseFloat(el.holdingFieldCost.value),
+          currency: el.holdingFieldCurrency.value,
           current_price: isManual && el.holdingFieldPrice.value ? parseFloat(el.holdingFieldPrice.value) : undefined,
         }),
       });
@@ -1507,6 +1771,7 @@ async function handleHoldingSubmit(event) {
           asset_type: el.holdingFieldType.value,
           symbol: el.holdingFieldSymbol.value,
           name: el.holdingFieldName.value || undefined,
+          currency: el.holdingFieldCurrency.value,
           quantity: parseFloat(el.holdingFieldQuantity.value),
           average_cost: parseFloat(el.holdingFieldCost.value),
           current_price: isManual && el.holdingFieldPrice.value ? parseFloat(el.holdingFieldPrice.value) : undefined,
@@ -1515,6 +1780,7 @@ async function handleHoldingSubmit(event) {
     }
     closeHoldingModal();
     await loadNetWorthTab();
+    if (detailHolding) await refreshHoldingDetail();
   } catch (error) {
     showModalError(el.holdingModalError, error.message);
   } finally {
@@ -1923,7 +2189,7 @@ let txnAccountIds = []; // empty = all accounts (including transactions with no 
 
 function buildTransactionFilterQuery() {
   const params = new URLSearchParams();
-  if (el.txnFilterType.value) params.set('type', el.txnFilterType.value);
+  if (el.txnFilterType.value && el.txnFilterType.value !== 'investments') params.set('type', el.txnFilterType.value);
   const search = el.txnSearch.value.trim();
   if (search) params.set('q', search);
   if (txnAccountIds.length > 0) params.set('account_id', txnAccountIds.join(','));
@@ -2006,11 +2272,56 @@ async function renderAccountFilterButton() {
   el.txnAccountButton.classList.toggle('active', txnAccountIds.length > 0);
 }
 
+// "Investments" lists Buy/Sell lots (GET /portfolio/:u/lots) instead of cash
+// transactions -- never mixed into them. The range pills and search still
+// apply (by Bangkok trade_date, and by symbol/name/comment); the account
+// filter and both CSV exports don't: the exports only cover cash transactions,
+// so they're hidden while this view is showing rather than exporting
+// something other than what's on screen.
+function renderLotList(target, emptyStateEl, lots) {
+  target.innerHTML = '';
+  emptyStateEl.hidden = lots.length > 0;
+  target.hidden = lots.length === 0;
+  let currentDay = null;
+  for (const lot of lots) {
+    if (lot.trade_date !== currentDay) {
+      currentDay = lot.trade_date;
+      const [y, m, d] = lot.trade_date.split('-').map(Number);
+      const header = document.createElement('li');
+      header.className = 'transaction-day-header';
+      header.innerHTML = `<span>${escapeHtml(dayHeaderLabel(new Date(y, m - 1, d)))}</span>`;
+      target.appendChild(header);
+    }
+    target.appendChild(buildLotRow(lot, lot.holding));
+  }
+}
+
+async function loadInvestmentLots(seq, params) {
+  const { lots } = await cachedGet(`/portfolio/${lineUserId}/lots`);
+  if (seq !== txnLoadSeq) return;
+  const startYmd = params.get('start_date') ? bangkokYmd(new Date(params.get('start_date'))) : null;
+  const endYmd = params.get('end_date') ? bangkokYmd(new Date(params.get('end_date'))) : null;
+  const q = (params.get('q') || '').toLowerCase();
+  const shown = lots.filter(
+    (lot) =>
+      (!startYmd || lot.trade_date >= startYmd) &&
+      (!endYmd || lot.trade_date <= endYmd) &&
+      (!q || [lot.holding.symbol, lot.holding.name, lot.comment].some((v) => v && v.toLowerCase().includes(q)))
+  );
+  el.txnEmptyState.textContent = q ? `No investment lots matching "${params.get('q')}" in this range.` : 'No investment lots in this range.';
+  renderLotList(el.txnFullList, el.txnEmptyState, shown);
+}
+
 async function loadTransactionsTab() {
   const seq = ++txnLoadSeq;
   await ensureCurrentUser();
   renderTxnRangeControls();
   renderAccountFilterButton().catch(() => {});
+  const investments = el.txnFilterType.value === 'investments';
+  el.txnExportRow.hidden = investments;
+  if (investments) el.exportStatus.hidden = true;
+  el.txnAccountButton.hidden = investments;
+  if (investments) return loadInvestmentLots(seq, buildTransactionFilterQuery());
   const params = buildTransactionFilterQuery();
   params.set('limit', '200');
   const response = await cachedGet(`/transactions/${lineUserId}?${params.toString()}`);
@@ -2469,7 +2780,22 @@ el.refreshPricesButton.addEventListener('click', handleRefreshPrices);
 el.addHoldingButton.addEventListener('click', () => openHoldingModal(null));
 el.cancelHolding.addEventListener('click', closeHoldingModal);
 el.holdingForm.addEventListener('submit', handleHoldingSubmit);
-el.holdingFieldType.addEventListener('change', updateHoldingFieldsForType);
+el.holdingFieldType.addEventListener('change', () => {
+  updateHoldingFieldsForType();
+  syncHoldingCurrencyDefault();
+});
+el.holdingFieldSymbol.addEventListener('input', syncHoldingCurrencyDefault);
+el.holdingFieldCurrency.addEventListener('change', () => {
+  holdingCurrencyTouched = true;
+});
+el.holdingAddLot.addEventListener('click', () => openLotModal(null));
+el.holdingDetailEdit.addEventListener('click', () => openHoldingModal(detailHolding));
+el.holdingDetailDelete.addEventListener('click', () => handleDeleteHolding(detailHolding.id));
+el.closeHoldingDetail.addEventListener('click', closeHoldingDetail);
+el.lotSideButtons.forEach((button) => button.addEventListener('click', () => setLotSide(button.dataset.lotSide)));
+el.lotForm.addEventListener('submit', handleLotSubmit);
+el.cancelLot.addEventListener('click', closeLotModal);
+el.lotDelete.addEventListener('click', handleDeleteLot);
 
 el.addRecurringButton.addEventListener('click', openRecurringModal);
 el.cancelRecurring.addEventListener('click', closeRecurringModal);
