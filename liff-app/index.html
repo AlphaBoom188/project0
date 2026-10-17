@@ -53,10 +53,6 @@
         </section>
 
         <div class="quick-actions-row">
-          <button type="button" id="add-expense-button" class="quick-action-button">
-            <span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg></span>
-            <span>Add Expense</span>
-          </button>
           <button type="button" id="add-bill-button" class="quick-action-button">
             <span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></span>
             <span>Split a Bill</span>
@@ -87,6 +83,11 @@
           <span>Scan a Receipt</span>
         </button>
         </div>
+
+        <label class="search-field">
+          <span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></span>
+          <input type="search" id="txn-search" placeholder="Search descriptions" maxlength="100" autocomplete="off" enterkeyhint="search" aria-label="Search transactions" />
+        </label>
 
         <div class="range-pills" role="group" aria-label="Date range">
           <button type="button" class="range-pill active" data-range="cycle">Cycle</button>
@@ -139,7 +140,11 @@
         <p id="categories-empty-state" class="empty-state" hidden>No categories yet.</p>
         <button id="add-category-button" class="secondary-button recurring-add-button btn-icon"><span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg></span><span>Add Category</span></button>
 
-        <h2 class="section-title">Category Breakdown (this period)</h2>
+        <h2 class="section-title">Breakdown (this cycle)</h2>
+        <div class="breakdown-total">
+          <span class="summary-label" id="breakdown-total-label">Spent this cycle</span>
+          <span class="breakdown-total-value" id="breakdown-total-value">0.00</span>
+        </div>
         <div id="category-chart" class="category-chart"></div>
         <p id="analytics-empty-state" class="empty-state" hidden>Not enough data yet.</p>
 
@@ -279,6 +284,11 @@
         </div>
       </section>
     </main>
+
+    <button type="button" id="fab-add" class="fab" aria-label="Add expense">
+      <span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg></span>
+      <span>Add</span>
+    </button>
 
     <nav class="bottom-nav">
       <button type="button" class="nav-tab active" data-tab="home">
@@ -591,8 +601,12 @@
       </div>
       <ul id="bill-detail-participants" class="categories-list"></ul>
       <p id="bill-detail-error" class="modal-error" hidden></p>
+      <button type="button" id="bill-share-line" class="primary-button btn-icon share-line-button">
+        <span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/></svg></span>
+        <span>Share to LINE</span>
+      </button>
       <div class="modal-actions">
-        <button type="button" id="bill-copy-link" class="secondary-button">Copy Share Link</button>
+        <button type="button" id="bill-copy-link" class="secondary-button">Copy Link</button>
         <button type="button" id="bill-delete" class="danger-button">Delete Bill</button>
       </div>
       <button type="button" id="close-bill-detail" class="secondary-button recurring-add-button">Close</button>

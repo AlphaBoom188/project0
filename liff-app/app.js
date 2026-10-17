@@ -15,7 +15,7 @@ const el = {
   summaryNet: document.getElementById('summary-net'),
   transactionList: document.getElementById('transaction-list'),
   emptyState: document.getElementById('empty-state'),
-  addExpenseButton: document.getElementById('add-expense-button'),
+  fabAdd: document.getElementById('fab-add'),
 
   // Shared Bills (Dashboard tab)
   billsList: document.getElementById('bills-list'),
@@ -184,6 +184,10 @@ const el = {
 
   // Transactions tab
   txnFilterType: document.getElementById('txn-filter-type'),
+  txnSearch: document.getElementById('txn-search'),
+  breakdownTotalLabel: document.getElementById('breakdown-total-label'),
+  breakdownTotalValue: document.getElementById('breakdown-total-value'),
+  billShareLine: document.getElementById('bill-share-line'),
   txnRangePills: document.querySelectorAll('.range-pill'),
   txnPeriodNav: document.getElementById('txn-period-nav'),
   txnPeriodLabel: document.getElementById('txn-period-label'),
@@ -481,6 +485,7 @@ function switchTab(tabName) {
   }
   el.tabContent.scrollTop = 0;
   TAB_LOADERS[tabName]().catch((error) => showError(error.message));
+  el.fabAdd.hidden = tabName === 'settings';
 }
 
 // ---- Dashboard tab ----
@@ -786,17 +791,21 @@ function participantNames() {
   return Array.from(el.billParticipantsList.querySelectorAll('.bill-participant-name')).map((input) => input.value || 'Unnamed');
 }
 
-// Keeps every item row's participant dropdown in sync with the current
-// participant list/names -- called on add/remove/rename so an item can
-// always be assigned to someone, even if they were added after the item.
-function refreshItemParticipantSelects() {
+// Each item row carries its assignment in data-participant ('' = Shared, else
+// a participant index) and shows it as tap-to-assign chips. Rebuilt on every
+// participant add/remove/rename so chips always match the current names; an
+// assignment pointing past the end of the list falls back to Shared.
+function renderAssignChips(row) {
   const names = participantNames();
-  el.billItemsList.querySelectorAll('.bill-item-participant').forEach((select) => {
-    const current = select.value;
-    const options = names.map((name, i) => `<option value="${i}">${escapeHtml(name)}</option>`).join('');
-    select.innerHTML = `<option value="">Shared</option>${options}`;
-    if (current !== '' && Number(current) < names.length) select.value = current;
-  });
+  if (row.dataset.participant !== '' && Number(row.dataset.participant) >= names.length) row.dataset.participant = '';
+  const chips = row.querySelector('.assign-chips');
+  chips.innerHTML = [['', 'Shared'], ...names.map((name, i) => [String(i), name])]
+    .map(([value, label]) => `<button type="button" class="assign-chip${row.dataset.participant === value ? ' active' : ''}" data-value="${value}">${escapeHtml(label)}</button>`)
+    .join('');
+}
+
+function refreshItemParticipantSelects() {
+  el.billItemsList.querySelectorAll('.bill-item-row').forEach(renderAssignChips);
 }
 
 function addParticipantRow(name = '', amount = '') {
@@ -819,21 +828,26 @@ function addParticipantRow(name = '', amount = '') {
 }
 
 function addItemRow(name = '', amount = '', participantIndex = null) {
-  const names = participantNames();
-  const options = names.map((n, i) => `<option value="${i}" ${i === participantIndex ? 'selected' : ''}>${escapeHtml(n)}</option>`).join('');
-
   const row = document.createElement('div');
   row.className = 'bill-item-row';
+  row.dataset.participant = participantIndex === null ? '' : String(participantIndex);
   row.innerHTML = `
     <input type="text" class="bill-item-name" placeholder="Item" maxlength="128" />
     <input type="number" class="bill-item-amount" placeholder="Amount" step="0.01" min="0.01" />
-    <select class="bill-item-participant"><option value="" ${participantIndex === null ? 'selected' : ''}>Shared</option>${options}</select>
     <button type="button" class="bill-row-remove" aria-label="Remove">&times;</button>
+    <div class="assign-chips" role="group" aria-label="Assign to"></div>
   `;
   row.querySelector('.bill-item-name').value = name;
   row.querySelector('.bill-item-amount').value = amount;
   row.querySelector('.bill-row-remove').addEventListener('click', () => row.remove());
+  row.querySelector('.assign-chips').addEventListener('click', (e) => {
+    const chip = e.target.closest('.assign-chip');
+    if (!chip) return;
+    row.dataset.participant = chip.dataset.value;
+    renderAssignChips(row);
+  });
   el.billItemsList.appendChild(row);
+  renderAssignChips(row);
 }
 
 async function handleBillReceiptFileChange(event) {
@@ -900,7 +914,7 @@ function collectParticipants() {
 
 function collectItems() {
   return Array.from(el.billItemsList.querySelectorAll('.bill-item-row')).map((row) => {
-    const participantValue = row.querySelector('.bill-item-participant').value;
+    const participantValue = row.dataset.participant;
     return {
       name: row.querySelector('.bill-item-name').value.trim(),
       amount: parseFloat(row.querySelector('.bill-item-amount').value),
@@ -1021,14 +1035,45 @@ async function handleDeleteBill() {
   }
 }
 
+// KhunTong's core loop: drop the bill into the group chat so participants open
+// the public share page themselves (they're plain names, not LINE accounts, so
+// the bot can't message them directly). shareTargetPicker only exists inside
+// the LINE app and only once it's enabled for this LIFF app in the console --
+// anywhere else this falls back to copying the link.
+async function handleShareBillToLine() {
+  if (!openBillDetailId) return;
+  clearModalError(el.billDetailError);
+  const url = `${location.origin}/liff/bill.html?id=${openBillDetailId}`;
+  const title = el.billDetailTitle.textContent;
+  const outstanding = el.billProgressOutstanding.textContent;
+  const text = `${title}: ${outstanding === 'Settled' ? 'all settled' : outstanding}.\nCheck what you owe and mark it paid here: ${url}`;
+
+  if (!liff.isApiAvailable('shareTargetPicker')) {
+    await handleCopyShareLink();
+    showModalError(el.billDetailError, "Sharing to LINE isn't available here, so the link was copied instead.");
+    return;
+  }
+  try {
+    const result = await liff.shareTargetPicker([{ type: 'text', text }]);
+    if (result) {
+      el.billShareLine.lastElementChild.textContent = 'Shared';
+      setTimeout(() => {
+        el.billShareLine.lastElementChild.textContent = 'Share to LINE';
+      }, 2000);
+    }
+  } catch (error) {
+    showModalError(el.billDetailError, `Could not share: ${error.message}`);
+  }
+}
+
 async function handleCopyShareLink() {
   if (!openBillDetailId) return;
   const url = `${location.origin}/liff/bill.html?id=${openBillDetailId}`;
   try {
     await navigator.clipboard.writeText(url);
-    el.billCopyLink.textContent = 'Link Copied';
+    el.billCopyLink.textContent = 'Copied';
     setTimeout(() => {
-      el.billCopyLink.textContent = 'Copy Share Link';
+      el.billCopyLink.textContent = 'Copy Link';
     }, 2000);
   } catch (error) {
     showModalError(el.billDetailError, `Could not copy automatically — copy this link manually: ${url}`);
@@ -1079,10 +1124,12 @@ function renderTrendChart(transactions) {
     .join('');
 }
 
-function renderCategoryBreakdown(transactions, periodStart, periodEnd) {
+// Follows the Budgets tab's Expense/Income toggle (categoriesTabType) rather
+// than having a second switcher of its own.
+function renderCategoryBreakdown(transactions, periodStart, periodEnd, type = 'expense') {
   const totalsByCategory = new Map();
   for (const t of transactions) {
-    if (t.type !== 'expense') continue;
+    if (t.type !== type) continue;
     const d = new Date(t.transaction_date);
     if (d < periodStart || d >= periodEnd) continue;
     const name = t.categories?.name || 'Uncategorized';
@@ -1090,6 +1137,10 @@ function renderCategoryBreakdown(transactions, periodStart, periodEnd) {
   }
 
   const rows = Array.from(totalsByCategory.entries()).sort((a, b) => b[1] - a[1]);
+  const total = rows.reduce((sum, [, amount]) => sum + amount, 0);
+  el.breakdownTotalLabel.textContent = type === 'income' ? 'Earned this cycle' : 'Spent this cycle';
+  el.breakdownTotalValue.textContent = total.toFixed(2);
+  el.breakdownTotalValue.style.color = type === 'income' ? 'var(--color-income)' : 'var(--color-expense)';
   const maxValue = Math.max(1, ...rows.map(([, amount]) => amount));
 
   el.categoryChart.innerHTML = rows
@@ -1383,7 +1434,7 @@ async function loadBudgetsTab() {
   ]);
 
   renderCategoriesList(categoriesResponse.categories, transactionsResponse.transactions);
-  const hasBreakdown = renderCategoryBreakdown(transactionsResponse.transactions, periodStart, periodEnd);
+  const hasBreakdown = renderCategoryBreakdown(transactionsResponse.transactions, periodStart, periodEnd, categoriesTabType);
   el.analyticsEmptyState.hidden = transactionsResponse.transactions.length > 0 || hasBreakdown;
   renderEventBudgetsList(eventsResponse.budget_events);
 
@@ -1760,6 +1811,8 @@ const txnRange = { mode: 'cycle', offset: 0 };
 function buildTransactionFilterQuery() {
   const params = new URLSearchParams();
   if (el.txnFilterType.value) params.set('type', el.txnFilterType.value);
+  const search = el.txnSearch.value.trim();
+  if (search) params.set('q', search);
   if (txnRange.mode === 'cycle') {
     const { startISO, endISO } = getBillingCycleRange(currentUser.billing_cycle_start_day, txnRange.offset);
     params.set('start_date', startISO);
@@ -1808,6 +1861,9 @@ async function loadTransactionsTab() {
   params.set('limit', '200');
   const response = await cachedGet(`/transactions/${lineUserId}?${params.toString()}`);
   if (seq !== txnLoadSeq) return;
+  el.txnEmptyState.textContent = params.get('q')
+    ? `No transactions matching "${params.get('q')}" in this range.`
+    : 'No transactions match these filters.';
   renderTransactionList(el.txnFullList, el.txnEmptyState, response.transactions, { showPaymentMethod: true });
 }
 
@@ -2171,7 +2227,7 @@ for (const button of el.navTabs) {
   button.addEventListener('click', () => switchTab(button.dataset.tab));
 }
 
-el.addExpenseButton.addEventListener('click', openAddExpenseModal);
+el.fabAdd.addEventListener('click', openAddExpenseModal);
 el.cancelAddExpense.addEventListener('click', closeAddExpenseModal);
 el.addExpenseForm.addEventListener('submit', handleAddExpenseSubmit);
 el.fieldReceiptImage.addEventListener('change', handleReceiptFileChange);
@@ -2182,6 +2238,7 @@ el.billForm.addEventListener('submit', handleBillSubmit);
 el.billAddParticipant.addEventListener('click', () => addParticipantRow());
 el.billAddItem.addEventListener('click', () => addItemRow());
 el.billFieldReceiptImage.addEventListener('change', handleBillReceiptFileChange);
+el.billShareLine.addEventListener('click', handleShareBillToLine);
 el.billCopyLink.addEventListener('click', handleCopyShareLink);
 el.billDelete.addEventListener('click', handleDeleteBill);
 el.closeBillDetail.addEventListener('click', closeBillDetailModal);
@@ -2200,6 +2257,11 @@ el.cancelTransfer.addEventListener('click', closeTransferModal);
 el.transferForm.addEventListener('submit', handleTransferSubmit);
 
 el.txnFilterType.addEventListener('change', () => loadTransactionsTab().catch((error) => showError(error.message)));
+let txnSearchTimer = null;
+el.txnSearch.addEventListener('input', () => {
+  clearTimeout(txnSearchTimer);
+  txnSearchTimer = setTimeout(() => loadTransactionsTab().catch((error) => showError(error.message)), 300);
+});
 el.txnRangePills.forEach((pill) => pill.addEventListener('click', () => setTxnRange(pill.dataset.range)));
 el.txnPeriodPrev.addEventListener('click', () => setTxnRange('cycle', txnRange.offset - 1));
 el.txnPeriodNext.addEventListener('click', () => setTxnRange('cycle', Math.min(0, txnRange.offset + 1)));

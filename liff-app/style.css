@@ -23,6 +23,7 @@
   --color-success-bg: #e3f7ea;
   --color-overlay: rgba(0, 0, 0, 0.4);
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-fab: 0 4px 12px rgba(0, 0, 0, 0.25); /* same in both themes: the button floats over content either way */
 
   --radius-card: 12px;
   --radius-control: 10px;
@@ -96,7 +97,8 @@ body {
 }
 
 .tab-content {
-  padding-bottom: calc(72px + env(safe-area-inset-bottom));
+  /* bottom nav (~64px) + floating Add button (~56px) so neither covers the last row */
+  padding-bottom: calc(136px + env(safe-area-inset-bottom));
 }
 
 .bottom-nav {
@@ -803,8 +805,33 @@ body {
   flex: 0 0 90px;
 }
 
-.bill-item-row .bill-item-participant {
-  flex: 0 0 110px;
+.bill-item-row {
+  flex-wrap: wrap;
+}
+
+/* Tap-to-assign: one chip per participant plus "Shared", on its own line under the item */
+.assign-chips {
+  flex: 0 0 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.assign-chip {
+  min-height: 36px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.assign-chip.active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-text-on-accent);
 }
 
 .bill-row-remove {
@@ -1133,4 +1160,82 @@ body {
 /* Gap between the header and each tab's first block (Home's summary card already has its own margin). */
 .tab-panel > :first-child {
   margin-top: var(--space-page);
+}
+
+/* ---- Transactions search ---- */
+
+.search-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 var(--space-page) 12px;
+  padding: 0 12px;
+  min-height: var(--tap-min);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  color: var(--color-text-secondary);
+}
+
+.search-field .icon {
+  width: 18px;
+  height: 18px;
+}
+
+.search-field input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--color-text-primary);
+  padding: 10px 0;
+}
+
+/* ---- Floating Add button ---- */
+
+.fab {
+  position: fixed;
+  right: var(--space-page);
+  bottom: calc(76px + env(safe-area-inset-bottom));
+  z-index: 15; /* above content and .bottom-nav (10), below .modal (20) */
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 52px;
+  padding: 0 20px 0 16px;
+  border: none;
+  border-radius: 999px;
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+  font-size: 16px;
+  font-weight: 600;
+  box-shadow: var(--shadow-fab);
+}
+
+.fab .icon {
+  width: 22px;
+  height: 22px;
+}
+
+/* ---- Breakdown total (Budgets tab) ---- */
+
+.breakdown-total {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin: 0 var(--space-page) 12px;
+}
+
+.breakdown-total-value {
+  font-size: 28px;
+  font-weight: 700;
+}
+
+/* ---- Share bill to LINE ---- */
+
+.share-line-button {
+  width: 100%;
+  margin: 0 0 12px;
 }

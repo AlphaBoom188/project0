@@ -35,7 +35,7 @@ npm start  # Starts server on port 3000
 - `POST /api/categories/:line_user_id` - Create category
 - `GET /api/categories/:line_user_id` - Get categories
 - `POST /api/transactions/:line_user_id` - Create transaction (`category_id` optional for an expense with a `description` -- auto-categorized). Optional `channel: 'liff'` returns a crossed `budget_alert` in the response instead of pushing it via LINE (see Dual-Channel Alert Routing below)
-- `GET /api/transactions/:line_user_id` - Get transactions
+- `GET /api/transactions/:line_user_id` - Get transactions (`type`/`category_id`/`start_date`/`end_date`, plus `q` for a case-insensitive substring search on `description`, which the export endpoints also accept)
 - `DELETE /api/transactions/:line_user_id/all` - Delete every transaction for a user (irreversible; client must confirm first)
 - `GET /api/transactions/:line_user_id/export` - Export transactions as CSV (UTF-8 BOM), accepts `type`/`category_id`/`start_date`/`end_date` filters
 - `POST /api/transactions/:line_user_id/export/email` - Same filtered export, emailed via the Apps Script relay (501 if not configured)
@@ -434,4 +434,14 @@ The spec describes three other apps (Pa Nual, KhunTong, MeowJot). Only their gen
 
 **Verified**: `uxui_batch1_test.js` (ad hoc, not committed) renders the real LIFF page in headless Chrome via Playwright, with `static.line-scdn.net` routed to a stub `liff` object and data seeded through the API, then checks every item above. That includes the stale-response guard under rapid taps, computed font sizes and button bounding boxes, and zero page JS errors — 23/23. Light and dark screenshots were reviewed. Zero-emoji sweep clean. This stub-SDK harness is how LIFF client code can be tested without a phone; it would have caught the earlier `liff.openWindowExternal` bug if it had existed then.
 
-Next batches (agreed order): **2** share bill to LINE via `liff.shareTargetPicker()` (enable it in the LIFF console), transaction search (needs a backend `q` param), floating add button, analytics switcher, tap-to-assign item chips. **3** spacing/radius scale, account filter sheet, light streak counter.
+### UX/UI Batch 2
+
+- **Share bill to LINE** (KhunTong's nudge loop). Bill detail's "Share to LINE" calls `liff.shareTargetPicker()` with a text message: title, outstanding amount, and the public `bill.html?id=` link. Participants are plain names, not LINE accounts, so the bot can't message them; posting the link into the group chat is the substitute. The button is guarded by `liff.isApiAvailable('shareTargetPicker')` and falls back to copying the link with an explanatory message, both outside the LINE app and when shareTargetPicker isn't enabled in the LIFF console (Messaging API channel → LIFF tab → app → shareTargetPicker).
+- **Transaction search.** The backend `applySearch()` in `transactionController.js` adds `ilike` on `description` for both the list and export queries. `\`, `%` and `_` in the user's text are escaped so they match literally, and input is capped at 100 chars. A PostgREST quirk: `*` in a like pattern still acts as a wildcard and can't be escaped there; this was accepted. In the LIFF app the search box is debounced 300ms, goes through `buildTransactionFilterQuery()` (so CSV exports match the screen), and the empty state names the search.
+- **Floating Add button** (`#fab-add`, z-index 15: above the nav's 10, below `.modal`'s 20). It opens Add Expense from every tab except Settings and replaced Home's duplicate "Add Expense" quick action. `.tab-content` bottom padding was raised so the last row can scroll clear of it.
+- **Breakdown total.** The Budgets tab breakdown follows the existing Expense/Income toggle (`categoriesTabType`), deliberately with no second switcher, and shows a large "Spent / Earned this cycle" total.
+- **Tap-to-assign chips** replace the itemized split's per-item `<select>`. Each item row stores its assignment in `data-participant` and renders Shared plus participant chips via `renderAssignChips()`. Chips re-render on participant add/rename/remove; an assignment past the end of the list falls back to Shared.
+
+**Verified**: `uxui_batch2_test.js` (ad hoc, not committed, same stub-LIFF headless-Chrome harness; the stub records `shareTargetPicker` calls and can flip `isApiAvailable`) — 29/29. That covers literal `%`/`_` search at the REST level, Add button placement above the nav and visibility per tab, search plus export param parity plus the no-match state, the breakdown under both toggles, the share message contents, the copy-link fallback (checked via clipboard), and chip assign/rename/remove including what `collectItems()` sends. The Batch 1 browser test, `accounts_test.js` and `alerts_test.js` were re-run with no failures. The real share sheet still needs a phone.
+
+Next: **Batch 3**: spacing/radius scale, account filter sheet, light streak counter.

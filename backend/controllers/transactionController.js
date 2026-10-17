@@ -10,8 +10,17 @@ const { autoCategorize } = require('../services/autoCategorize');
 const { buildTransactionsCsv } = require('../services/csvExport');
 const { sendCsvByEmail } = require('../services/emailRelay');
 
+// Free-text search over description (case-insensitive substring). LIKE wildcards
+// in the user's text are escaped so "50%" means a literal percent sign; capped
+// at 100 chars since it's a substring match, not a query language.
+function applySearch(query, q) {
+  const term = typeof q === 'string' ? q.trim().slice(0, 100) : '';
+  if (!term) return query;
+  return query.ilike('description', `%${term.replace(/[\\%_]/g, (c) => `\\${c}`)}%`);
+}
+
 // Shared by both export endpoints so the download and email paths can't filter differently.
-async function queryTransactionsForExport(lineUserId, { type, category_id, start_date, end_date }) {
+async function queryTransactionsForExport(lineUserId, { type, category_id, start_date, end_date, q }) {
   let query = supabase
     .from('transactions')
     .select('transaction_date, type, amount, description, payment_method, categories ( name )')
@@ -22,6 +31,7 @@ async function queryTransactionsForExport(lineUserId, { type, category_id, start
   if (category_id) query = query.eq('category_id', category_id);
   if (start_date) query = query.gte('transaction_date', start_date);
   if (end_date) query = query.lte('transaction_date', end_date);
+  query = applySearch(query, q);
 
   const { data, error } = await query;
   if (error) throw error;
@@ -33,7 +43,7 @@ const transactionController = {
   async getTransactions(req, res) {
     try {
       const { line_user_id } = req.params;
-      const { type, category_id, start_date, end_date, limit = 50, offset = 0 } = req.query;
+      const { type, category_id, start_date, end_date, q, limit = 50, offset = 0 } = req.query;
 
       let query = supabase
         .from('transactions')
@@ -64,6 +74,8 @@ const transactionController = {
       if (end_date) {
         query = query.lte('transaction_date', end_date);
       }
+
+      query = applySearch(query, q);
 
       const { data: transactions, error } = await query;
 
