@@ -516,12 +516,12 @@ A user with no lots gets `points: []` with no network calls. The literal route i
 - **Chart.js 4.4.1** loads from cdnjs. If it's blocked, the card shows "Chart unavailable" and everything else still renders.
 - **Colours** come from tokens: portfolio accent, S&P 500 warning, SET text-primary, invested dashed text-secondary. The chart is destroyed and redrawn on theme change (`applyTheme()` and the OS dark-mode listener). Axis labels are Bangkok dates. Data goes through `cachedGet` with a `perfLoadSeq` stale guard.
 - **Home** shows a compact Investments card (total + today's gain) only when the user has holdings; tapping it opens Net Worth.
-- **Polish item:** on a phone, 5Y/All sit past the edge of the range-pill row and need a sideways scroll.
+- **Range row:** the 8 range pills are a segmented control with equal-width segments (`.perf-range-pills`). All of them fit inside the card down to a 360px phone with no sideways scroll; each segment is 44px tall and about 35px wide. The Transactions tab's pill handlers select `.range-pill[data-range]` only: they used to grab every `.range-pill`, so tapping a Performance pill reset the Transactions range to `undefined`.
 
 **Tests:**
 - `api/performance_math` (41, pure).
 - `api/performance` (42, the real endpoint): structure, invariants, a deterministic flat gold portfolio whose TWR stays 0% across a 9× top-up, isolation between users, and `missing`.
-- `liff/performance_chart` (22): includes the CDN-blocked fallback and light/dark screenshots.
+- `liff/performance_chart` (25): includes the CDN-blocked fallback and light/dark screenshots.
 
 ### Investments Phase C — Dividends
 

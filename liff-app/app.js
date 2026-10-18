@@ -305,7 +305,8 @@ const el = {
   breakdownTotalLabel: document.getElementById('breakdown-total-label'),
   breakdownTotalValue: document.getElementById('breakdown-total-value'),
   billShareLine: document.getElementById('bill-share-line'),
-  txnRangePills: document.querySelectorAll('.range-pill'),
+  // [data-range] only: the Performance card's pills share the .range-pill class.
+  txnRangePills: document.querySelectorAll('.range-pill[data-range]'),
   txnPeriodNav: document.getElementById('txn-period-nav'),
   txnPeriodLabel: document.getElementById('txn-period-label'),
   txnPeriodPrev: document.getElementById('txn-period-prev'),

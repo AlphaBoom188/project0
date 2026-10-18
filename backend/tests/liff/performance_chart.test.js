@@ -95,6 +95,27 @@ const chartState = (page) => page.evaluate(() => {
   const pillBox = await page.$eval('[data-perf-range="ytd"]', (b) => b.getBoundingClientRect().height);
   const toggleBox = await page.$eval('[data-perf-view="value"]', (b) => b.getBoundingClientRect().height);
   assert(pillBox >= 44 && toggleBox >= 44, `range pills and toggle are >= 44px tall (got ${pillBox}, ${toggleBox})`);
+  // All 8 range pills fit the card with no sideways scroll, labels unclipped, down to a 360px phone.
+  for (const width of [390, 360]) {
+    await page.setViewportSize({ width, height: 844 });
+    const fit = await page.$eval('.perf-range-pills', (row) => {
+      const box = row.getBoundingClientRect();
+      const pills = [...row.querySelectorAll('.range-pill')];
+      return {
+        overflow: row.scrollWidth - row.clientWidth,
+        inside: pills.every((p) => { const b = p.getBoundingClientRect(); return b.left >= box.left - 0.5 && b.right <= box.right + 0.5; }),
+        clipped: pills.filter((p) => p.scrollWidth > p.clientWidth).map((p) => p.textContent),
+        minWidth: Math.min(...pills.map((p) => p.getBoundingClientRect().width)),
+      };
+    });
+    assert(fit.overflow <= 0 && fit.inside && fit.clipped.length === 0 && fit.minWidth >= 30,
+      `at ${width}px all 8 range pills fit, no scroll, no clipped label (got ${JSON.stringify(fit)})`);
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  // The Performance pills share the .range-pill class with the Transactions range row;
+  // tapping them must not touch the Transactions range (it used to reset it to undefined).
+  const txnActive = await page.$$eval('.range-pill[data-range].active', (ps) => ps.map((p) => p.dataset.range));
+  assert(txnActive.length === 1 && txnActive[0] === 'cycle', `Transactions range untouched by Performance pills (got ${JSON.stringify(txnActive)})`);
   await page.$eval('#perf-card', (c) => c.scrollIntoView());
   await page.screenshot({ path: `${OUTPUT}/performance_light.png` });
 

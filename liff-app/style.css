@@ -1483,8 +1483,32 @@ body {
   min-width: var(--tap-min);
 }
 
-.perf-card .range-pill {
-  padding: var(--space-sm) 12px;
+/* The 8 performance ranges are a segmented control that always fits the card
+   (about 290px inside on a 360px phone): equal-width segments, full --tap-min
+   height, no sideways scroll. Segments are ~35px wide, like a native iOS
+   segmented control; the 2px gaps keep neighbouring hit areas touching. */
+.perf-card .perf-range-pills {
+  gap: 2px;
+  padding: 2px;
+  overflow: visible;
+  background: var(--color-track);
+  border-radius: var(--radius-pill);
+}
+
+.perf-card .perf-range-pills .range-pill {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.perf-card .perf-range-pills .range-pill.active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-text-on-accent);
 }
 
 .perf-chart-wrap {
