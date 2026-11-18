@@ -386,7 +386,10 @@ let divLoadSeq = 0;
 let goalData = null; // last GET/PUT /portfolio/:u/goal response
 let goalChart = null;
 let goalLoadSeq = 0;
-let portfolioTotalThb = 0; // the Goal sheet's default start value
+// The Goal sheet's default start value. The goal card can render before the
+// portfolio fetch finishes, so the sheet awaits this promise rather than
+// reading a total that may not be set yet.
+let portfolioPromise = null;
 const MANUAL_PRICE_ASSET_TYPES = ['mutual_fund', 'gold']; // mirrors backend/services/marketPrices.js -- no live price source for these
 
 // ---- API + in-memory cache ----
@@ -2378,6 +2381,7 @@ function showGoalError(error) {
 
 function goalStatusText(p) {
   if (p.status === 'not_started') return `Starts on ${formatPerfDate(goalData.goal.start_date, true)}`;
+  if (p.status === 'unknown') return 'Current value unavailable';
   if (p.status === 'on_track') return 'On track';
   return `${p.status === 'ahead' ? 'Ahead of' : 'Behind'} plan by ${formatMoney(Math.abs(p.difference_thb), 'THB')}`;
 }
@@ -2397,12 +2401,17 @@ function renderGoal(data) {
   el.goalTargetLabel.textContent = p.target_is_projected ? 'Goal target (projected)' : 'Goal target';
   el.goalTarget.textContent = formatMoney(p.target_value, 'THB');
   el.goalProgressPct.textContent = p.progress_pct === null ? '—' : `${p.progress_pct.toFixed(1)}%`;
-  el.goalProgressDetail.textContent = `${formatMoney(p.current_value_thb, 'THB')} now · goal date ${formatGoalMonth(p.end_date)}`;
+  const nowText = p.current_value_thb === null ? '— now' : `${formatMoney(p.current_value_thb, 'THB')} now`;
+  el.goalProgressDetail.textContent = `${nowText} · goal date ${formatGoalMonth(p.end_date)}`;
   el.goalProgressFill.style.width = `${Math.min(100, Math.max(0, p.progress_pct || 0))}%`;
   const behindShare = p.status === 'behind' && p.expected_now_thb > 0 ? -p.difference_thb / p.expected_now_thb : 0;
   el.goalProgressFill.classList.toggle('warn', p.status === 'behind' && behindShare <= GOAL_STATUS_BEHIND_RED);
   el.goalProgressFill.classList.toggle('over', p.status === 'behind' && behindShare > GOAL_STATUS_BEHIND_RED);
   el.goalStatus.textContent = goalStatusText(p);
+  if (p.current_value_error) {
+    el.goalNote.hidden = false;
+    el.goalNote.textContent = `Progress unavailable: ${p.current_value_error}`;
+  }
   el.goalStatus.style.color = p.status === 'ahead' ? 'var(--color-income)' : p.status === 'behind' ? 'var(--color-expense)' : '';
 
   el.goalTableBody.innerHTML = p.yearly
@@ -2439,7 +2448,7 @@ function renderGoalChart() {
   const { points } = p;
   const thisMonth = bangkokYmd().slice(0, 7);
   let todayIndex = -1;
-  if (p.status !== 'not_started') points.forEach((pt, i) => { if (pt.date <= thisMonth) todayIndex = i; });
+  if (p.status !== 'not_started' && p.current_value_thb !== null) points.forEach((pt, i) => { if (pt.date <= thisMonth) todayIndex = i; });
   const accent = cssToken('--color-accent');
   const secondary = cssToken('--color-text-secondary');
   const highlight = cssToken('--color-warning');
@@ -2452,6 +2461,11 @@ function renderGoalChart() {
     line('Projected', 'projected_value', accent),
     line('Contributed', 'contributed', secondary, { borderDash: [6, 4], borderWidth: 1.5 }),
   ];
+  if (!p.target_is_projected) {
+    datasets.push(line('Target', 'target', cssToken('--color-text-primary'), {
+      data: points.map(() => p.target_value), borderDash: [2, 3], borderWidth: 1.5, pointHoverRadius: 0, tension: 0,
+    }));
+  }
   if (todayIndex >= 0) {
     datasets.push({
       label: 'Today', data: points.map((_, i) => (i === todayIndex ? p.current_value_thb : null)),
@@ -2494,11 +2508,19 @@ function renderGoalChart() {
 
 // Set up (defaults: today in Bangkok, the current portfolio value in whole
 // baht) or edit (the saved goal).
-function openGoalModal() {
+async function goalDefaultStartValue() {
+  try {
+    return Math.round((await portfolioPromise).totals.total_value);
+  } catch {
+    return 0; // portfolio unavailable (or not requested yet): the user types it
+  }
+}
+
+async function openGoalModal() {
   const goal = goalData && goalData.goal;
   el.goalModalTitle.textContent = goal ? 'Edit Goal' : 'Set Up Goal';
   el.goalFieldStartDate.value = goal ? goal.start_date : bangkokYmd();
-  el.goalFieldStartValue.value = goal ? goal.start_value : Math.round(portfolioTotalThb);
+  el.goalFieldStartValue.value = goal ? goal.start_value : await goalDefaultStartValue();
   el.goalFieldYears.value = goal ? goal.years : '';
   el.goalFieldReturn.value = goal ? goal.expected_annual_return : '';
   el.goalFieldContribution.value = goal ? goal.monthly_contribution : '';
@@ -2553,16 +2575,19 @@ async function handleDeleteGoal() {
 
 // ---- Net Worth tab: accounts/savings, investments, emergency fund ----
 async function loadNetWorthTab() {
+  // Independent of the portfolio fetch below, so a portfolio failure (e.g. a
+  // USD->THB 502) doesn't take the goal card down with it.
+  loadGoal().catch(showGoalError);
+  portfolioPromise = cachedGet(`/portfolio/${lineUserId}`);
+  portfolioPromise.catch(() => {}); // surfaced by the Promise.all below
   const [accountsResponse, portfolioResponse, { surplus }] = await Promise.all([
     cachedGet(`/accounts/${lineUserId}`),
-    cachedGet(`/portfolio/${lineUserId}`),
+    portfolioPromise,
     computeCurrentPeriodSurplus(),
   ]);
 
   renderAccountsList(accountsResponse.accounts);
   renderPortfolio(portfolioResponse, surplus);
-  portfolioTotalThb = portfolioResponse.totals.total_value;
-  loadGoal().catch(showGoalError);
   if (portfolioResponse.holdings.length === 0) {
     el.perfCard.hidden = true;
     el.divCard.hidden = true;

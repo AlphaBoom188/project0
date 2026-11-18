@@ -76,6 +76,12 @@ const late = buildGoalProjection(goal({ years: 1, monthly_contribution: 100 }), 
 assert(late.expected_now_thb === 101200 && late.status === 'on_track', 'after the end the expected value is capped at the end value');
 const zero = buildGoalProjection(goal({ start_value: 0 }), 0, '2026-06-01');
 assert(zero.target_value === 0 && zero.progress_pct === null, 'a zero projected target -> progress null, not a division by zero');
+const unknown = buildGoalProjection({ ...g, target_value: 1000000 }, null, '2027-03-20');
+assert(unknown.status === 'unknown' && unknown.current_value_thb === null && unknown.progress_pct === null && unknown.difference_thb === null,
+  'no current value -> status unknown, current/progress/difference null');
+assert(unknown.target_value === 1000000 && unknown.points.length === explicit.points.length && near(unknown.expected_now_thb, explicit.expected_now_thb),
+  'no current value -> target, points and expected-now still computed');
+assert(buildGoalProjection(goal({ start_date: '2027-01-01' }), null, '2026-12-31').status === 'not_started', 'no current value before start_date -> still not_started');
 
 // --- Spec example (Screen 2.4): ฿736,500, 30 years, 10%, ฿1,000/month, +10% YoY ---
 // Under this convention (monthly compounding at (1.1)^(1/12) - 1, contribution

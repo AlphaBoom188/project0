@@ -584,9 +584,11 @@ Spec: `docs/master_uxui_specification_finance.md` Screen 2.4, adapted. Table `in
 - **Also:** a collapsible year-by-year table and Edit goal.
 - **Goal sheet:** start date (default today), start value (default the current portfolio value), years, return %, monthly contribution, growth %, optional target. Delete goes through `confirmAction()`, and server 400s show inline. Same `cachedGet` stale guard, theme redraw and "Chart unavailable" fallback as Phases B and C.
 
-**Tests:** `api/goal_math` (34), `api/goal` (44), `liff/goal_card` (38).
+**Follow-ups (owner kept the effective-annual-rate convention):**
+- **Target line:** an explicit `target_value` is drawn as a flat dashed `--color-text-primary` "Target" line. Tests should find chart datasets by label, not index, because the Target line shifts the indexes.
+- **Goal card independent of the portfolio:** `loadGoal()` starts before the Net Worth `Promise.all` instead of after it. If `loadPortfolio()` throws in `goalResponse()` (e.g. a USD→THB 502), GET/PUT still return the goal and projection, with `current_value_thb`/`progress_pct`/`difference_thb` null, `status: 'unknown'` and `current_value_error`. The card then shows "—", "Current value unavailable" and a "Progress unavailable" note. The setup sheet's default start value awaits `portfolioPromise` (0 if it failed), since the card can now render first.
 
-**Not built:** an explicit-target line on the chart. Also, the goal card loads with the rest of Net Worth, so if the portfolio fetch fails (e.g. a USD→THB 502), the goal card doesn't load either.
+**Tests:** `api/goal_math` (37), `api/goal` (44), `liff/goal_card` (42, including the target line and a 502 on `GET /portfolio/:u`).
 
 ### Event Budgets, Verified Export Email, LIFF Nav Restructure
 

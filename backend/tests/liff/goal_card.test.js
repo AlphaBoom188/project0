@@ -23,7 +23,7 @@ async function cleanup() {
   for (const t of ['investment_goals', 'asset_lots', 'asset_holdings', 'users']) await db.from(t).delete().eq('line_user_id', U);
 }
 
-async function openApp(browser, { blockChart = false } = {}) {
+async function openApp(browser, { blockChart = false, failPortfolio = false } = {}) {
   const page = await (await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })).newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
@@ -31,6 +31,9 @@ async function openApp(browser, { blockChart = false } = {}) {
     route.fulfill({ contentType: 'application/javascript', body: `window.liff = { init: async () => {}, isLoggedIn: () => true, login() {}, openWindow() {}, isApiAvailable: () => false,
       getProfile: async () => ({ userId: '${U}', displayName: 'Goal Card Test', pictureUrl: '' }) };` }));
   if (blockChart) await page.route('https://cdnjs.cloudflare.com/**', (route) => route.abort());
+  // Only GET /api/portfolio/:u itself (not /goal, /performance, ...): simulates a USD->THB 502.
+  if (failPortfolio) await page.route((url) => url.pathname === `/api/portfolio/${U}`, (route) =>
+    route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ success: false, error: 'USD->THB rate unavailable' }) }));
   await page.goto(`${BASE}/liff/`);
   await page.waitForSelector('#app:not([hidden])', { timeout: 15000 });
   await page.click('.nav-tab[data-tab="networth"]');
@@ -99,8 +102,8 @@ async function saveGoal(page) {
   const secondary = await token(page, '--color-text-secondary');
   assert(chart.type === 'line' && chart.datasets.map((d) => d.label).join() === 'Projected,Contributed,Today', `line chart: Projected, Contributed, Today (got ${chart.datasets.map((d) => d.label)})`);
   assert(chart.datasets[0].color === accent && chart.datasets[1].color === secondary && chart.datasets[1].dash && chart.datasets[1].dash.length === 2, 'projected = --color-accent, contributed dashed --color-text-secondary');
-  const todayPoints = chart.datasets[2].data.map((v, i) => [v, i]).filter(([v]) => v !== null);
-  assert(todayPoints.length === 1 && todayPoints[0][0] === 42000 && todayPoints[0][1] === 0 && chart.datasets[2].showLine === false, `today's value is one highlighted point (got ${JSON.stringify(todayPoints)})`);
+  const todayPoints = chart.datasets.find((d) => d.label === 'Today').data.map((v, i) => [v, i]).filter(([v]) => v !== null);
+  assert(todayPoints.length === 1 && todayPoints[0][0] === 42000 && todayPoints[0][1] === 0 && chart.datasets.find((d) => d.label === 'Today').showLine === false, `today's value is one highlighted point (got ${JSON.stringify(todayPoints)})`);
   assert(chart.labels.length === expected.points.length && chart.labels[0] === today.slice(0, 7), 'labels are the Bangkok months of the points');
   const tooltip = await page.evaluate(() => {
     const cb = window.Chart.getChart(document.getElementById('goal-chart')).options.plugins.tooltip.callbacks;
@@ -144,7 +147,7 @@ async function saveGoal(page) {
   assert(expected.status === 'behind' && (await page.textContent('#goal-status')) === `Behind plan by ${baht(-expected.difference_thb)}`, `"Behind plan by ฿X" (got "${await page.textContent('#goal-status')}")`);
   assert((await page.$eval('#goal-progress-fill', (f) => f.classList.contains('over'))), 'far behind plan -> red bar (.over)');
   chart = await chartState(page);
-  const pt = chart.datasets[2].data.findIndex((v) => v !== null);
+  const pt = chart.datasets.find((d) => d.label === 'Today').data.findIndex((v) => v !== null);
   assert(pt > 0 && chart.labels[pt] <= today.slice(0, 7) && (pt === chart.labels.length - 1 || chart.labels[pt + 1] > today.slice(0, 7)), `today's point sits on the latest month at or before today (${chart.labels[pt]})`);
   await page.$eval('#goal-card', (c) => c.scrollIntoView());
   await page.screenshot({ path: `${OUTPUT}/goal_light.png` });
@@ -181,6 +184,25 @@ async function saveGoal(page) {
   await blocked.page.click('#goal-table-toggle');
   assert((await blocked.page.$$('#goal-table-body tr')).length === 5, 'year-by-year table still works without Chart.js');
   assert(blocked.errors.length === 0, `no page JS errors without Chart.js (got ${JSON.stringify(blocked.errors)})`);
+
+  await blocked.page.context().close();
+
+  // --- Explicit target: drawn as a flat line ---
+  const withTarget = await openApp(browser);
+  await withTarget.page.waitForSelector('#goal-body:not([hidden])', { timeout: 15000 });
+  const tChart = await chartState(withTarget.page);
+  const target = tChart.datasets.find((d) => d.label === 'Target');
+  assert(target && target.data.length === tChart.labels.length && target.data.every((v) => v === 84000) && target.dash && target.color === (await token(withTarget.page, '--color-text-primary')),
+    `explicit target -> a dashed --color-text-primary "Target" line at ฿84,000 (got ${JSON.stringify(tChart.datasets.map((d) => d.label))})`);
+  assert(withTarget.errors.length === 0, `no page JS errors with a target line (got ${JSON.stringify(withTarget.errors)})`);
+  await withTarget.page.context().close();
+
+  // --- Portfolio fetch fails: the goal card still loads ---
+  const failed = await openApp(browser, { failPortfolio: true });
+  await failed.page.waitForSelector('#goal-body:not([hidden])', { timeout: 15000 }).catch(() => {});
+  assert(!(await failed.page.isHidden('#goal-body')) && (await failed.page.textContent('#goal-target')) === '฿84,000.00',
+    'GET /portfolio/:u 502 -> the goal card still renders its target');
+  assert(failed.errors.length === 0, `no page JS errors when the portfolio fetch fails (got ${JSON.stringify(failed.errors)})`);
 
   await browser.close();
   await cleanup();

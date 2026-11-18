@@ -77,7 +77,11 @@ function goalStatus(currentValue, expectedValue, started = true) {
 }
 
 // Everything the goal endpoint returns besides the goal row itself.
+// currentValueThb may be null (the portfolio total couldn't be computed,
+// e.g. no USD->THB rate yet): the projection still comes back, with
+// current_value_thb / progress_pct / difference_thb null and status 'unknown'.
 function buildGoalProjection(goal, currentValueThb, today) {
+  const known = currentValueThb !== null && currentValueThb !== undefined;
   const months = projectGoal(goal);
   const end = months[months.length - 1];
   const targetIsProjected = goal.target_value === null || goal.target_value === undefined;
@@ -92,10 +96,10 @@ function buildGoalProjection(goal, currentValueThb, today) {
     target_is_projected: targetIsProjected,
     end_date: end.date,
     current_value_thb: round2(currentValueThb),
-    progress_pct: target > 0 ? round2((currentValueThb / target) * 100) : null,
-    status: goalStatus(currentValueThb, expected, started),
+    progress_pct: known && target > 0 ? round2((currentValueThb / target) * 100) : null,
+    status: !started ? 'not_started' : known ? goalStatus(currentValueThb, expected, started) : 'unknown',
     expected_now_thb: round2(expected),
-    difference_thb: started ? round2(currentValueThb - expected) : null,
+    difference_thb: known && started ? round2(currentValueThb - expected) : null,
     points: downsample(months, GOAL_MAX_POINTS).map((m) => ({
       date: m.date.slice(0, 7), projected_value: round2(m.value), contributed: round2(m.contributed),
     })),

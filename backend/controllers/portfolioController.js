@@ -510,12 +510,24 @@ function normalizeGoal(row) {
 }
 
 // { goal, projection } for GET and PUT. Progress is measured against the
-// same THB total as GET /api/portfolio/:u (0 with no holdings).
+// same THB total as GET /api/portfolio/:u (0 with no holdings). If that total
+// can't be computed (e.g. a USD->THB 502), the goal and its projection still
+// come back, with the current-value fields null and `current_value_error` set,
+// so the goal card doesn't disappear along with the portfolio.
 async function goalResponse(lineUserId, row) {
   if (!row) return { goal: null, projection: null };
   const goal = normalizeGoal(row);
-  const { totals } = await loadPortfolio(lineUserId);
-  return { goal, projection: buildGoalProjection(goal, totals.total_value, getBangkokYmd()) };
+  let currentValue = null;
+  let currentValueError = null;
+  try {
+    ({ totals: { total_value: currentValue } } = await loadPortfolio(lineUserId));
+  } catch (error) {
+    console.error('goal: portfolio total unavailable:', error.message);
+    currentValueError = error.message;
+  }
+  const projection = buildGoalProjection(goal, currentValue, getBangkokYmd());
+  if (currentValueError) projection.current_value_error = currentValueError;
+  return { goal, projection };
 }
 
 function sendGoalError(res, where, error) {
