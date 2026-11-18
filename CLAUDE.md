@@ -54,7 +54,7 @@ npm start  # Starts server on port 3000
 - `GET /api/line/login-url` - Generate LINE Login URL
 - `GET /api/line/callback` - Handle LINE OAuth callback
 - `POST /api/ocr/scan/:line_user_id` - Scan a receipt image (OpenAI Vision), extract amount/date/merchant/category, and check `slip_hash` for duplicates
-- `POST /api/line/webhook` - LINE Bot webhook (signature-verified). Handles `follow` (provisions the user), text messages (free-text expense parsing, e.g. "coffee 120", plus a "summary"/"สรุป" command), image messages (same OCR pipeline as the REST endpoint), and `postback` (Confirm/Cancel on the resulting Flex card)
+- `POST /api/line/webhook` - LINE Bot webhook (signature-verified). Handles `follow` (provisions the user), text messages (free-text expense parsing, e.g. "coffee 120", plus a "summary"/"สรุป" command), image messages (same OCR pipeline as the REST endpoint), audio messages (Thai voice, transcribed then parsed like text; see Thai Voice Messages below), and `postback` (Confirm/Cancel on the resulting Flex card)
 
 ### Calendar: Asia/Bangkok everywhere
 
@@ -78,7 +78,7 @@ npm start                 # in another terminal -- suites go through the real HT
 npm test                  # api + liff suites, free (~3 min)
 npm test -- bills         # only suites whose path contains "bills"
 npm test -- -v            # full output of every suite
-npm run test:openai       # line_webhook + preferences_opt_out: real OpenAI calls (a few cents)
+npm run test:openai       # line_webhook + preferences_opt_out + voice_message: real OpenAI calls (a few cents)
 ```
 
 - **Suites run against the real Supabase project** in `backend/.env`; there's no separate test database. Every suite only creates users with a `test_` prefix (or a random `U<hex>` id), deletes everything it created, and the runner runs suites one at a time. When adding a suite, keep both rules, and never call a job's all-users entry point without scoping it. `processDueRecurringTransactions`, `sendDailyDigest` and `sendActivityReminder` all take `{ lineUserId }` for exactly that, so a test can't fire real users' rules or digests; the crons pass nothing.
@@ -177,6 +177,7 @@ project0/
 │   │   ├── transactionCreate.js # validate category + insert transaction + fire budget check
 │   │   ├── receiptExtraction.js # OpenAI Vision extraction + slip_hash dedup + thumbnail upload
 │   │   ├── textExpenseParser.js # OpenAI text parsing ("coffee 120")
+│   │   ├── voiceTranscription.js # LINE voice (m4a) -> text: Typhoon ASR if TYPHOON_API_KEY, else/fallback OpenAI
 │   │   ├── categoryMatch.js     # fetch/match a user's expense categories
 │   │   ├── pendingConfirmations.js # in-memory TTL store for bot Confirm/Cancel
 │   │   ├── lineMessagingClient.js  # @line/bot-sdk wrapper + Flex card builder (with timeouts)
@@ -589,6 +590,19 @@ Spec: `docs/master_uxui_specification_finance.md` Screen 2.4, adapted. Table `in
 - **Goal card independent of the portfolio:** `loadGoal()` starts before the Net Worth `Promise.all` instead of after it. If `loadPortfolio()` throws in `goalResponse()` (e.g. a USD→THB 502), GET/PUT still return the goal and projection, with `current_value_thb`/`progress_pct`/`difference_thb` null, `status: 'unknown'` and `current_value_error`. The card then shows "—", "Current value unavailable" and a "Progress unavailable" note. The setup sheet's default start value awaits `portfolioPromise` (0 if it failed), since the card can now render first.
 
 **Tests:** `api/goal_math` (37), `api/goal` (44), `liff/goal_card` (42, including the target line and a 502 on `GET /portfolio/:u`).
+
+### Thai Voice Messages (LINE Bot)
+
+✅ **Voice → expense.** A LINE `audio` message (m4a/AAC) is downloaded, transcribed, and the transcript goes through the same path as a typed message (`handleExpenseText()` in `lineWebhookController.js`): the "summary"/"สรุป" command, `parseExpenseText()`, and the Confirm/Cancel card. That card gets a first **Heard** row showing the transcript (capped at 200 chars), so a misheard amount is visible before anything is saved. A non-expense reply starts with `I heard: "..."`. Messages over 60 s (`event.message.duration`) are refused before download. A transcription failure or an empty transcript gets a plain reply.
+
+✅ **Transcription (`services/voiceTranscription.js`).**
+- **Typhoon ASR** (SCB 10X, Thai-first) when `TYPHOON_API_KEY` is set. Its hosted API is OpenAI-compatible: base `https://api.opentyphoon.ai/v1`, model `typhoon-asr-realtime`, via the `openai` SDK. Its docs list wav/mp3/flac/ogg/opus but not m4a; the m4a is sent as-is (no ffmpeg dependency). Whether Typhoon accepts it is **unverified until a real key is set**: `tests/openai/voice_message` checks it automatically then. If it rejects m4a, the fallback still answers; adding a conversion step would be the fix.
+- **Terms:** the hosted Typhoon API is a free, as-is beta (100 req/min) that collects usage data. Its docs ask real production users to go through Together AI or contact them. The model is also Apache-2.0 for self-hosting (`pip install typhoon-asr`).
+- **Fallback / default:** OpenAI `gpt-4o-mini-transcribe` with `language: 'th'` (accepts m4a), using the existing `OPENAI_API_KEY`. Any Typhoon error or empty result falls through to it.
+
+**Tests:** `api/voice_message` (14, free: LINE, transcription and parser stubbed; refusals, Heard row, confirm → transaction, spoken "สรุป", typed text unchanged). `openai/voice_message` (5, plus 1 when a Typhoon key is set): real transcription of `tests/fixtures/voice_coffee_120_th.m4a` ("กาแฟ หนึ่งร้อยยี่สิบ บาท", made with macOS `say -v Kanya` + `afconvert`), bogus-key fallback, and the full webhook producing a 120 card.
+
+**Not built yet:** a mic button in the LIFF Add form.
 
 ### Event Budgets, Verified Export Email, LIFF Nav Restructure
 

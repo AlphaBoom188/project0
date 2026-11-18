@@ -4,6 +4,7 @@ const { upsertUser } = require('../services/userUpsert');
 const { fetchExpenseCategories, matchCategoryByName } = require('../services/categoryMatch');
 const { findDuplicateBySlipHash, extractReceiptFromImage } = require('../services/receiptExtraction');
 const { parseExpenseText } = require('../services/textExpenseParser');
+const { transcribeVoice } = require('../services/voiceTranscription');
 const { createTransaction, InvalidCategoryError, DuplicateSlipError } = require('../services/transactionCreate');
 const { signThumbnailPath } = require('../services/signedUrl');
 const pending = require('../services/pendingConfirmations');
@@ -110,7 +111,50 @@ async function handleTextMessage(event) {
   const text = event.message.text?.trim() || '';
   if (!lineUserId) return;
   log('text: start', lineUserId, JSON.stringify(text));
+  return handleExpenseText(event, lineUserId, text);
+}
 
+// Voice messages over this length get a polite refusal instead of a
+// transcription call -- an expense is a few words, and this caps cost.
+const MAX_VOICE_MS = 60 * 1000;
+
+// A LINE voice message (m4a): transcribe it (Typhoon, else OpenAI), then treat
+// the transcript exactly like a typed message -- same summary command, same
+// parser, same Confirm/Cancel card, with a "Heard" row so a misheard amount is
+// obvious before anything is saved.
+async function handleAudioMessage(event) {
+  const lineUserId = event.source?.userId;
+  if (!lineUserId) return;
+  const durationMs = event.message.duration || 0;
+  log('audio: start', lineUserId, `${durationMs}ms`);
+
+  if (durationMs > MAX_VOICE_MS) {
+    await replyText(event.replyToken, 'That voice message is a bit long. Please keep it under a minute, e.g. "กาแฟ 120 บาท".');
+    return;
+  }
+
+  let transcript;
+  try {
+    const audio = await getImageBuffer(event.message.id); // generic content download, despite the name
+    const result = await transcribeVoice(audio);
+    transcript = result.text;
+    log('audio: transcribed', lineUserId, result.provider, JSON.stringify(transcript));
+  } catch (error) {
+    console.error('[line-webhook] audio: transcription failed:', error.message);
+    await replyText(event.replyToken, "Sorry, I couldn't understand that voice message. Please try again or type it, e.g. \"coffee 120\".");
+    return;
+  }
+
+  if (!transcript) {
+    await replyText(event.replyToken, "I didn't catch anything in that voice message. Try saying something like \"กาแฟ 120 บาท\".");
+    return;
+  }
+  return handleExpenseText(event, lineUserId, transcript, { heard: transcript.slice(0, 200) });
+}
+
+// Shared by typed and voice messages. `heard` (voice only) adds the transcript
+// to the replies so the user can see what was understood.
+async function handleExpenseText(event, lineUserId, text, { heard = null } = {}) {
   if (SUMMARY_COMMANDS.has(text.toLowerCase())) {
     return handleSummaryCommand(event, lineUserId);
   }
@@ -122,7 +166,8 @@ async function handleTextMessage(event) {
   if (!parsed.isExpense) {
     await replyText(
       event.replyToken,
-      "Sorry, I couldn't find an expense in that message. Try something like \"coffee 120\", send a receipt photo, or text \"summary\" for your current totals."
+      (heard ? `I heard: "${heard}"\n` : '') +
+        "Sorry, I couldn't find an expense in that message. Try something like \"coffee 120\", send a receipt photo, or text \"summary\" for your current totals."
     );
     log('text: reply sent (not an expense)', lineUserId);
     return;
@@ -150,6 +195,7 @@ async function handleTextMessage(event) {
   await replyConfirmationCard(event.replyToken, {
     title: 'Log this expense?',
     rows: [
+      ...(heard ? [{ label: 'Heard', value: heard }] : []),
       { label: 'Amount', value: String(parsed.amount) },
       { label: 'For', value: parsed.description || '(no description)' },
       { label: 'Category', value: category.name },
@@ -276,7 +322,8 @@ async function handleEvent(event) {
     case 'message':
       if (event.message.type === 'text') return handleTextMessage(event);
       if (event.message.type === 'image') return handleImageMessage(event);
-      return; // ignore other message types (sticker, video, audio, location, file)
+      if (event.message.type === 'audio') return handleAudioMessage(event);
+      return; // ignore other message types (sticker, video, location, file)
     case 'postback':
       return handlePostback(event);
     default:
