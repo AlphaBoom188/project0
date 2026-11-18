@@ -145,6 +145,7 @@
         <div class="export-row" id="txn-export-row">
           <button id="export-csv-button" class="link-button">Download CSV</button>
           <button id="export-email-button" class="link-button">Email CSV</button>
+          <button id="import-statement-button" class="link-button">Import Statement</button>
         </div>
         <p id="export-status" class="settings-status" hidden></p>
 
@@ -856,6 +857,50 @@
           <button type="button" id="lot-delete" class="danger-button" hidden>Delete Lot</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <div id="statement-modal" class="modal" hidden>
+    <div class="modal-content sheet-scroll">
+      <h2 class="section-title">Import Bank Statement</h2>
+
+      <form id="stmt-pick">
+        <p class="stmt-hint">KBank savings/current account statements (PDF from K PLUS). The PDF is read on this phone; only the transaction lines are sent to the server.</p>
+        <label class="field">
+          Statement PDF
+          <input id="stmt-file" type="file" accept="application/pdf,.pdf" required />
+        </label>
+        <label class="field">
+          PDF password (if it has one)
+          <input id="stmt-password" type="password" autocomplete="off" inputmode="numeric" placeholder="KBank: your date of birth, DDMMYYYY" />
+        </label>
+        <label class="field">
+          Link to account (optional)
+          <select id="stmt-account"><option value="">Don't link</option></select>
+        </label>
+        <p id="stmt-progress" class="settings-status" hidden></p>
+        <p id="stmt-pick-error" class="modal-error" hidden></p>
+        <button type="submit" id="stmt-read" class="primary-button lot-submit-button">Read Statement</button>
+        <div class="modal-actions">
+          <button type="button" id="stmt-cancel" class="secondary-button">Cancel</button>
+        </div>
+      </form>
+
+      <div id="stmt-review" hidden>
+        <p id="stmt-summary" class="stmt-summary"></p>
+        <p id="stmt-verify" class="stmt-verify"></p>
+        <p id="stmt-counts" class="stmt-hint"></p>
+        <div class="stmt-bulk">
+          <button type="button" id="stmt-select-new" class="link-button">Select new</button>
+          <button type="button" id="stmt-select-none" class="link-button">Select none</button>
+        </div>
+        <ul id="stmt-rows" class="stmt-rows"></ul>
+        <p id="stmt-review-error" class="modal-error" hidden></p>
+        <button type="button" id="stmt-import" class="primary-button lot-submit-button">Import</button>
+        <div class="modal-actions">
+          <button type="button" id="stmt-back" class="secondary-button">Back</button>
+        </div>
+      </div>
     </div>
   </div>
 

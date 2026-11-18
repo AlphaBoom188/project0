@@ -50,6 +50,7 @@ npm start  # Starts server on port 3000
 - `POST /api/portfolio/:line_user_id/:holding_id/refresh-price`, `POST /api/portfolio/:line_user_id/refresh-all` - Live price refresh (Yahoo Finance for stock/etf, CoinGecko for crypto); 400s for mutual_fund/gold, which have no live source
 - `PUT /api/users/:line_user_id/emergency-fund` - Set the emergency fund goal amount and/or which existing account tracks progress
 - `GET/POST /api/budget-events/:line_user_id` (`?month=YYYY-MM-01`), `PUT/DELETE /api/budget-events/:line_user_id/:event_id` - One-off, single-month event/occasion budget buckets layered on a category, with computed `spent`/`remaining`/`percent`
+- `POST /api/statements/:line_user_id/parse`, `POST /api/statements/:line_user_id/import` - Bank statement import (KBank savings/current): preview from pdf.js text pieces, then insert the kept rows (see Bank Statement Import below)
 - `GET /api/google/login-url/:line_user_id`, `GET /api/google/callback` - Google OAuth used *only* to verify the CSV-export email (not a login method); 501 if not configured
 - `GET /api/line/login-url` - Generate LINE Login URL
 - `GET /api/line/callback` - Handle LINE OAuth callback
@@ -160,7 +161,8 @@ project0/
 │   │   ├── recurringController.js # Recurring expense/income rule CRUD
 │   │   ├── accountController.js # Accounts/wallets CRUD
 │   │   ├── billController.js    # Shared bills: create/list/detail/delete, settlement, public share view
-│   │   └── portfolioController.js # Investment holdings CRUD + computed value/gain/allocation + emergency fund status
+│   │   ├── portfolioController.js # Investment holdings CRUD + computed value/gain/allocation + emergency fund status
+│   │   └── statementController.js # Bank statement import: parse (preview) + import
 │   ├── routes/                    # API routes
 │   │   ├── userRoutes.js
 │   │   ├── categoryRoutes.js
@@ -191,7 +193,9 @@ project0/
 │   │   ├── accountBalance.js    # read-modify-write balance adjustment for transfers/account-attributed tx
 │   │   ├── billSplit.js         # cent-accurate equal/custom/itemized split math
 │   │   ├── billItemExtraction.js # OpenAI Vision -> itemized receipt line items (separate from receiptExtraction.js)
-│   │   └── marketPrices.js      # Live prices: Yahoo Finance (stock/etf), CoinGecko (crypto); mutual_fund/gold are manual-only
+│   │   ├── marketPrices.js      # Live prices: Yahoo Finance (stock/etf), CoinGecko (crypto); mutual_fund/gold are manual-only
+│   │   ├── statementParser.js   # pure: positioned PDF text -> KBank statement rows, signs from the running balance, totals cross-check
+│   │   └── statementImport.js   # preview: row keys, own-transfer/duplicate/imported status, keyword-then-LLM categories
 │   ├── jobs/
 │   │   ├── dailyDigest.js       # node-cron, 21:00 Asia/Bangkok, daily income/expense push
 │   │   ├── recurringTransactions.js # node-cron, 00:05 Asia/Bangkok, generates due recurring transactions
@@ -603,6 +607,40 @@ Spec: `docs/master_uxui_specification_finance.md` Screen 2.4, adapted. Table `in
 **Tests:** `api/voice_message` (14, free: LINE, transcription and parser stubbed; refusals, Heard row, confirm → transaction, spoken "สรุป", typed text unchanged). `openai/voice_message` (5, plus 1 when a Typhoon key is set): real transcription of `tests/fixtures/voice_coffee_120_th.m4a` ("กาแฟ หนึ่งร้อยยี่สิบ บาท", made with macOS `say -v Kanya` + `afconvert`), bogus-key fallback, and the full webhook producing a 120 card.
 
 **Not built yet:** a mic button in the LIFF Add form.
+
+### Bank Statement Import (KBank)
+
+✅ **Flow.** Transactions tab → Import Statement. The LIFF app loads **pdf.js 3.11.174** from cdnjs on first use and opens the PDF on the phone, including the password (KBank: date of birth, DDMMYYYY), which never leaves the device. It sends each page's text pieces as `{ x, y, w, s }` to `POST /api/statements/:u/parse`, which returns a preview and writes nothing. The user reviews it (tick/untick, change categories, optionally link an account) and `POST /api/statements/:u/import` inserts the kept rows. Supported: KBank savings/current statements only; anything else gets a 422 naming what's supported.
+
+✅ **Parsing (`services/statementParser.js`, pure, no AI).**
+- Rows are rebuilt from positions. Each row starts with a `dd-mm-yy` date at the left; Details wrap onto lines without a date. Every page starts with a "Beginning Balance" carry-over row. Column boundaries come from each page's header labels.
+- The amount column doesn't say deposit or withdrawal, so **the sign comes from the running balance** (balance − previous balance = ±amount). A mismatch falls back to the description ("Deposit") and adds a warning.
+- **Cross-check:** withdrawal and deposit counts and totals, plus the ending balance, from page 1. The preview says "All N rows match the statement's totals" or lists what doesn't.
+- **pdf.js quirks it handles:**
+  - It merges nearby pieces into one item, sometimes with no space (`"01-06-26 00:27 Payment"`, `"9,975.00K PLUS"`, `"Account Number123-..."`). Items left of Details are split at date/time/money tokens, with x estimated from the measured width `w`.
+  - A long Channel merged with Details is split at the details column's start x, only when `w` is present.
+  - Footer text is dropped by content, not position: on a full page the last row shares a line with `KBPDF (...)`.
+  - Right-aligned short balances (`4.79`) reach into the Channel x range, so money is classified before columns.
+- **Descriptions:** "Paid for Ref X1234", "From/To [bank] X1234" and "++" are stripped. `(A/C Name: ...)` is dropped from the description but kept in the categorization key.
+- **Verified by hand** on a real 32-page K PLUS statement: 1,022 rows, all five checks match exactly. That statement is not in the repo; only synthetic data is.
+
+✅ **Preview and import (`services/statementImport.js`, `controllers/statementController.js`).**
+- **`row_key`** = `stmt:` + sha256(user | bank | account | date | time | amount | balance-after), stored in `transactions.slip_hash`. Its UNIQUE constraint makes re-importing the same or an overlapping statement a no-op (`upsert … ignoreDuplicates`). The key is per user, and the balance-after keeps two identical same-minute payments distinct.
+- **Statuses** (only `new` starts ticked):
+  - `imported`: the key is already stored; disabled in the list.
+  - `own_transfer`: To/From a name that's a prefix of the account holder's name. KBank truncates names; titles are ignored.
+  - `possible_duplicate`: a manually logged transaction on the same Bangkok day with the same amount and type, matched one-to-one.
+- **Categories:** keyword rules first, for Thai brands. They are ordered brands before places, so "LAWSON … MRT" is Shopping and "KFC … PTT" is Food. E-wallet top-ups (GrabPay, TrueMoney, LINE Pay, G-Wallet, YouTrip) are left uncategorized (Others), since they move money rather than buy something. The rest goes to `gpt-4o-mini` in batches of 60 unique names, using the user's own categories. Fallbacks are Others / Income. Income skips the LLM when the user has only one income category.
+- **Import:** `transaction_date` is the Bangkok date and time (`…T00:27:00+07:00`, noon when there's no time). `payment_method: 'BANK'`. An optional account is linked as from_account (expense) or to_account (income). Account balances are **not** adjusted (owner decision: statement rows are history and the balance is already current), and no budget alerts fire. Every row is validated (key shape, date shape, positive amount, the category belongs to the user and matches the type) before anything is written.
+- **Size limits:** parse accepts at most 100 pages / 60,000 pieces; import at most 3,000 rows.
+
+**Tests:**
+- `api/statement_parser` (20, pure): the synthetic statement, a tampered balance, an unsupported format, y jitter, and a pdf.js-merge simulation.
+- `api/statements` (31, free): no OpenAI calls, since every sample merchant hits a keyword rule.
+- `liff/statement_import` (24): a real PDF written by `tests/fixtures/kbankStatement.js` (`statementPdf()`, Helvetica 6.5pt, ASCII rows only) goes through real pdf.js from cdnjs. Also covers an unsupported PDF and the pdf.js CDN blocked.
+- Not covered by tests: password-protected PDFs, since generating an encrypted PDF needs a library.
+
+**Not built:** other banks, credit card statements, e-wallet exports.
 
 ### Event Budgets, Verified Export Email, LIFF Nav Restructure
 

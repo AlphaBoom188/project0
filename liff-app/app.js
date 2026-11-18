@@ -318,6 +318,27 @@ const el = {
   txnFilterStart: document.getElementById('txn-filter-start'),
   txnFilterEnd: document.getElementById('txn-filter-end'),
   exportCsvButton: document.getElementById('export-csv-button'),
+  // Bank statement import (Transactions tab)
+  importStatementButton: document.getElementById('import-statement-button'),
+  stmtModal: document.getElementById('statement-modal'),
+  stmtPick: document.getElementById('stmt-pick'),
+  stmtFile: document.getElementById('stmt-file'),
+  stmtPassword: document.getElementById('stmt-password'),
+  stmtAccount: document.getElementById('stmt-account'),
+  stmtProgress: document.getElementById('stmt-progress'),
+  stmtPickError: document.getElementById('stmt-pick-error'),
+  stmtRead: document.getElementById('stmt-read'),
+  stmtCancel: document.getElementById('stmt-cancel'),
+  stmtReview: document.getElementById('stmt-review'),
+  stmtSummary: document.getElementById('stmt-summary'),
+  stmtVerify: document.getElementById('stmt-verify'),
+  stmtCounts: document.getElementById('stmt-counts'),
+  stmtSelectNew: document.getElementById('stmt-select-new'),
+  stmtSelectNone: document.getElementById('stmt-select-none'),
+  stmtRows: document.getElementById('stmt-rows'),
+  stmtReviewError: document.getElementById('stmt-review-error'),
+  stmtImport: document.getElementById('stmt-import'),
+  stmtBack: document.getElementById('stmt-back'),
   exportEmailButton: document.getElementById('export-email-button'),
   exportStatus: document.getElementById('export-status'),
   txnFullList: document.getElementById('txn-full-list'),
@@ -2573,6 +2594,197 @@ async function handleDeleteGoal() {
   }
 }
 
+// ---- Bank statement import (Transactions tab) ----
+//
+// pdf.js (cdnjs, loaded on first use) opens the PDF here, including its
+// password, which never leaves the phone. Each page's text pieces go to
+// POST /statements/:u/parse as { x, y, s }; the backend rebuilds the rows
+// (services/statementParser.js), checks them against the statement's own
+// totals, and returns a preview with categories and statuses. Only 'new'
+// rows start ticked: own-account transfers, rows already imported and
+// possible duplicates of manual entries start unticked.
+const PDFJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+const PDFJS_WORKER_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+let pdfjsPromise = null;
+let stmtPreview = null;
+let stmtCategories = { expense: [], income: [] };
+
+function loadPdfJs() {
+  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  pdfjsPromise ||= new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = PDFJS_URL;
+    script.onload = () => {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_URL;
+      resolve(window.pdfjsLib);
+    };
+    script.onerror = () => { pdfjsPromise = null; reject(new Error("Couldn't load the PDF reader. Check your connection and try again.")); };
+    document.head.appendChild(script);
+  });
+  return pdfjsPromise;
+}
+
+// [[{ x, y, s }]] per page, PDF points with y from the bottom.
+async function extractPdfPages(file, password, onProgress) {
+  const pdfjsLib = await loadPdfJs();
+  const data = new Uint8Array(await file.arrayBuffer());
+  let doc;
+  try {
+    doc = await pdfjsLib.getDocument({ data, password: password || undefined }).promise;
+  } catch (error) {
+    if (error && error.name === 'PasswordException') {
+      throw new Error(password ? 'Wrong password for this PDF.' : 'This PDF is password-protected. Enter its password above.');
+    }
+    throw new Error(`Couldn't open this PDF (${error && error.message ? error.message : 'unknown error'}).`);
+  }
+  const pages = [];
+  for (let i = 1; i <= doc.numPages; i += 1) {
+    onProgress(i, doc.numPages);
+    const page = await doc.getPage(i);
+    const content = await page.getTextContent();
+    pages.push(content.items
+      .filter((it) => it.str && it.str.trim())
+      .map((it) => ({ x: Math.round(it.transform[4] * 10) / 10, y: Math.round(it.transform[5] * 10) / 10, w: Math.round(it.width * 10) / 10, s: it.str })));
+  }
+  doc.destroy();
+  return pages;
+}
+
+const stripStatus = (message) => String(message).replace(/^\[\d+\]\s*/, '');
+
+async function openStatementModal() {
+  el.stmtPick.hidden = false;
+  el.stmtReview.hidden = true;
+  el.stmtProgress.hidden = true;
+  el.stmtFile.value = '';
+  clearModalError(el.stmtPickError);
+  el.stmtRead.disabled = false;
+  try {
+    const { accounts } = await cachedGet(`/accounts/${lineUserId}`);
+    el.stmtAccount.innerHTML = '<option value="">Don\'t link</option>' +
+      accounts.map((a) => `<option value="${a.id}">${escapeHtml(a.account_name)}</option>`).join('');
+  } catch {
+    // linking is optional; the select just stays at "Don't link"
+  }
+  el.stmtModal.hidden = false;
+}
+
+function closeStatementModal() {
+  el.stmtModal.hidden = true;
+  stmtPreview = null;
+  el.stmtRows.innerHTML = '';
+}
+
+async function handleStatementRead(event) {
+  event.preventDefault();
+  const file = el.stmtFile.files && el.stmtFile.files[0];
+  if (!file) return;
+  clearModalError(el.stmtPickError);
+  el.stmtRead.disabled = true;
+  el.stmtProgress.hidden = false;
+  el.stmtProgress.textContent = 'Opening PDF…';
+  try {
+    const pages = await extractPdfPages(file, el.stmtPassword.value.trim(), (i, n) => {
+      el.stmtProgress.textContent = `Reading page ${i} of ${n}…`;
+    });
+    el.stmtProgress.textContent = 'Matching rows and categories…';
+    const [preview, cats] = await Promise.all([
+      apiRequest(`/statements/${lineUserId}/parse`, { method: 'POST', body: JSON.stringify({ pages }) }),
+      cachedGet(`/categories/${lineUserId}`),
+    ]);
+    stmtCategories = {
+      expense: cats.categories.filter((c) => c.type === 'expense'),
+      income: cats.categories.filter((c) => c.type === 'income'),
+    };
+    stmtPreview = preview;
+    el.stmtPassword.value = '';
+    renderStatementReview();
+  } catch (error) {
+    showModalError(el.stmtPickError, stripStatus(error.message));
+  } finally {
+    el.stmtRead.disabled = false;
+    el.stmtProgress.hidden = true;
+  }
+}
+
+const STMT_STATUS_LABEL = { imported: 'Already imported', own_transfer: 'Own transfer', possible_duplicate: 'Possible duplicate' };
+
+function renderStatementReview() {
+  const p = stmtPreview;
+  el.stmtPick.hidden = true;
+  el.stmtReview.hidden = false;
+  clearModalError(el.stmtReviewError);
+  const fmt = (ymd) => new Date(`${ymd}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+  el.stmtSummary.textContent = `KBank •••${p.account_last4 || '----'} · ${p.period_start ? `${fmt(p.period_start)} – ${fmt(p.period_end)}` : `${p.counts.total} rows`}`;
+  el.stmtVerify.textContent = p.verified
+    ? `All ${p.counts.total} rows match the statement's totals.`
+    : `Check before importing: ${[...p.checks.filter((c) => !c.ok).map((c) => c.label.replace(/_/g, ' ')), ...p.warnings].slice(0, 3).join('; ')}`;
+  el.stmtVerify.classList.toggle('warn', !p.verified);
+  const c = p.counts;
+  el.stmtCounts.textContent = [`${c.new} new`, c.own_transfer && `${c.own_transfer} own transfers`, c.possible_duplicate && `${c.possible_duplicate} possible duplicates`, c.imported && `${c.imported} already imported`]
+    .filter(Boolean).join(' · ');
+
+  el.stmtRows.innerHTML = p.rows.map((r, i) => {
+    const options = stmtCategories[r.type]
+      .map((cat) => `<option value="${cat.id}"${cat.id === r.category_id ? ' selected' : ''}>${escapeHtml(cat.name)}</option>`).join('');
+    const status = STMT_STATUS_LABEL[r.status];
+    return `<li class="stmt-row${r.status === 'new' ? '' : ' muted'}">
+      <label class="stmt-check"><input type="checkbox" data-i="${i}"${r.status === 'new' ? ' checked' : ''}${r.status === 'imported' ? ' disabled' : ''} aria-label="Import this row" /></label>
+      <div class="stmt-main">
+        <div class="stmt-line"><span class="stmt-desc">${escapeHtml(r.description)}</span>
+          <span class="stmt-amount ${r.type}">${r.type === 'expense' ? '-' : '+'}${formatMoney(r.amount, 'THB')}</span></div>
+        <div class="stmt-meta">${escapeHtml(fmt(r.date))}${r.time ? ` ${r.time}` : ''}${status ? ` · <span class="stmt-status">${status}</span>` : ''}</div>
+        ${r.note && r.status === 'possible_duplicate' ? `<div class="stmt-meta">${escapeHtml(r.note)}</div>` : ''}
+        <select class="stmt-cat" data-i="${i}" aria-label="Category">${options}</select>
+      </div>
+    </li>`;
+  }).join('');
+  updateStatementImportButton();
+}
+
+function stmtCheckedIndexes() {
+  return [...el.stmtRows.querySelectorAll('input[type="checkbox"]:checked')].map((cb) => Number(cb.dataset.i));
+}
+
+function updateStatementImportButton() {
+  const n = stmtCheckedIndexes().length;
+  el.stmtImport.textContent = n ? `Import ${n} transaction${n === 1 ? '' : 's'}` : 'Import';
+  el.stmtImport.disabled = n === 0;
+}
+
+function selectStatementRows(mode) {
+  el.stmtRows.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+    if (!cb.disabled) cb.checked = mode === 'new' && stmtPreview.rows[Number(cb.dataset.i)].status === 'new';
+  });
+  updateStatementImportButton();
+}
+
+async function handleStatementImport() {
+  const picked = stmtCheckedIndexes();
+  if (!picked.length) return;
+  const catFor = new Map([...el.stmtRows.querySelectorAll('select.stmt-cat')].map((sel) => [Number(sel.dataset.i), sel.value]));
+  const rows = picked.map((i) => {
+    const r = stmtPreview.rows[i];
+    return { row_key: r.row_key, transaction_date: r.transaction_date, description: r.description, amount: r.amount, type: r.type, category_id: catFor.get(i) || r.category_id };
+  });
+  el.stmtImport.disabled = true;
+  clearModalError(el.stmtReviewError);
+  try {
+    const result = await apiRequest(`/statements/${lineUserId}/import`, {
+      method: 'POST',
+      body: JSON.stringify({ rows, account_id: el.stmtAccount.value || null }),
+    });
+    closeStatementModal();
+    el.exportStatus.hidden = false;
+    el.exportStatus.textContent = `Imported ${result.imported} transaction${result.imported === 1 ? '' : 's'}` +
+      (result.skipped ? ` (${result.skipped} already imported)` : '') + '.';
+    loadTransactionsTab().catch((error) => showError(error.message));
+  } catch (error) {
+    showModalError(el.stmtReviewError, stripStatus(error.message));
+    el.stmtImport.disabled = false;
+  }
+}
+
 // ---- Net Worth tab: accounts/savings, investments, emergency fund ----
 async function loadNetWorthTab() {
   // Independent of the portfolio fetch below, so a portfolio failure (e.g. a
@@ -3403,6 +3615,14 @@ el.txnPeriodNext.addEventListener('click', () => setTxnRange('cycle', Math.min(0
 el.txnFilterStart.addEventListener('change', () => loadTransactionsTab().catch((error) => showError(error.message)));
 el.txnFilterEnd.addEventListener('change', () => loadTransactionsTab().catch((error) => showError(error.message)));
 el.exportCsvButton.addEventListener('click', handleExportCsv);
+el.importStatementButton.addEventListener('click', openStatementModal);
+el.stmtPick.addEventListener('submit', handleStatementRead);
+el.stmtCancel.addEventListener('click', closeStatementModal);
+el.stmtBack.addEventListener('click', () => { el.stmtReview.hidden = true; el.stmtPick.hidden = false; });
+el.stmtSelectNew.addEventListener('click', () => selectStatementRows('new'));
+el.stmtSelectNone.addEventListener('click', () => selectStatementRows('none'));
+el.stmtRows.addEventListener('change', (event) => { if (event.target.type === 'checkbox') updateStatementImportButton(); });
+el.stmtImport.addEventListener('click', handleStatementImport);
 el.exportEmailButton.addEventListener('click', handleExportEmail);
 
 el.settingNotifications.addEventListener('change', () => handlePreferenceToggle('notifications_enabled', el.settingNotifications));
