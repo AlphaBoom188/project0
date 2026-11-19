@@ -746,7 +746,7 @@ function renderSummary(transactions, periodLabel) {
   el.summaryIncome.textContent = totals.income.toFixed(2);
   el.summaryExpense.textContent = totals.expense.toFixed(2);
   el.summaryNet.textContent = net.toFixed(2);
-  el.summaryNet.style.color = net >= 0 ? 'var(--color-income)' : 'var(--color-expense)';
+  el.summaryNet.style.color = net >= 0 ? 'var(--income)' : 'var(--destructive)';
 }
 
 // Grouped under one header per local calendar day (input is newest-first, so
@@ -1019,12 +1019,75 @@ async function renderAddExpenseCategoryOptions() {
   el.fieldCategory.innerHTML = autoOption + categoryOptions;
 }
 
+// ---- AI states (owner's UI rules, after beautifului.dev) ----
+// One status line per AI moment. data-state drives the look in CSS:
+//   working: spinning Lucide loader + elapsed seconds (from 1s on)
+//   done:    "AI suggestion" sparkle; fields it filled get an AI tag
+//   error:   alert icon, role=alert
+//   info:    plain hint (e.g. "Listening...")
+// textContent stays the plain message (icons and timer are CSS-only), so
+// screen readers and tests read exactly the sentence.
+const aiStatusTimers = new WeakMap();
+function setAiStatus(node, state, text) {
+  clearInterval(aiStatusTimers.get(node));
+  node.hidden = false;
+  node.textContent = text;
+  node.dataset.state = state;
+  node.classList.toggle('scan-error', state === 'error');
+  node.setAttribute('role', state === 'error' ? 'alert' : 'status');
+  node.setAttribute('aria-busy', state === 'working' ? 'true' : 'false');
+  delete node.dataset.elapsed;
+  if (state !== 'working') return;
+  const started = Date.now();
+  aiStatusTimers.set(node, setInterval(() => {
+    if (node.hidden || node.dataset.state !== 'working') { clearInterval(aiStatusTimers.get(node)); return; }
+    const sec = Math.floor((Date.now() - started) / 1000);
+    if (sec >= 1) node.dataset.elapsed = `${sec}s`;
+  }, 500));
+}
+
+function hideAiStatus(node) {
+  clearInterval(aiStatusTimers.get(node));
+  node.hidden = true;
+  node.classList.remove('scan-error');
+  delete node.dataset.state;
+  delete node.dataset.elapsed;
+}
+
+// Skeleton shimmer on the fields an AI call is about to fill.
+function setFieldsLoading(inputs, on) {
+  inputs.forEach((input) => input.classList.toggle('is-loading', on));
+}
+
+// Tags each AI-filled field "AI"; the first edit flips it to "Edited".
+function markAiFilled(inputs) {
+  inputs.forEach((input) => {
+    const label = input.closest('label.field');
+    if (!label) return;
+    let tag = label.querySelector('.ai-tag');
+    if (!tag) {
+      tag = document.createElement('span');
+      tag.className = 'ai-tag';
+      label.insertBefore(tag, input);
+    }
+    tag.textContent = 'AI';
+    tag.classList.remove('is-edited');
+    const onEdit = () => { tag.textContent = 'Edited'; tag.classList.add('is-edited'); };
+    input.addEventListener(input.tagName === 'SELECT' ? 'change' : 'input', onEdit, { once: true });
+  });
+}
+
+function clearAiMarks(root) {
+  root.querySelectorAll('.ai-tag').forEach((t) => t.remove());
+}
+
 function resetReceiptScanState() {
   el.fieldReceiptImage.value = '';
   el.receiptPreview.hidden = true;
   el.receiptPreview.removeAttribute('src');
-  el.scanStatus.hidden = true;
-  el.scanStatus.classList.remove('scan-error');
+  hideAiStatus(el.scanStatus);
+  setFieldsLoading(aiFormFields(), false);
+  clearAiMarks(el.addExpenseForm);
   scannedThumbnailPath = null;
 }
 
@@ -1062,11 +1125,11 @@ let voice = null; // { recorder, stream, chunks, timer, startedAt, cancelled }
 
 const voiceSupported = () => !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
 
-function setScanStatus(text, isError = false) {
-  el.scanStatus.hidden = false;
-  el.scanStatus.classList.toggle('scan-error', isError);
-  el.scanStatus.textContent = text;
+function setScanStatus(text, state = 'info') {
+  setAiStatus(el.scanStatus, state === true ? 'error' : state, text);
 }
+
+const aiFormFields = () => [el.fieldAmount, el.fieldDescription, el.fieldDate, el.fieldCategory];
 
 function setVoiceButton(recording, seconds = 0) {
   el.voiceButton.classList.toggle('recording', recording);
@@ -1085,7 +1148,7 @@ async function toggleVoiceRecording() {
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch (error) {
     const blocked = error && (error.name === 'NotAllowedError' || error.name === 'SecurityError');
-    setScanStatus(blocked ? 'Microphone access is blocked. Allow it for LINE in your phone\'s settings, then try again.' : `Couldn't start the microphone (${error && error.message ? error.message : 'unknown error'}).`, true);
+    setScanStatus(blocked ? 'Microphone access is blocked. Allow it for LINE in your phone\'s settings, then try again.' : `Couldn't start the microphone (${error && error.message ? error.message : 'unknown error'}).`, 'error');
     return;
   }
   const mimeType = VOICE_TYPES.find((t) => window.MediaRecorder.isTypeSupported && window.MediaRecorder.isTypeSupported(t));
@@ -1118,10 +1181,11 @@ async function finishVoiceRecording(rec, mimeType) {
   if (rec.cancelled) return;
   const blob = new Blob(rec.chunks, { type: mimeType });
   if (Date.now() - rec.startedAt < 600 || blob.size < 500) {
-    setScanStatus('That was too short. Hold on a moment longer and try again.', true);
+    setScanStatus('That was too short. Hold on a moment longer and try again.', 'error');
     return;
   }
-  setScanStatus('Working it out…');
+  setScanStatus('Working it out…', 'working');
+  setFieldsLoading([el.fieldAmount, el.fieldDescription, el.fieldCategory], true);
   el.voiceButton.disabled = true;
   try {
     const { base64 } = await blobToBase64AndHash(blob);
@@ -1132,16 +1196,18 @@ async function finishVoiceRecording(rec, mimeType) {
     if (el.addExpenseModal.hidden) return; // closed while we were working
     const e = result.expense;
     if (!e.is_expense) {
-      setScanStatus(`Heard: "${result.transcript}". No amount found. Try again, or type it below.`, true);
+      setScanStatus(`Heard: "${result.transcript}". No amount found. Try again, or type it below.`, 'error');
       return;
     }
     el.fieldAmount.value = e.amount;
     if (e.description) el.fieldDescription.value = e.description;
     if (e.category_id) el.fieldCategory.value = e.category_id;
-    setScanStatus(`Heard: "${result.transcript}". Review the details below before saving.`);
+    markAiFilled([el.fieldAmount, e.description && el.fieldDescription, e.category_id && el.fieldCategory].filter(Boolean));
+    setScanStatus(`Heard: "${result.transcript}". Review the details below before saving.`, 'done');
   } catch (error) {
-    setScanStatus(String(error.message).replace(/^\[\d+\]\s*/, ''), true);
+    setScanStatus(String(error.message).replace(/^\[\d+\]\s*/, ''), 'error');
   } finally {
+    setFieldsLoading(aiFormFields(), false);
     el.voiceButton.disabled = false;
   }
 }
@@ -1188,9 +1254,8 @@ async function handleReceiptFileChange(event) {
   if (!file) return;
 
   clearModalError(el.modalError);
-  el.scanStatus.hidden = false;
-  el.scanStatus.classList.remove('scan-error');
-  el.scanStatus.textContent = 'Scanning receipt…';
+  setAiStatus(el.scanStatus, 'working', 'Scanning receipt…');
+  setFieldsLoading(aiFormFields(), true);
 
   try {
     const resizedBlob = await resizeImageToJpegBlob(file);
@@ -1210,11 +1275,16 @@ async function handleReceiptFileChange(event) {
     if (data.date) el.fieldDate.value = data.date;
     if (data.suggested_category_id) el.fieldCategory.value = data.suggested_category_id;
     scannedThumbnailPath = data.thumbnail_path || null;
+    markAiFilled([
+      data.amount != null && el.fieldAmount, data.merchant && el.fieldDescription,
+      data.date && el.fieldDate, data.suggested_category_id && el.fieldCategory,
+    ].filter(Boolean));
 
-    el.scanStatus.textContent = 'Scanned — review the details below before saving.';
+    setAiStatus(el.scanStatus, 'done', 'Scanned — review the details below before saving.');
   } catch (error) {
-    el.scanStatus.classList.add('scan-error');
-    el.scanStatus.textContent = error.message;
+    setAiStatus(el.scanStatus, 'error', error.message);
+  } finally {
+    setFieldsLoading(aiFormFields(), false);
   }
 }
 
@@ -1330,7 +1400,7 @@ function addParticipantRow(name = '', amount = '') {
   row.innerHTML = `
     <input type="text" class="bill-participant-name" placeholder="Name" maxlength="128" />
     <input type="number" class="bill-participant-amount" placeholder="Amount" step="0.01" min="0" ${billSplitType === 'custom' ? '' : 'hidden'} />
-    <button type="button" class="bill-row-remove" aria-label="Remove">&times;</button>
+    <button type="button" class="bill-row-remove" aria-label="Remove"><svg class="lucide lucide-x" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg></button>
   `;
   row.querySelector('.bill-participant-name').value = name;
   row.querySelector('.bill-participant-amount').value = amount;
@@ -1350,7 +1420,7 @@ function addItemRow(name = '', amount = '', participantIndex = null) {
   row.innerHTML = `
     <input type="text" class="bill-item-name" placeholder="Item" maxlength="128" />
     <input type="number" class="bill-item-amount" placeholder="Amount" step="0.01" min="0.01" />
-    <button type="button" class="bill-row-remove" aria-label="Remove">&times;</button>
+    <button type="button" class="bill-row-remove" aria-label="Remove"><svg class="lucide lucide-x" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg></button>
     <div class="assign-chips" role="group" aria-label="Assign to"></div>
   `;
   row.querySelector('.bill-item-name').value = name;
@@ -1371,9 +1441,7 @@ async function handleBillReceiptFileChange(event) {
   if (!file) return;
 
   clearModalError(el.billModalError);
-  el.billScanStatus.hidden = false;
-  el.billScanStatus.classList.remove('scan-error');
-  el.billScanStatus.textContent = 'Scanning receipt…';
+  setAiStatus(el.billScanStatus, 'working', 'Scanning receipt…');
 
   try {
     const resizedBlob = await resizeImageToJpegBlob(file);
@@ -1392,10 +1460,9 @@ async function handleBillReceiptFileChange(event) {
     if (data.service_charge) addItemRow('Service Charge', data.service_charge, null);
     if (data.total != null) el.billFieldTotal.value = data.total;
 
-    el.billScanStatus.textContent = 'Scanned — assign each item to a person below, or leave it Shared.';
+    setAiStatus(el.billScanStatus, 'done', 'Scanned — assign each item to a person below, or leave it Shared.');
   } catch (error) {
-    el.billScanStatus.classList.add('scan-error');
-    el.billScanStatus.textContent = error.message;
+    setAiStatus(el.billScanStatus, 'error', error.message);
   }
 }
 
@@ -1405,8 +1472,7 @@ function resetBillModal() {
   el.billParticipantsList.innerHTML = '';
   el.billItemsList.innerHTML = '';
   el.billFieldReceiptImage.value = '';
-  el.billScanStatus.hidden = true;
-  el.billScanStatus.classList.remove('scan-error');
+  hideAiStatus(el.billScanStatus);
   setBillSplitType('equal');
   addParticipantRow();
 }
@@ -1656,7 +1722,7 @@ function renderCategoryBreakdown(transactions, periodStart, periodEnd, type = 'e
   const total = rows.reduce((sum, [, amount]) => sum + amount, 0);
   el.breakdownTotalLabel.textContent = type === 'income' ? 'Earned this cycle' : 'Spent this cycle';
   el.breakdownTotalValue.textContent = total.toFixed(2);
-  el.breakdownTotalValue.style.color = type === 'income' ? 'var(--color-income)' : 'var(--color-expense)';
+  el.breakdownTotalValue.style.color = type === 'income' ? 'var(--income)' : 'var(--destructive)';
   const maxValue = Math.max(1, ...rows.map(([, amount]) => amount));
 
   el.categoryChart.innerHTML = rows
@@ -1718,7 +1784,7 @@ const formatSignedMoney = (value, currency) => `${value >= 0 ? '+' : ''}${format
 const formatSignedPercent = (pct) => `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
 // Fractional shares to 5 decimals, like Yahoo Finance's lot view.
 const formatShares = (quantity) => parseFloat(quantity).toLocaleString('en-US', { maximumFractionDigits: 5 });
-const gainColor = (value) => (value >= 0 ? 'var(--color-income)' : 'var(--color-expense)');
+const gainColor = (value) => (value >= 0 ? 'var(--income)' : 'var(--destructive)');
 
 // Mirrors portfolioController.js's defaultCurrency: Thai listings (.BK),
 // mutual funds and gold are THB, everything else USD.
@@ -2390,14 +2456,14 @@ function perfDatasets(points) {
   });
   if (perfView === 'value') {
     return [
-      line('Portfolio', points.map((p) => p.value_thb), '--color-accent'),
-      line('Invested', points.map((p) => p.invested_thb), '--color-text-secondary', { borderDash: [6, 4], borderWidth: 1.5 }),
+      line('Portfolio', points.map((p) => p.value_thb), '--primary'),
+      line('Invested', points.map((p) => p.invested_thb), '--muted-foreground', { borderDash: [6, 4], borderWidth: 1.5 }),
     ];
   }
   return [
-    line('Portfolio', points.map((p) => p.twr_pct), '--color-accent'),
-    line('S&P 500', points.map((p) => p.sp500_pct), '--color-warning', { borderWidth: 1.5 }),
-    line('SET', points.map((p) => p.set_pct), '--color-text-primary', { borderWidth: 1.5 }),
+    line('Portfolio', points.map((p) => p.twr_pct), '--primary'),
+    line('S&P 500', points.map((p) => p.sp500_pct), '--warning', { borderWidth: 1.5 }),
+    line('SET', points.map((p) => p.set_pct), '--foreground', { borderWidth: 1.5 }),
   ];
 }
 
@@ -2418,8 +2484,8 @@ function renderPerfChart() {
   const { points } = perfData;
   const isValue = perfView === 'value';
   const formatValue = (v) => (v === null || v === undefined ? '—' : isValue ? formatMoney(v, 'THB') : formatSignedPercent(v));
-  const textColor = cssToken('--color-text-secondary');
-  const gridColor = cssToken('--color-border');
+  const textColor = cssToken('--muted-foreground');
+  const gridColor = cssToken('--border');
   perfChart = new window.Chart(el.perfChartCanvas, {
     type: 'line',
     data: { labels: points.map((p) => p.date), datasets: perfDatasets(points) },
@@ -2538,9 +2604,9 @@ function renderDivChart() {
   el.divChartWrap.hidden = false;
 
   const { series } = divData;
-  const received = cssToken('--color-income');
-  const textColor = cssToken('--color-text-secondary');
-  const gridColor = cssToken('--color-border');
+  const received = cssToken('--income');
+  const textColor = cssToken('--muted-foreground');
+  const gridColor = cssToken('--border');
   const bar = (label, key, color) => ({ label, data: series.map((b) => b[key]), backgroundColor: color, borderColor: color, borderWidth: 0, stack: 'dividends' });
   divChart = new window.Chart(el.divChartCanvas, {
     type: 'bar',
@@ -2660,7 +2726,7 @@ function renderGoal(data) {
     el.goalNote.hidden = false;
     el.goalNote.textContent = `Progress unavailable: ${p.current_value_error}`;
   }
-  el.goalStatus.style.color = p.status === 'ahead' ? 'var(--color-income)' : p.status === 'behind' ? 'var(--color-expense)' : '';
+  el.goalStatus.style.color = p.status === 'ahead' ? 'var(--income)' : p.status === 'behind' ? 'var(--destructive)' : '';
 
   el.goalTableBody.innerHTML = p.yearly
     .map((y) => `<tr><td>${y.year_index} <span class="goal-table-sub">${escapeHtml(formatGoalMonth(y.end_date))}</span></td>`
@@ -2697,10 +2763,10 @@ function renderGoalChart() {
   const thisMonth = bangkokYmd().slice(0, 7);
   let todayIndex = -1;
   if (p.status !== 'not_started' && p.current_value_thb !== null) points.forEach((pt, i) => { if (pt.date <= thisMonth) todayIndex = i; });
-  const accent = cssToken('--color-accent');
-  const secondary = cssToken('--color-text-secondary');
-  const highlight = cssToken('--color-warning');
-  const gridColor = cssToken('--color-border');
+  const accent = cssToken('--primary');
+  const secondary = cssToken('--muted-foreground');
+  const highlight = cssToken('--warning');
+  const gridColor = cssToken('--border');
   const line = (label, key, color, extra = {}) => ({
     label, data: points.map((pt) => pt[key]), borderColor: color, backgroundColor: color,
     borderWidth: 2, pointRadius: 0, pointHoverRadius: 3, tension: 0.2, ...extra,
@@ -2710,7 +2776,7 @@ function renderGoalChart() {
     line('Contributed', 'contributed', secondary, { borderDash: [6, 4], borderWidth: 1.5 }),
   ];
   if (!p.target_is_projected) {
-    datasets.push(line('Target', 'target', cssToken('--color-text-primary'), {
+    datasets.push(line('Target', 'target', cssToken('--foreground'), {
       data: points.map(() => p.target_value), borderDash: [2, 3], borderWidth: 1.5, pointHoverRadius: 0, tension: 0,
     }));
   }
@@ -3005,13 +3071,12 @@ async function handleStatementRead(event) {
   if (!file) return;
   clearModalError(el.stmtPickError);
   el.stmtRead.disabled = true;
-  el.stmtProgress.hidden = false;
-  el.stmtProgress.textContent = 'Opening PDF…';
+  setAiStatus(el.stmtProgress, 'working', 'Opening PDF…');
   try {
     const pages = await extractPdfPages(file, el.stmtPassword.value.trim(), (i, n) => {
       el.stmtProgress.textContent = `Reading page ${i} of ${n}…`;
     });
-    el.stmtProgress.textContent = 'Matching rows and categories…';
+    setAiStatus(el.stmtProgress, 'working', 'Matching rows and categories…');
     const [preview, cats] = await Promise.all([
       apiRequest(`/statements/${lineUserId}/parse`, { method: 'POST', body: JSON.stringify({ pages }) }),
       cachedGet(`/categories/${lineUserId}`),
@@ -3027,7 +3092,7 @@ async function handleStatementRead(event) {
     showModalError(el.stmtPickError, stripStatus(error.message));
   } finally {
     el.stmtRead.disabled = false;
-    el.stmtProgress.hidden = true;
+    hideAiStatus(el.stmtProgress);
   }
 }
 

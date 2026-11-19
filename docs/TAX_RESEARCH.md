@@ -297,3 +297,66 @@ Checked against the Revenue Department's 2568 instruction booklets:
 - the exact 30k boundary for parents/dependants.
 
 The extracted booklet text is in the session scratchpad (`rd/Ins90_241268.n.txt` …) for reference while building `taxMath`.
+
+### 7a. 40(8) flat-rate table (Royal Decree 11 §8 as amended by Decree 629/2560; Ins90 2568 table 2)
+
+Booklet numbering is used in the UI; the decree number is stored for citation.
+
+**60% flat rate.** Booklet items 2-43 (decree §8 items 42, then 1-41) all get 60%:
+
+| Booklet | Business |
+|---|---|
+| 2 | Instalment land sales |
+| 3 | Gambling/contest fees |
+| 4 | Photo/film processing |
+| 5 | Boatyards |
+| 6 | Footwear and leather |
+| 7 | Tailoring |
+| 8 | Furniture |
+| 9 | Hotel/restaurant/food and drink for sale |
+| 10 | Hair and beauty |
+| 11 | Soap/cosmetics |
+| 12 | Literary works |
+| 13 | Gold and gem trading |
+| 14 | In-patient clinics |
+| 15 | Stone crushing |
+| 16 | Forestry/rubber/perennials |
+| 17 | Vehicle transport or hire (Grab etc.) |
+| 18 | Printing |
+| 19 | Mining |
+| 20 | Excise beverages |
+| 21 | Ceramics/cement |
+| 22 | Electricity (incl. selling solar power) |
+| 23 | Ice |
+| 24 | Glue/flour |
+| 25 | Plastics/glass/rubber goods |
+| 26 | Laundry |
+| 27 | **Reselling goods you didn't make** (online shops) |
+| 28 | Racehorse prizes |
+| 29 | ขายฝาก redemption |
+| 30 | Rubber sheets |
+| 31 | Tanning |
+| 32 | Sugar |
+| 33 | Fishing |
+| 34 | Sawmill |
+| 35 | Oil pressing |
+| 36 | Movable hire-purchase |
+| 37 | Rice mill |
+| 38 | Annual crops |
+| 39 | Tobacco curing |
+| 40 | Animal raising |
+| 41 | Slaughtering |
+| 42 | Salt farming |
+| 43 | Selling ships ≥ 6 t |
+
+**Other items:**
+- **Item 1** (decree 43), performers and pro athletes: 60% of the first 300,000, then 40% above, with a 600,000 total cap.
+- **Item 44** (§8 ทวิ), anything unlisted: **actual expenses only**. There is no flat rate (e.g. car repair, per RD ruling rd.go.th/23002.html).
+
+**Choosing actual expenses:**
+- If proven expenses come out lower than the flat rate, only the proven amount is allowed. There is no fallback to the flat rate.
+- The choice is made per income line. This follows from the form's per-line "ร้อยละ / จริง" box; there's no explicit text saying so.
+
+**Record-keeping:** Notice No. 161 (2549) requires every non-VAT earner of 40(5)-(8) income to keep a daily income/expense record, each entry within 3 working days. Our transaction ledger can serve as this record (feature idea).
+
+**Rate changes:** fine arts (40(6)) moved from 30% to 60% by Decree 803 (2569), effective from tax year 2568.

@@ -66,8 +66,8 @@ const chartState = (page) => page.evaluate(() => {
   let chart = await chartState(page);
   assert(chart.type === 'bar' && chart.datasets.map((d) => d.label).join() === 'Received,Projected', `bar chart, Received / Projected (got ${chart && chart.datasets.map((d) => d.label)})`);
   assert(chart.labels.length === 24 && chart.labels[11] === expected.series[11].label, `24 monthly bars (got ${chart.labels.length})`);
-  const income = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--color-income').trim());
-  assert(chart.datasets[0].color === income && /^rgba\(\d+, \d+, \d+, 0\.35\)$/.test(chart.datasets[1].color), `received = --color-income, projected = a lighter version (got ${chart.datasets[0].color}, ${chart.datasets[1].color})`);
+  const income = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--income').trim());
+  assert(chart.datasets[0].color === income && /^rgba\(\d+, \d+, \d+, 0\.35\)$/.test(chart.datasets[1].color), `received = --income, projected = a lighter version (got ${chart.datasets[0].color}, ${chart.datasets[1].color})`);
   assert(chart.datasets[1].data.slice(12).some((v) => v > 0) && chart.datasets[0].data.slice(0, 11).some((v) => v > 0), 'past bars received, future bars projected');
   const tooltip = await page.evaluate(() => {
     const c = window.Chart.getChart(document.getElementById('div-chart'));
@@ -112,7 +112,7 @@ const chartState = (page) => page.evaluate(() => {
   await page.evaluate(() => setTheme('dark'));
   const dark = await chartState(page);
   const textDark = await page.evaluate(() => window.Chart.getChart(document.getElementById('div-chart')).options.plugins.legend.labels.color);
-  const tokenDark = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--color-text-secondary').trim());
+  const tokenDark = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--muted-foreground').trim());
   assert(dark.id !== chart.id && textDark === tokenDark, `theme change re-creates the chart with dark tokens (legend ${textDark})`);
   await page.$eval('#div-card', (c) => c.scrollIntoView());
   await page.screenshot({ path: `${OUTPUT}/dividends_dark.png` });
