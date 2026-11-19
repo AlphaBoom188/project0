@@ -60,6 +60,8 @@ const el = {
   fieldReceiptImage: document.getElementById('field-receipt-image'),
   receiptPreview: document.getElementById('receipt-preview'),
   scanStatus: document.getElementById('scan-status'),
+  voiceButton: document.getElementById('voice-button'),
+  voiceButtonText: document.getElementById('voice-button-text'),
 
   // Tab shell
   tabContent: document.querySelector('.tab-content'),
@@ -1005,6 +1007,8 @@ async function openAddExpenseModal() {
   el.fieldCategory.value = ''; // defaults to "Auto-Categorize", not whatever was left selected last time
   clearModalError(el.modalError);
   resetReceiptScanState();
+  setVoiceButton(false);
+  el.voiceButton.hidden = !voiceSupported();
   el.addExpenseModal.hidden = false;
   try {
     await renderAddExpenseCategoryOptions();
@@ -1014,7 +1018,104 @@ async function openAddExpenseModal() {
 }
 
 function closeAddExpenseModal() {
+  cancelVoiceRecording();
   el.addExpenseModal.hidden = true;
+}
+
+// ---- Voice entry (mic button in Add Expense) ----
+//
+// Records with MediaRecorder (audio/mp4 on iOS, webm/opus on Android), sends
+// it to POST /voice/:u/parse -- the same Typhoon/OpenAI transcription and
+// expense parser as LINE voice messages -- and fills the form. Nothing is
+// saved until the user taps Save, same as receipt scanning.
+const VOICE_MAX_MS = 60 * 1000;
+const VOICE_TYPES = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'];
+let voice = null; // { recorder, stream, chunks, timer, startedAt, cancelled }
+
+const voiceSupported = () => !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+
+function setScanStatus(text, isError = false) {
+  el.scanStatus.hidden = false;
+  el.scanStatus.classList.toggle('scan-error', isError);
+  el.scanStatus.textContent = text;
+}
+
+function setVoiceButton(recording, seconds = 0) {
+  el.voiceButton.classList.toggle('recording', recording);
+  el.voiceButton.setAttribute('aria-pressed', String(recording));
+  el.voiceButtonText.textContent = recording ? `Stop 0:${String(seconds).padStart(2, '0')}` : 'Speak';
+}
+
+async function toggleVoiceRecording() {
+  if (voice) {
+    voice.recorder.stop();
+    return;
+  }
+  clearModalError(el.modalError);
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (error) {
+    const blocked = error && (error.name === 'NotAllowedError' || error.name === 'SecurityError');
+    setScanStatus(blocked ? 'Microphone access is blocked. Allow it for LINE in your phone\'s settings, then try again.' : `Couldn't start the microphone (${error && error.message ? error.message : 'unknown error'}).`, true);
+    return;
+  }
+  const mimeType = VOICE_TYPES.find((t) => window.MediaRecorder.isTypeSupported && window.MediaRecorder.isTypeSupported(t));
+  const recorder = new window.MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+  voice = { recorder, stream, chunks: [], startedAt: Date.now(), cancelled: false, timer: null };
+  const current = voice;
+  recorder.ondataavailable = (e) => { if (e.data && e.data.size) current.chunks.push(e.data); };
+  recorder.onstop = () => finishVoiceRecording(current, recorder.mimeType || mimeType || 'audio/mp4');
+  recorder.start();
+  setVoiceButton(true, 0);
+  setScanStatus('Listening… say something like "กาแฟ 120 บาท", then tap Stop.');
+  current.timer = setInterval(() => {
+    const elapsed = Date.now() - current.startedAt;
+    if (elapsed >= VOICE_MAX_MS) recorder.stop();
+    else setVoiceButton(true, Math.floor(elapsed / 1000));
+  }, 250);
+}
+
+function cancelVoiceRecording() {
+  if (!voice) return;
+  voice.cancelled = true;
+  if (voice.recorder.state !== 'inactive') voice.recorder.stop();
+}
+
+async function finishVoiceRecording(rec, mimeType) {
+  clearInterval(rec.timer);
+  rec.stream.getTracks().forEach((t) => t.stop());
+  if (voice === rec) voice = null;
+  setVoiceButton(false);
+  if (rec.cancelled) return;
+  const blob = new Blob(rec.chunks, { type: mimeType });
+  if (Date.now() - rec.startedAt < 600 || blob.size < 500) {
+    setScanStatus('That was too short. Hold on a moment longer and try again.', true);
+    return;
+  }
+  setScanStatus('Working it out…');
+  el.voiceButton.disabled = true;
+  try {
+    const { base64 } = await blobToBase64AndHash(blob);
+    const result = await apiRequest(`/voice/${lineUserId}/parse`, {
+      method: 'POST',
+      body: JSON.stringify({ audio_base64: base64, mime_type: mimeType }),
+    });
+    if (el.addExpenseModal.hidden) return; // closed while we were working
+    const e = result.expense;
+    if (!e.is_expense) {
+      setScanStatus(`Heard: "${result.transcript}". No amount found. Try again, or type it below.`, true);
+      return;
+    }
+    el.fieldAmount.value = e.amount;
+    if (e.description) el.fieldDescription.value = e.description;
+    if (e.category_id) el.fieldCategory.value = e.category_id;
+    setScanStatus(`Heard: "${result.transcript}". Review the details below before saving.`);
+  } catch (error) {
+    setScanStatus(String(error.message).replace(/^\[\d+\]\s*/, ''), true);
+  } finally {
+    el.voiceButton.disabled = false;
+  }
 }
 
 // Resizes to roughly match the iOS app's OCR payload (keeps upload size and
@@ -3735,6 +3836,7 @@ el.perfRangePills.forEach((pill) => pill.addEventListener('click', () => setPerf
 el.perfViewButtons.forEach((button) => button.addEventListener('click', () => setPerfView(button.dataset.perfView)));
 el.divModeButtons.forEach((button) => button.addEventListener('click', () => setDivMode(button.dataset.divMode)));
 el.homeInvestmentsCard.addEventListener('click', () => switchTab('networth'));
+el.voiceButton.addEventListener('click', toggleVoiceRecording);
 el.closeGroupDetail.addEventListener('click', () => { el.groupDetailModal.hidden = true; });
 el.goalSetupButton.addEventListener('click', openGoalModal);
 el.goalEditButton.addEventListener('click', openGoalModal);

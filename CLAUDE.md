@@ -50,6 +50,7 @@ npm start  # Starts server on port 3000
 - `POST /api/portfolio/:line_user_id/:holding_id/refresh-price`, `POST /api/portfolio/:line_user_id/refresh-all` - Live price refresh (Yahoo Finance for stock/etf, CoinGecko for crypto); 400s for mutual_fund/gold, which have no live source
 - `PUT /api/users/:line_user_id/emergency-fund` - Set the emergency fund goal amount and/or which existing account tracks progress
 - `GET/POST /api/budget-events/:line_user_id` (`?month=YYYY-MM-01`), `PUT/DELETE /api/budget-events/:line_user_id/:event_id` - One-off, single-month event/occasion budget buckets layered on a category, with computed `spent`/`remaining`/`percent`
+- `POST /api/voice/:line_user_id/parse` - LIFF mic button: `{ audio_base64, mime_type }` (audio/mp4, webm, ogg, mpeg, wav; max 3 MB) -> `{ transcript, provider, expense: { is_expense, amount, description, category_id, category_name } }`; writes nothing (422 when nothing was heard)
 - `GET /api/groups/:line_user_id`, `GET /api/groups/:line_user_id/:group_id` - Read-only LINE group split-tracker views for the LIFF Groups card (group ids must be `C`/`R` + 32 hex, else 400; 404 unless the user is or was a member)
 - `POST /api/statements/:line_user_id/parse`, `POST /api/statements/:line_user_id/import` - Bank statement import (KBank savings/current): preview from pdf.js text pieces, then insert the kept rows (see Bank Statement Import below)
 - `GET /api/google/login-url/:line_user_id`, `GET /api/google/callback` - Google OAuth used *only* to verify the CSV-export email (not a login method); 501 if not configured
@@ -167,7 +168,8 @@ project0/
 │   │   ├── billController.js    # Shared bills: create/list/detail/delete, settlement, public share view
 │   │   ├── portfolioController.js # Investment holdings CRUD + computed value/gain/allocation + emergency fund status
 │   │   ├── statementController.js # Bank statement import: parse (preview) + import
-│   │   └── groupController.js   # Read-only LINE group balances for the LIFF Groups card
+│   │   ├── groupController.js   # Read-only LINE group balances for the LIFF Groups card
+│   │   └── voiceController.js   # LIFF mic: transcribe + parse a recording into expense fields
 │   ├── routes/                    # API routes
 │   │   ├── userRoutes.js
 │   │   ├── categoryRoutes.js
@@ -613,7 +615,23 @@ Spec: `docs/master_uxui_specification_finance.md` Screen 2.4, adapted. Table `in
 
 **Tests:** `api/voice_message` (14, free: LINE, transcription and parser stubbed; refusals, Heard row, confirm → transaction, spoken "สรุป", typed text unchanged). `openai/voice_message` (5, plus 1 when a Typhoon key is set): real transcription of `tests/fixtures/voice_coffee_120_th.m4a` ("กาแฟ หนึ่งร้อยยี่สิบ บาท", made with macOS `say -v Kanya` + `afconvert`), bogus-key fallback, and the full webhook producing a 120 card.
 
-**Not built yet:** a mic button in the LIFF Add form.
+✅ **LIFF mic button** (Add Expense, next to Scan Receipt). The flow:
+- `MediaRecorder` records; the preferred type is the first of audio/mp4, webm/opus, ogg/opus that the browser supports. iOS records mp4/AAC; desktop and Android Chrome record `audio/mp4;codecs=opus`. OpenAI accepts both (checked with real Chrome recordings).
+- The button shows "Stop 0:07" while recording and stops automatically at 60 s.
+- `POST /api/voice/:u/parse` runs the same `transcribeVoice()` (now takes `{ mimeType }`) and `parseExpenseText()` as LINE voice messages.
+- The form gets the amount, description and category, with `Heard: "…"` in the status line. Nothing is saved until Save, the same as receipt scanning.
+
+Edge cases:
+- No amount found: the status shows the transcript, in the error style.
+- Under 0.6 s: rejected locally, no request.
+- Microphone permission denied: a hint to allow it for LINE in the phone's settings.
+- No `MediaRecorder`: the button is hidden.
+- Closing the form while recording discards the recording.
+
+**Tests:**
+- `api/voice_endpoint` (6, free: validation only).
+- `openai/voice_message`: now 7, adding the endpoint with the real Thai m4a.
+- `liff/voice_entry` (19). `getUserMedia` hangs in headless Chrome on macOS even with `--use-fake-device-for-media-stream`, so the page gets a WebAudio-tone MediaStream through an init script. The real `MediaRecorder` records it, and the voice endpoint is stubbed.
 
 ### LINE Group Split Tracker
 

@@ -1832,3 +1832,18 @@ body {
   font-size: 13px;
   color: var(--color-text-secondary);
 }
+
+/* ---- Voice entry (Add Expense mic button) ---- */
+.voice-button {
+  gap: var(--space-xs);
+  min-height: var(--tap-min);
+}
+.voice-button .icon {
+  display: inline-flex;
+}
+.voice-button.recording {
+  background: var(--color-danger-bg);
+  color: var(--color-danger-text);
+  border-color: var(--color-danger-border);
+  font-variant-numeric: tabular-nums;
+}

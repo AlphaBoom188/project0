@@ -4,6 +4,8 @@
 // - OpenAI path end to end through the webhook with the real parser.
 // - Typhoon with a bogus key falls back to OpenAI.
 // - With a real TYPHOON_API_KEY in .env: Typhoon itself transcribes the m4a.
+// - The LIFF mic endpoint (POST /api/voice/:u/parse) with the same recording;
+//   needs the backend running (TEST_BASE_URL), like the other suites.
 const { BACKEND, FIXTURES } = require('../lib');
 const fs = require('fs');
 const path = require('path');
@@ -76,6 +78,14 @@ const cleanup = async () => {
   assert(card && card.kind === 'confirm', `the voice message produces a confirmation card (got ${JSON.stringify(card)})`);
   assert(rows[0] && rows[0].label === 'Heard' && mentions120(rows[0].value), `Heard row shows the transcript (got ${rows[0] && rows[0].value})`);
   assert(rows.some((x) => x.label === 'Amount' && x.value === '120'), `the parser reads amount 120 from the transcript (got ${JSON.stringify(rows)})`);
+
+  // --- LIFF mic endpoint, same fixture (iOS MediaRecorder also produces audio/mp4) ---
+  const { BASE } = require('../lib');
+  const r2 = await fetch(`${BASE}/api/voice/${U}/parse`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ audio_base64: AUDIO.toString('base64'), mime_type: 'audio/mp4' }) }).then(async (x) => ({ status: x.status, body: await x.json() }));
+  assert(r2.status === 200 && mentions120(r2.body.transcript) && r2.body.expense.is_expense && r2.body.expense.amount === 120,
+    `POST /api/voice/:u/parse transcribes and parses the recording (got ${r2.status} ${JSON.stringify(r2.body)})`);
+  assert(r2.body.expense.category_name === null || typeof r2.body.expense.category_id === 'string', 'category_id comes with category_name when matched');
 
   await cleanup();
   process.exit(failures ? 1 : 0);

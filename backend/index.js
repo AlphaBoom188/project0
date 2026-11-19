@@ -17,6 +17,7 @@ const portfolioRoutes = require('./routes/portfolioRoutes');
 const budgetEventRoutes = require('./routes/budgetEventRoutes');
 const statementRoutes = require('./routes/statementRoutes');
 const groupRoutes = require('./routes/groupRoutes');
+const voiceRoutes = require('./routes/voiceRoutes');
 const googleRoutes = require('./routes/googleRoutes');
 const { startDailyDigestJob } = require('./jobs/dailyDigest');
 const { startRecurringTransactionsJob } = require('./jobs/recurringTransactions');
@@ -69,6 +70,7 @@ app.use('/api/portfolio', portfolioRoutes);
 app.use('/api/budget-events', budgetEventRoutes);
 app.use('/api/statements', statementRoutes);
 app.use('/api/groups', groupRoutes);
+app.use('/api/voice', voiceRoutes);
 app.use('/api/google', googleRoutes);
 
 // LIFF (LINE MINI App) -- static files, plus a tiny dynamic script so the LIFF ID
