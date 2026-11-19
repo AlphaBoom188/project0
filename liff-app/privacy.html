@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy</title>
+  <script>
+    try {
+      const t = localStorage.getItem('theme');
+      if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+    } catch {}
+  </script>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="legal.css" />
+</head>
+<body>
+  <main class="legal">
+    <p class="lang-switch"><a href="privacy-th.html" lang="th">ภาษาไทย</a></p>
+    <h1>Privacy Policy</h1>
+    <p class="meta">Effective date: [DATE] &middot; Last updated: 19 November 2026</p>
+    <p class="draft"><strong>Draft for review.</strong> Items in [brackets] must be filled in by the operator, and the final text should be reviewed by someone qualified in Thai data protection law (PDPA) before the app is offered to the public.</p>
+
+    <p>This policy explains what personal data the Expense Tracker (the LINE MINI App, the LINE bot "[BOT NAME]", and the iOS app) collects, why, who it is shared with, how long it is kept, and the rights you have under Thailand's Personal Data Protection Act B.E. 2562 (PDPA).</p>
+
+    <h2>1. Who is responsible</h2>
+    <p>The data controller is <strong>[OPERATOR NAME]</strong>, [ADDRESS]. Contact for privacy questions and requests: <strong>[CONTACT EMAIL]</strong>.</p>
+
+    <h2>2. What we collect and why</h2>
+    <table>
+      <tr><th>Data</th><th>Why</th></tr>
+      <tr><td><strong>LINE profile:</strong> your LINE user ID, display name and profile picture link</td><td>To sign you in and keep your data separate from everyone else's. We never receive your LINE password.</td></tr>
+      <tr><td><strong>Financial records you enter or import:</strong> transactions (amount, date, category, description, payment method), accounts and balances, budgets, recurring items, shared bills (including the names you give participants), investments and goals</td><td>To provide the expense tracking, budgeting, reminders and reports you use.</td></tr>
+      <tr><td><strong>Receipt photos</strong> you scan</td><td>To read the amount, date and shop. A small thumbnail is kept with the transaction only if "Save receipt thumbnails" is on (Settings); the full photo is not stored.</td></tr>
+      <tr><td><strong>Voice messages and recordings</strong></td><td>Converted to text to fill in an expense. The audio is not stored.</td></tr>
+      <tr><td><strong>Bank statements</strong> you import</td><td>The PDF and its password are opened on your phone and never sent to us. Only the text of the transaction lines is sent, to create the transactions you choose to import.</td></tr>
+      <tr><td><strong>Messages to the bot</strong> (one-to-one)</td><td>To understand expenses like "coffee 120" and commands like "summary".</td></tr>
+      <tr><td><strong>LINE group activity</strong> (only in groups where the bot was added)</td><td>Group members' LINE user IDs and display names, the group's name, and the expenses, settlements and commands addressed to the bot, to keep the group's shared balances. Ordinary group conversation is not stored.</td></tr>
+      <tr><td><strong>Email address</strong> (optional), including one verified with Google</td><td>Only to send CSV exports you request.</td></tr>
+      <tr><td><strong>Technical data:</strong> error reports and request logs</td><td>To keep the service working and secure. Logs record events and errors, not the content of your messages or receipts.</td></tr>
+      <tr><td><strong>Settings on your phone</strong> (theme, recent statement imports)</td><td>Stored only in your phone's browser storage for convenience.</td></tr>
+    </table>
+    <p>Our legal bases are performance of our service to you (contract), your consent where we ask for it (for example, copying your share of group expenses into your own transactions, which you can turn off in Settings), and our legitimate interest in keeping the service secure.</p>
+
+    <h2>3. Who we share it with</h2>
+    <p>We do not sell your data or use it for advertising. We use these service providers to run the app, under their own data protection terms:</p>
+    <ul>
+      <li><strong>LY Corporation (LINE)</strong>: sign-in, the bot, and notifications.</li>
+      <li><strong>Supabase</strong>: database and file storage ([REGION]).</li>
+      <li><strong>OpenAI</strong>: reading receipts, converting voice to text, understanding typed expenses, and suggesting categories for imported statement lines. Under OpenAI's API terms, data sent this way is not used to train their models by default.</li>
+      <li><strong>Google</strong>: verifying your email address (only if you connect Google) and delivering CSV exports by email.</li>
+      <li><strong>Anthropic</strong>: if enabled by the operator, technical error details are sent for automated diagnosis; these are error messages with identifiers removed, not your financial records.</li>
+      <li><strong>ngrok</strong>: secure tunnelling of connections to our server.</li>
+      <li><strong>Market data (Yahoo Finance, CoinGecko)</strong>: only ticker symbols are sent to fetch prices; no personal data.</li>
+    </ul>
+    <p>In a LINE group, other members can see the expenses, balances and names shown by the bot in that group. A shared-bill link can be opened by anyone you send it to; it shows that bill's title, amounts and participant names. We may also disclose data where required by Thai law.</p>
+
+    <h2>4. Transfers outside Thailand</h2>
+    <p>Some providers above process data outside Thailand (for example, in the United States or Singapore). We use providers that apply appropriate safeguards as required by the PDPA.</p>
+
+    <h2>5. How long we keep it</h2>
+    <ul>
+      <li>Your account data is kept until you delete it. <strong>Settings &rarr; Delete My Account</strong> permanently erases your transactions, categories, accounts, budgets, investments, shared bills, group memberships and receipt thumbnails. Group expenses you paid are removed from those groups' ledgers.</li>
+      <li>Error reports are kept for up to 90 days, alert history for 180 days, scheduled-job records for 30 days, and server logs for up to 30 days.</li>
+      <li>Database backups, if enabled, are kept for up to [7] days and then overwritten.</li>
+      <li>Service providers may keep data for short periods under their own policies (for example, for abuse monitoring).</li>
+    </ul>
+
+    <h2>6. Security</h2>
+    <p>Connections are encrypted (HTTPS). Every request for your data must carry your verified LINE sign-in. Receipt thumbnails are stored privately and shown through short-lived links. We limit how often costly features can be used to prevent abuse. No system is perfectly secure; if a breach affects your data, we will notify you and the authorities as the PDPA requires.</p>
+
+    <h2>7. Your rights</h2>
+    <p>Under the PDPA you can ask to access or get a copy of your data, correct it, delete it, restrict or object to its use, receive it in a portable format, and withdraw consent at any time (this does not affect processing before withdrawal). You can export your transactions as CSV in the app and delete your account in Settings. For anything else, email [CONTACT EMAIL]; we will reply within 30 days. You may also complain to Thailand's Personal Data Protection Committee (PDPC).</p>
+
+    <h2>8. Children</h2>
+    <p>The app is not intended for children. If you are under 20, please use it only with the consent of a parent or guardian.</p>
+
+    <h2>9. Changes</h2>
+    <p>If we change this policy, we will update the date above and, for significant changes, tell you in the app or through the LINE bot.</p>
+  </main>
+</body>
+</html>
