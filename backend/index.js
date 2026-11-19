@@ -43,6 +43,7 @@ const { startDailyDigestJob } = require('./jobs/dailyDigest');
 const { startRecurringTransactionsJob } = require('./jobs/recurringTransactions');
 const { startActivityReminderJob } = require('./jobs/activityReminders');
 const { startPayWindowReminderJob } = require('./jobs/payWindowReminders');
+const { startGroupBillReminderJob } = require('./jobs/groupBillReminders');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -126,6 +127,7 @@ const server = app.listen(PORT, () => {
   startRecurringTransactionsJob();
   startActivityReminderJob();
   startPayWindowReminderJob();
+  startGroupBillReminderJob();
   if (process.env.OPS_AGENT !== 'off') {
     // Watchdog: every 5 minutes, one run per slot.
     cron.schedule('*/5 * * * *', () => {

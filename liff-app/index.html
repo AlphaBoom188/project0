@@ -374,6 +374,44 @@
           </label>
         </div>
 
+        <h2 class="section-title">Get Paid for Group Bills</h2>
+        <div class="settings-card">
+          <p class="danger-text">Shown on bills you collect in LINE groups, only to the members who owe you.</p>
+          <label class="field">
+            PromptPay (mobile or ID number)
+            <input type="text" id="setting-promptpay" inputmode="numeric" maxlength="17" autocomplete="off" />
+          </label>
+          <label class="field">
+            Bank
+            <select id="setting-bank-name">
+              <option value="">None</option>
+              <option>Kasikorn Bank (KBank)</option>
+              <option>Siam Commercial Bank (SCB)</option>
+              <option>Bangkok Bank (BBL)</option>
+              <option>Krungthai Bank (KTB)</option>
+              <option>Krungsri (BAY)</option>
+              <option>TMBThanachart (ttb)</option>
+              <option>Government Savings Bank (GSB)</option>
+              <option>BAAC</option>
+              <option>CIMB Thai</option>
+              <option>UOB</option>
+              <option>Kiatnakin Phatra (KKP)</option>
+              <option>LH Bank</option>
+              <option>Other</option>
+            </select>
+          </label>
+          <label class="field">
+            Account number
+            <input type="text" id="setting-bank-no" inputmode="numeric" maxlength="20" autocomplete="off" />
+          </label>
+          <label class="field">
+            Account name
+            <input type="text" id="setting-bank-holder" maxlength="128" autocomplete="off" />
+          </label>
+          <button id="save-payment-details" class="secondary-button">Save</button>
+          <p id="payment-details-status" class="scan-status" hidden></p>
+        </div>
+
         <h2 class="section-title">Budget Cycle</h2>
         <div class="settings-card">
           <label class="field">
@@ -406,7 +444,7 @@
           <button id="clear-history-button" class="danger-button">Clear Transaction History</button>
         </div>
         <div class="settings-card">
-          <p class="danger-text">Deletes your account and everything in it: transactions, categories, accounts, budgets, investments, shared bills, group history and receipt images. This cannot be undone.</p>
+          <p class="danger-text">Deletes your account and everything in it: transactions, categories, accounts, budgets, investments, shared bills, group history, payment details, payment slips and receipt images. This cannot be undone.</p>
           <button id="delete-account-button" class="danger-button">Delete My Account</button>
         </div>
         <p class="legal-links"><a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a><a href="terms.html" target="_blank" rel="noopener">Terms of Service</a></p>
@@ -725,15 +763,53 @@
       <h2 class="section-title" id="group-detail-title"></h2>
       <p id="group-detail-meta" class="transaction-date"></p>
       <p id="group-detail-mine" class="group-mine"></p>
-      <h3 class="group-subtitle">Who pays whom</h3>
-      <ul id="group-detail-payments" class="categories-list"></ul>
-      <h3 class="group-subtitle">Members</h3>
-      <ul id="group-detail-members" class="categories-list"></ul>
-      <h3 class="group-subtitle">Recent</h3>
-      <ul id="group-detail-recent" class="categories-list"></ul>
-      <p class="group-hint">Log costs and settle up in the LINE group: "+ข้าว 600", "+taxi 300 @name", "settle @name", "balance".</p>
+      <h3 class="group-subtitle">Open bills</h3>
+      <ul id="group-detail-open" class="categories-list"></ul>
+      <h3 class="group-subtitle">Closed</h3>
+      <ul id="group-detail-closed" class="categories-list"></ul>
+      <p class="group-hint">New bills start in the LINE group: "+ข้าว 600" or "+taxi 300 @name". Send "bills" for a reminder and "rank" for the fastest payers.</p>
       <p id="group-detail-error" class="modal-error" hidden></p>
       <button type="button" id="close-group-detail" class="secondary-button recurring-add-button">Close</button>
+    </div>
+  </div>
+
+  <div id="group-bill-modal" class="modal" hidden>
+    <div class="modal-content sheet-scroll">
+      <h2 class="section-title" id="gbill-title"></h2>
+      <p id="gbill-meta" class="transaction-date"></p>
+      <p id="gbill-amount" class="gbill-amount"></p>
+      <p id="gbill-progress" class="gbill-progress"></p>
+
+      <section id="gbill-pay" class="gbill-pay" hidden>
+        <h3 class="group-subtitle" id="gbill-pay-title"></h3>
+        <div id="gbill-qr-block" class="gbill-qr-block" hidden>
+          <div id="gbill-qr" class="gbill-qr" role="img" aria-label="PromptPay QR code"></div>
+          <div class="gbill-copy-row">
+            <span>PromptPay <strong id="gbill-promptpay"></strong></span>
+            <button type="button" class="link-button" data-copy="promptpay">Copy</button>
+          </div>
+        </div>
+        <div id="gbill-bank-block" class="gbill-bank" hidden>
+          <span id="gbill-bank-name" class="transaction-date"></span>
+          <div class="gbill-copy-row">
+            <strong id="gbill-bank-no"></strong>
+            <button type="button" class="link-button" data-copy="bank">Copy</button>
+          </div>
+          <span id="gbill-bank-holder" class="transaction-date"></span>
+        </div>
+        <p id="gbill-no-details" class="group-hint" hidden></p>
+        <label class="primary-button receipt-scan-label gbill-slip-button">
+          <span id="gbill-slip-label">Upload payment slip</span>
+          <input type="file" id="gbill-slip-input" accept="image/*" hidden />
+        </label>
+        <p id="gbill-slip-status" class="scan-status" hidden></p>
+      </section>
+
+      <h3 class="group-subtitle">Who paid</h3>
+      <ul id="gbill-shares" class="categories-list"></ul>
+      <p id="gbill-error" class="modal-error" hidden></p>
+      <button type="button" id="gbill-cancel" class="secondary-button danger-button recurring-add-button" hidden>Cancel collection</button>
+      <button type="button" id="close-group-bill" class="secondary-button recurring-add-button">Close</button>
     </div>
   </div>
 

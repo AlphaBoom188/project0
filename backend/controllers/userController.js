@@ -5,13 +5,16 @@ const userController = {
   // Create or update user after LINE Login
   async createOrUpdateUser(req, res) {
     try {
-      const { line_user_id, display_name, picture_url } = req.body;
+      const { line_user_id, display_name, picture_url, via } = req.body;
 
       if (!line_user_id) {
         return res.status(400).json({ error: 'line_user_id is required' });
       }
 
-      const user = await upsertUser({ lineUserId: line_user_id, displayName: display_name, pictureUrl: picture_url });
+      // via: 'group_bill' -- opened from a group bill's Pay / See who paid
+      // button. That alone doesn't make someone an app user, so it doesn't
+      // turn on personal-ledger copies of group shares (migration 018).
+      const user = await upsertUser({ lineUserId: line_user_id, displayName: display_name, pictureUrl: picture_url, appUser: via !== 'group_bill' });
 
       res.json({ success: true, user });
     } catch (error) {
@@ -158,6 +161,43 @@ const userController = {
     }
   },
 
+  // PUT /api/users/:line_user_id/payment-details
+  // How this user gets paid back for group bills (migration 019). Shown on
+  // their bills to the group members who owe them. Send null/"" to clear.
+  async updatePaymentDetails(req, res) {
+    try {
+      const { line_user_id } = req.params;
+      const { normalizePromptPayId } = require('../services/promptpay');
+      const body = req.body || {};
+      const clean = (v) => (v === null || v === undefined ? '' : String(v).trim());
+      const update = {};
+      if ('promptpay_id' in body) {
+        const raw = clean(body.promptpay_id);
+        const id = raw ? normalizePromptPayId(raw) : null;
+        if (raw && !id) return res.status(400).json({ error: 'PromptPay ID must be a 10-digit mobile number, a 13-digit ID number or a 15-digit e-wallet ID' });
+        update.promptpay_id = id;
+      }
+      if ('bank_account_no' in body) {
+        const digits = clean(body.bank_account_no).replace(/[\s-]/g, '');
+        if (digits && !/^\d{10,15}$/.test(digits)) return res.status(400).json({ error: 'Bank account number must be 10 to 15 digits' });
+        update.bank_account_no = digits || null;
+      }
+      if ('bank_name' in body) update.bank_name = clean(body.bank_name).slice(0, 64) || null;
+      if ('bank_account_name' in body) update.bank_account_name = clean(body.bank_account_name).slice(0, 128) || null;
+      if (!Object.keys(update).length) return res.status(400).json({ error: 'Send at least one of promptpay_id, bank_name, bank_account_no, bank_account_name' });
+      const { data, error } = await supabase.from('users').update(update).eq('line_user_id', line_user_id)
+        .select('promptpay_id, bank_name, bank_account_no, bank_account_name').single();
+      if (error) {
+        if (error.code === 'PGRST116') return res.status(404).json({ error: 'User not found' });
+        throw error;
+      }
+      res.json({ success: true, payment_details: data });
+    } catch (error) {
+      console.error('Error in updatePaymentDetails:', error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+
   // Delete user account
   // DELETE /api/users/:line_user_id  body: { confirm: "DELETE" }
   // "Delete my account" (PDPA right to erasure): every row of the user's data
@@ -174,14 +214,29 @@ const userController = {
       }
 
       const { BUCKET } = require('../services/receiptThumbnail');
-      let thumbnails = 0;
-      for (;;) {
-        const { data: files, error: listError } = await supabase.storage.from(BUCKET).list(line_user_id, { limit: 1000 });
-        if (listError || !files || files.length === 0) break;
-        const { error: removeError } = await supabase.storage.from(BUCKET).remove(files.map((f) => `${line_user_id}/${f.name}`));
-        if (removeError) throw removeError;
-        thumbnails += files.length;
-        if (files.length < 1000) break;
+      const { SLIP_BUCKET } = require('../services/groupLedger');
+      // Everything in the user's folder of a private bucket: receipt
+      // thumbnails, and payment slips they sent for group bills.
+      const removeFolder = async (bucket) => {
+        let removed = 0;
+        for (;;) {
+          const { data: files, error: listError } = await supabase.storage.from(bucket).list(line_user_id, { limit: 1000 });
+          if (listError || !files || files.length === 0) break;
+          const { error: removeError } = await supabase.storage.from(bucket).remove(files.map((f) => `${line_user_id}/${f.name}`));
+          if (removeError) throw removeError;
+          removed += files.length;
+          if (files.length < 1000) break;
+        }
+        return removed;
+      };
+      const thumbnails = await removeFolder(BUCKET);
+      await removeFolder(SLIP_BUCKET);
+      // Slips other members sent for bills this user collected: those bills
+      // go with the user row (cascade), so their slips go too.
+      const { data: owned } = await supabase.from('group_expenses').select('id').eq('payer_line_user_id', line_user_id);
+      if (owned && owned.length) {
+        const { data: slips } = await supabase.from('group_expense_shares').select('slip_path').in('expense_id', owned.map((b) => b.id)).not('slip_path', 'is', null);
+        if (slips && slips.length) await supabase.storage.from(SLIP_BUCKET).remove(slips.map((x) => x.slip_path));
       }
 
       const counted = async (table) => {

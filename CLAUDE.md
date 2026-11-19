@@ -1,6 +1,6 @@
 # Expense Tracker -- Development Guide
 
-A Thai personal-finance app. **Backend:** Node.js/Express on Supabase (Postgres). **Clients:** a LINE MINI App (LIFF, `liff-app/`, the main client), a LINE Bot (chat, voice, receipt photos, group split tracker), and an older SwiftUI iOS app. LINE Login is the only identity; `line_user_id` is the primary key everywhere.
+A Thai personal-finance app. **Backend:** Node.js/Express on Supabase (Postgres). **Clients:** a LINE MINI App (LIFF, `liff-app/`, the main client), a LINE Bot (chat, voice, receipt photos, group bill collection), and an older SwiftUI iOS app. LINE Login is the only identity; `line_user_id` is the primary key everywhere.
 
 Detailed per-feature notes (design decisions, edge cases, how each was verified) live in **`docs/FEATURES.md`**. How production runs and what's planned: **`docs/PRODUCTION.md`**. Read the relevant section there before changing a feature. This file covers what every session needs.
 
@@ -99,10 +99,10 @@ backend/
                         statement, group, voice
   services/             shared logic; pure modules have no DB and have their own tests:
                         billSplit, lotMath, performanceMath, dividendMath, goalMath,
-                        groupSplitMath, statementParser, payWindow, bangkokDay
+                        groupSplitMath, groupBillMath, groupBillFlex, promptpay, statementParser, payWindow, bangkokDay
   jobs/                 dailyDigest (21:00), recurringTransactions (00:05),
-                        activityReminders (12:00, 20:00), payWindowReminders (09:00), all Bangkok time
-  supabase/migrations/  001-016 (run in order in the Supabase SQL Editor)
+                        activityReminders (12:00, 20:00), payWindowReminders (09:00), groupBillReminders (19:00), all Bangkok time
+  supabase/migrations/  001-019 (run in order in the Supabase SQL Editor)
   tests/                see Tests
 liff-app/               index.html, app.js, style.css; bill.html/bill.js = public shared-bill page;
                         privacy(-th).html, terms(-th).html + legal.css = public legal pages (drafts)
@@ -128,7 +128,7 @@ deploy/macos/           LaunchAgents for self-hosting (backend, ngrok tunnel, ke
   - Views: `GET /portfolio/:u/performance?range=`, `GET /portfolio/:u/dividends?mode=`, `GET|PUT|DELETE /portfolio/:u/goal`.
 - **Event budgets:** `GET|POST /budget-events/:u?month=YYYY-MM-01`, `PUT|DELETE /budget-events/:u/:event_id`.
 - **Statements:** `POST /statements/:u/parse` (writes nothing), `POST /statements/:u/import`, `POST /statements/:u/undo`.
-- **Groups (read-only):** `GET /groups/:u`, `GET /groups/:u/:group_id`.
+- **Groups:** `GET /groups/:u`, `GET /groups/:u/:group_id`, `GET /groups/:u/bills/:bill_id`, `POST /groups/:u/bills/:bill_id/slip`, `POST /groups/:u/bills/:bill_id/shares/:member_id/confirm|reject`, `POST /groups/:u/bills/:bill_id/cancel` (bills are created in the chat). Payment details: `PUT /users/:u/payment-details`.
 - **Voice:** `POST /voice/:u/parse` (writes nothing).
 - **OCR:** `POST /ocr/scan/:u`.
 - **Google:** `GET /google/login-url/:u`, `GET /google/callback` (verifies the export email only; not a login).
@@ -154,6 +154,7 @@ deploy/macos/           LaunchAgents for self-hosting (backend, ngrok tunnel, ke
 | 016 | LINE group split tracker: `line_groups`, `line_group_members`, `group_expenses`, `group_expense_shares` |
 | 017 | Ops: `error_events`, `job_runs`, `ops_alerts`; index `transactions(line_user_id, transaction_date DESC)` |
 | 018 | `users.group_ledger_copies` (consent for group shares in personal ledgers) |
+| 019 | Group bills: `group_expenses.status/closed_at`, share `paid_at/paid_method/slip_*`, `users.promptpay_id/bank_*`, private `payment-slips` bucket |
 
 ## Features (details in `docs/FEATURES.md`)
 
@@ -166,7 +167,7 @@ deploy/macos/           LaunchAgents for self-hosting (backend, ngrok tunnel, ke
   - Free text ("coffee 120"), receipt photos and Thai voice messages each produce a Confirm/Cancel Flex card. Pending confirmations live in memory for 10 minutes.
   - "summary"/"สรุป" replies with the current cycle's totals.
   - Voice is transcribed by Typhoon ASR when `TYPHOON_API_KEY` is set, else OpenAI `gpt-4o-mini-transcribe`, then parsed like text. The card's first row shows what was heard.
-- **LINE group split tracker:** `+ข้าว 600` splits equally among joined members, or `+taxi 300 @Ann` between you and Ann. Then `balance` (fewest payments), `settle @name [amount]` and `undo`. A share is copied into a member's personal ledger only if they use the app themselves and haven't turned it off (`users.group_ledger_copies` TRUE: set by `upsertUser` from the LIFF/iOS/1:1-bot paths, never from a group, and never overriding an explicit FALSE; Settings toggle). Group-only members are tracked in the group's balances only. The LIFF Groups card on Home shows balances (read-only).
+- **LINE group bills** (KhunThong-style, per bill; owner decision 2026-11-19): `+ข้าว 600` starts a bill split equally among joined members (or `+taxi 300 @Ann`), posted as a Flex card plus a textV2 @mention of those who owe. Pay/See who paid open the LIFF app (`?groupbill=<id>`, `?group=<id>`): PromptPay QR (`services/promptpay.js`) or bank details, then a slip the owner confirms or rejects (or marks paid / cancels). The group gets "X paid" lines, a fully-paid card, a cancelled card, `bills` (reminder digest, also pushed 19:00 daily for bills 20h+ old; `GROUP_REMINDERS=off`), `rank` (fastest payers this month) and `undo` (cancel your last open bill). Pushes count against the OA message quota. Opening the app from a bill link (`via: 'group_bill'`) doesn't count as using the app. A share is copied into a member's personal ledger only if they use the app themselves and haven't turned it off (`users.group_ledger_copies` TRUE: set by `upsertUser` from the LIFF/iOS/1:1-bot paths, never from a group, and never overriding an explicit FALSE; Settings toggle). Group-only members are tracked on the group's bills only. The LIFF Groups card on Home shows what you owe / are owed.
 - **Notifications:** budget-crossing alerts, event-budget alerts at 80% and 100%, a 21:00 daily digest, 12:00/20:00 activity nudges, and pay-window due/overdue reminders. All respect `notifications_enabled`.
 - **LIFF app:**
   - Tabs: Home / Transactions / Budgets / Net Worth / Settings.

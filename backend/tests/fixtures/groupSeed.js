@@ -1,11 +1,15 @@
-// Seeds a LINE group split-tracker scenario straight into the migration-016
-// tables (no webhook, no personal-ledger copies) for the read-only group
-// endpoints and the LIFF Groups card.
+// Seeds a LINE group-bills scenario straight into the migration 016 + 019
+// tables (no webhook, no personal-ledger copies) for the group endpoints and
+// the LIFF Groups card / bill sheet. Synthetic data only.
 //
-// "Test Trip": Ann paid ข้าว 600 (Ann/Bo/Cee), Cee paid taxi 90 (Cee/Bo),
-// Bo paid Ann back 100. Nets: Ann +300, Bo -145, Cee -155.
-// Plan: Cee pays Ann 155, Bo pays Ann 145.
-// A second, settled group "Quiet Room" (a room with no name) has Ann and Bo.
+// "Test Trip" (group G; Ann, Bo, Cee):
+//   rice   ข้าว 600 paid by Ann, 200 each. Bo paid (confirmed); Cee unpaid.  -> open
+//   taxi   90 paid by Cee, 45 each (Cee, Bo). Bo unpaid.                     -> open
+//   cake   เค้ก 300 paid by Bo, 100 each. Ann paid 1st, Cee 2nd.             -> paid
+// "Quiet Room" (room R, no name; Ann, Bo):
+//   coffee กาแฟ 40 paid by Ann, Bo paid.                                     -> paid
+// Ann has PromptPay 0812345678 and a (made-up) bank account.
+// Totals: Ann owes 0 / is owed 200; Bo owes 45; Cee owes 200 / is owed 45.
 const crypto = require('crypto');
 
 const hex = () => crypto.randomBytes(16).toString('hex');
@@ -16,7 +20,8 @@ async function seedGroups(db, { prefix = 'test_grp' } = {}) {
   const R = `R${hex()}`;
   const names = { [ids.A]: 'Ann', [ids.B]: 'Bo', [ids.C]: 'Cee' };
   for (const id of Object.values(ids)) {
-    const { error } = await db.from('users').insert({ line_user_id: id, display_name: names[id] });
+    const extra = id === ids.A ? { promptpay_id: '0812345678', bank_name: 'Test Bank', bank_account_no: '1234567890', bank_account_name: 'Ann Example' } : {};
+    const { error } = await db.from('users').insert({ line_user_id: id, display_name: names[id], ...extra });
     if (error) throw error;
   }
   await db.from('line_groups').insert([{ group_id: G, source_type: 'group', name: 'Test Trip' }, { group_id: R, source_type: 'room', name: null }]);
@@ -26,19 +31,29 @@ async function seedGroups(db, { prefix = 'test_grp' } = {}) {
     { group_id: R, line_user_id: ids.B, display_name: 'Bo' },
   ]);
   const at = (minutesAgo) => new Date(Date.now() - minutesAgo * 60000).toISOString();
-  const entry = async (groupId, kind, payer, amount, description, shares, createdAt) => {
-    const { data, error } = await db.from('group_expenses').insert({ group_id: groupId, kind, payer_line_user_id: payer, amount, description, created_at: createdAt }).select().single();
+  // shares: [id, share, paidMinutesAgo | null]
+  const bill = async (groupId, payer, amount, description, shares, createdAgo, status = 'open') => {
+    const { data, error } = await db.from('group_expenses').insert({
+      group_id: groupId, kind: 'expense', payer_line_user_id: payer, amount, description, created_at: at(createdAgo), status,
+      closed_at: status === 'open' ? null : at(createdAgo - 5),
+    }).select().single();
     if (error) throw error;
-    const { error: e2 } = await db.from('group_expense_shares').insert(shares.map(([id, share]) => ({ expense_id: data.id, line_user_id: id, share })));
+    const { error: e2 } = await db.from('group_expense_shares').insert(shares.map(([id, share, paidAgo]) => ({
+      expense_id: data.id, line_user_id: id, share,
+      ...(id === payer ? { paid_at: at(createdAgo), paid_method: 'owner' } : paidAgo != null ? { paid_at: at(paidAgo), paid_method: 'slip', slip_status: 'confirmed' } : {}),
+    })));
     if (e2) throw e2;
+    return data.id;
   };
-  await entry(G, 'expense', ids.A, 600, 'ข้าว', [[ids.A, 200], [ids.B, 200], [ids.C, 200]], at(30));
-  await entry(G, 'expense', ids.C, 90, 'taxi', [[ids.C, 45], [ids.B, 45]], at(20));
-  await entry(G, 'settlement', ids.B, 100, null, [[ids.A, 100]], at(10));
-  await entry(R, 'expense', ids.A, 40, 'กาแฟ', [[ids.A, 20], [ids.B, 20]], at(120));
-  await entry(R, 'settlement', ids.B, 20, null, [[ids.A, 20]], at(110));
+  const bills = {};
+  bills.cake = await bill(G, ids.B, 300, 'เค้ก', [[ids.B, 100], [ids.A, 100, 50], [ids.C, 100, 45]], 60, 'paid');
+  bills.rice = await bill(G, ids.A, 600, 'ข้าว', [[ids.A, 200], [ids.B, 200, 25], [ids.C, 200, null]], 30);
+  bills.taxi = await bill(G, ids.C, 90, 'taxi', [[ids.C, 45], [ids.B, 45, null]], 20);
+  bills.coffee = await bill(R, ids.A, 40, 'กาแฟ', [[ids.A, 20], [ids.B, 20, 100]], 120, 'paid');
 
   const cleanup = async () => {
+    const { data: slips } = await db.from('group_expense_shares').select('slip_path').in('expense_id', Object.values(bills)).not('slip_path', 'is', null);
+    if (slips && slips.length) await db.storage.from('payment-slips').remove(slips.map((s) => s.slip_path));
     await db.from('line_groups').delete().in('group_id', [G, R]);
     for (const id of Object.values(ids)) {
       await db.from('transactions').delete().eq('line_user_id', id);
@@ -46,7 +61,7 @@ async function seedGroups(db, { prefix = 'test_grp' } = {}) {
       await db.from('users').delete().eq('line_user_id', id);
     }
   };
-  return { ids, G, R, cleanup };
+  return { ids, G, R, bills, cleanup };
 }
 
 module.exports = { seedGroups };

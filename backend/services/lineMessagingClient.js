@@ -26,6 +26,15 @@ async function pushText(to, text) {
   await withTimeout(client.pushMessage({ to, messages: [{ type: 'text', text }] }), 10000, 'pushMessage');
 }
 
+// Up to 5 messages of any kind (flex cards, textV2 mentions) in one reply/push.
+async function replyMessages(replyToken, messages) {
+  await withTimeout(client.replyMessage({ replyToken, messages }), 10000, 'replyMessage');
+}
+
+async function pushMessages(to, messages) {
+  await withTimeout(client.pushMessage({ to, messages }), 10000, 'pushMessage');
+}
+
 // Confirm/Cancel card for a parsed-but-unsaved transaction.
 function buildConfirmationFlex({ title, rows, confirmData, cancelData, heroImageUrl }) {
   return {
@@ -109,4 +118,4 @@ async function getGroupName(groupId) {
   }
 }
 
-module.exports = { replyText, pushText, replyConfirmationCard, getImageBuffer, getGroupMemberName, getGroupName };
+module.exports = { replyText, pushText, replyMessages, pushMessages, replyConfirmationCard, getImageBuffer, getGroupMemberName, getGroupName };

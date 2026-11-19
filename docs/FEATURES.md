@@ -636,7 +636,30 @@ Edge cases:
 - `openai/voice_message`: now 7, adding the endpoint with the real Thai m4a.
 - `liff/voice_entry` (19). `getUserMedia` hangs in headless Chrome on macOS even with `--use-fake-device-for-media-stream`, so the page gets a WebAudio-tone MediaStream through an init script. The real `MediaRecorder` records it, and the voice endpoint is stubbed.
 
-### LINE Group Split Tracker
+### LINE Group Bills (2026-11-19, migration 019)
+
+Replaces the running tab below (owner: "per-bill only"), modelled on the owner's KhunThong screenshots.
+
+- **Flow:**
+  1. `+ข้าว 600` creates a bill; the payer is the owner and their own share is paid at creation.
+  2. The bot replies with a Flex bill card (title, total, "Requested by", member rows tagged Host or Paid) plus a textV2 message @mentioning everyone who owes.
+  3. **Pay** and **See who paid** open `liff.line.me/<LIFF_ID>?groupbill=<id>`.
+  4. The bill sheet shows the owner's PromptPay QR (EMVCo payload with the exact share, from `services/promptpay.js`, rendered by qrcode-generator 1.4.4 from cdnjs, falling back to "QR unavailable") and bank details with Copy buttons.
+  5. The member uploads a slip: resized JPEG in the private `payment-slips` bucket at `<payer>/<ms>-<hex>.jpg`. The owner gets a 1:1 push, or a group mention if 1:1 fails.
+  6. The owner taps **Confirm**, **Reject** (slip deleted, payer told) or **Mark paid** (no slip).
+  7. Each payment posts "X paid ฿162.00 to Y (slip confirmed) / Bill "…": paid 2nd. N still to pay." in the group. The last one also posts the fully-paid card.
+- **Cancel:** the owner cancels via `undo` in the chat or **Cancel collection** in the sheet. The bill is kept with status `cancelled`, a cancelled card shows the total and the unpaid amount, and personal-ledger copies and slips are removed.
+- **Reminders:** `bills` / `ทวงเงิน` / `ยอด` replies with the "Don't forget to pay" digest (per-member owed across open bills) plus mentions. `jobs/groupBillReminders.js` pushes the same digest at 19:00 to active groups with an open bill at least 20 hours old (`runOnce` per day; `GROUP_REMINDERS=off` disables it).
+- **Leaderboard:** `rank` shows fastest payers for the Bangkok month: counts of 1st/2nd/3rd by `paid_at` per bill (cancelled bills ignored), plus the "Top host" with the most bills created.
+- **Style:** cards follow the UI rules: one accent `#15803d`, no emoji or mascot. Medals and crown are text labels (1st/2nd/3rd, Host).
+- **LINE quota:** replies are free. Pushes (paid lines, fully-paid and cancelled cards, slip notices, the 19:00 digest) count once per group member.
+- **Consent:** the LIFF login sends `via: 'group_bill'` when opened from a bill link, so it doesn't flip `group_ledger_copies`.
+- **Payment details:** `PUT /users/:u/payment-details` validates PromptPay (10-digit mobile, 13-digit ID or 15-digit e-wallet) and accounts (10-15 digits). They're shown only in `pay_to` to members who still owe on that owner's open bill.
+- **Privacy:** slips are signed for the owner and the payer only. Account deletion removes your slips and the slips sent for your bills. Privacy pages are updated in EN and TH.
+- **Legacy data:** migration 019 closes all running-tab entries as paid; old `settlement` rows are ignored.
+- **Tests:** `api/group_bill_math` (pure math, PromptPay CRC and payload, flex shapes), `api/line_groups` (webhook), `api/groups_api` (REST incl. slip, reject, confirm, cancel, payment details), `liff/group_bills` (Home card, deep links, QR, slip upload, owner confirm and cancel, Settings).
+
+### LINE Group Split Tracker (superseded by Group Bills, kept for history)
 
 Spec: `docs/PHASE_3_SPEC.md` "Multi-User / Group Support: shared expense logging inside LINE group chats". Owner decisions:
 - a Splitwise-style split tracker;

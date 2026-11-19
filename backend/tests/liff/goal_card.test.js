@@ -203,6 +203,7 @@ async function saveGoal(page) {
   assert(!(await failed.page.isHidden('#goal-body')) && (await failed.page.textContent('#goal-target')) === '฿84,000.00',
     'GET /portfolio/:u 502 -> the goal card still renders its target');
   assert(failed.errors.length === 0, `no page JS errors when the portfolio fetch fails (got ${JSON.stringify(failed.errors)})`);
+  await failed.page.context().close();
 
   await browser.close();
   await cleanup();

@@ -190,9 +190,36 @@ const el = {
   groupDetailTitle: document.getElementById('group-detail-title'),
   groupDetailMeta: document.getElementById('group-detail-meta'),
   groupDetailMine: document.getElementById('group-detail-mine'),
-  groupDetailPayments: document.getElementById('group-detail-payments'),
-  groupDetailMembers: document.getElementById('group-detail-members'),
-  groupDetailRecent: document.getElementById('group-detail-recent'),
+  groupDetailOpen: document.getElementById('group-detail-open'),
+  groupDetailClosed: document.getElementById('group-detail-closed'),
+  groupBillModal: document.getElementById('group-bill-modal'),
+  gbillTitle: document.getElementById('gbill-title'),
+  gbillMeta: document.getElementById('gbill-meta'),
+  gbillAmount: document.getElementById('gbill-amount'),
+  gbillProgress: document.getElementById('gbill-progress'),
+  gbillPay: document.getElementById('gbill-pay'),
+  gbillPayTitle: document.getElementById('gbill-pay-title'),
+  gbillQrBlock: document.getElementById('gbill-qr-block'),
+  gbillQr: document.getElementById('gbill-qr'),
+  gbillPromptpay: document.getElementById('gbill-promptpay'),
+  gbillBankBlock: document.getElementById('gbill-bank-block'),
+  gbillBankName: document.getElementById('gbill-bank-name'),
+  gbillBankNo: document.getElementById('gbill-bank-no'),
+  gbillBankHolder: document.getElementById('gbill-bank-holder'),
+  gbillNoDetails: document.getElementById('gbill-no-details'),
+  gbillSlipLabel: document.getElementById('gbill-slip-label'),
+  gbillSlipInput: document.getElementById('gbill-slip-input'),
+  gbillSlipStatus: document.getElementById('gbill-slip-status'),
+  gbillShares: document.getElementById('gbill-shares'),
+  gbillError: document.getElementById('gbill-error'),
+  gbillCancel: document.getElementById('gbill-cancel'),
+  closeGroupBill: document.getElementById('close-group-bill'),
+  settingPromptpay: document.getElementById('setting-promptpay'),
+  settingBankName: document.getElementById('setting-bank-name'),
+  settingBankNo: document.getElementById('setting-bank-no'),
+  settingBankHolder: document.getElementById('setting-bank-holder'),
+  savePaymentDetails: document.getElementById('save-payment-details'),
+  paymentDetailsStatus: document.getElementById('payment-details-status'),
   groupDetailError: document.getElementById('group-detail-error'),
   closeGroupDetail: document.getElementById('close-group-detail'),
   homeInvestmentsValue: document.getElementById('home-investments-value'),
@@ -916,26 +943,35 @@ async function loadHomeTab() {
   });
 }
 
-// ---- LINE group balances (read-only; logging and settling happen in the chat) ----
+// ---- LINE group bills (migration 019) ----
+//
+// Bills start in the group chat ("+ข้าว 600"). Here members see each group's
+// open bills, pay the person who paid (PromptPay QR or bank details), send
+// their slip, and the owner confirms, marks paid or cancels. The backend
+// announces every change back in the group.
 
 const groupDisplayName = (g) => g.name || (g.source_type === 'room' ? 'LINE chat' : 'LINE group');
+const plainError = (error) => String(error.message).replace(/^\[\d+\]\s*/, '');
 
-// "You're owed ฿400.00" / "You owe ฿245.00" / "Settled up", with a pill class.
-function groupNetStatus(net) {
-  if (net > 0) return { text: `You're owed ${formatMoney(net, 'THB')}`, cls: 'paid' };
-  if (net < 0) return { text: `You owe ${formatMoney(-net, 'THB')}`, cls: 'unpaid' };
-  return { text: 'Settled up', cls: 'settled' };
+// "You owe ฿245.00" / "Owed to you ฿400.00" / "All paid", with a pill class.
+function groupTotalsStatus(g) {
+  if (g.my_owe > 0) return { text: `You owe ${formatMoney(g.my_owe, 'THB')}`, cls: 'unpaid' };
+  if (g.my_owed > 0) return { text: `Owed to you ${formatMoney(g.my_owed, 'THB')}`, cls: 'paid' };
+  return { text: 'All paid', cls: 'settled' };
 }
 
-const paymentLine = (p) => (p.direction === 'pay' ? `You pay ${p.name} ${formatMoney(p.amount, 'THB')}` : `${p.name} pays you ${formatMoney(p.amount, 'THB')}`);
+const onActivate = (node, fn) => {
+  node.addEventListener('click', fn);
+  node.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(); } });
+};
 
 // Groups section on Home: hidden until the user is in a LINE group with the bot.
 async function renderHomeGroups() {
   const { groups } = await cachedGet(`/groups/${lineUserId}`);
   el.homeGroups.hidden = groups.length === 0;
   el.groupsList.innerHTML = groups.map((g, i) => {
-    const status = groupNetStatus(g.my_net);
-    const detail = g.my_payments.length ? g.my_payments.map(paymentLine).join(' · ') : `${g.member_count} member${g.member_count === 1 ? '' : 's'}`;
+    const status = groupTotalsStatus(g);
+    const detail = `${g.open_bills} open bill${g.open_bills === 1 ? '' : 's'} · ${g.member_count} member${g.member_count === 1 ? '' : 's'}`;
     return `<li class="category-row group-row" data-i="${i}" role="button" tabindex="0">
       <div class="category-row-top">
         <span class="category-name">${escapeHtml(groupDisplayName(g))}</span>
@@ -944,58 +980,307 @@ async function renderHomeGroups() {
       <div class="category-bar-label-row"><span>${escapeHtml(detail)}</span></div>
     </li>`;
   }).join('');
-  el.groupsList.querySelectorAll('.group-row').forEach((row) => {
-    const open = () => openGroupDetail(groups[Number(row.dataset.i)].group_id);
-    row.addEventListener('click', open);
-    row.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
-  });
+  el.groupsList.querySelectorAll('.group-row').forEach((row) => onActivate(row, () => openGroupDetail(groups[Number(row.dataset.i)].group_id)));
+}
+
+// One bill row's status pill, from the viewer's side.
+function billPill(b) {
+  if (b.status === 'cancelled') return { text: 'Cancelled', cls: 'settled' };
+  if (b.status === 'paid') return { text: 'Fully paid', cls: 'paid' };
+  if (b.is_owner) return b.pending_slips ? { text: `${b.pending_slips} slip${b.pending_slips === 1 ? '' : 's'} to check`, cls: 'unpaid' } : { text: `${b.paid_count} of ${b.owe_count} paid`, cls: 'settled' };
+  if (b.my_status === 'unpaid') return { text: `Pay ${formatMoney(b.my_share, 'THB')}`, cls: 'unpaid' };
+  if (b.my_status === 'slip_pending') return { text: 'Slip sent', cls: 'settled' };
+  if (b.my_status === 'paid') return { text: 'Paid', cls: 'paid' };
+  return { text: `${b.paid_count} of ${b.owe_count} paid`, cls: 'settled' };
+}
+
+const billDate = (iso) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'Asia/Bangkok' });
+
+function billRows(list, emptyText) {
+  if (!list.length) return `<li class="empty-state">${escapeHtml(emptyText)}</li>`;
+  return list.map((b) => {
+    const pill = billPill(b);
+    return `<li class="category-row group-row gbill-row" data-bill="${escapeHtml(b.id)}" role="button" tabindex="0">
+      <div class="category-row-top">
+        <span class="category-name">${escapeHtml(b.description || 'Shared bill')}</span>
+        <span class="bill-status-pill ${pill.cls}">${escapeHtml(pill.text)}</span>
+      </div>
+      <div class="category-bar-label-row"><span>${escapeHtml(b.is_owner ? 'You' : b.owner_name)} paid ${formatMoney(b.amount, 'THB')} · ${escapeHtml(billDate(b.created_at))}</span></div>
+    </li>`;
+  }).join('');
 }
 
 let groupDetailSeq = 0;
+let openGroupId = null;
 async function openGroupDetail(groupId) {
   const seq = ++groupDetailSeq;
+  openGroupId = groupId;
   clearModalError(el.groupDetailError);
   el.groupDetailTitle.textContent = 'Loading…';
   el.groupDetailMeta.textContent = '';
   el.groupDetailMine.textContent = '';
-  [el.groupDetailPayments, el.groupDetailMembers, el.groupDetailRecent].forEach((list) => { list.innerHTML = ''; });
+  el.groupDetailOpen.innerHTML = '';
+  el.groupDetailClosed.innerHTML = '';
   el.groupDetailModal.hidden = false;
   try {
     const d = await cachedGet(`/groups/${lineUserId}/${groupId}`);
     if (seq !== groupDetailSeq) return;
     el.groupDetailTitle.textContent = groupDisplayName(d.group);
     el.groupDetailMeta.textContent = `${d.group.member_count} member${d.group.member_count === 1 ? '' : 's'}${d.group.is_active ? '' : ' · bot removed from this chat'}`;
-    const status = groupNetStatus(d.my_net);
-    el.groupDetailMine.textContent = d.my_payments.length ? `${status.text}: ${d.my_payments.map(paymentLine).join(', ')}` : status.text;
+    const status = groupTotalsStatus(d);
+    el.groupDetailMine.textContent = status.text;
     el.groupDetailMine.className = `group-mine ${status.cls}`;
-
-    el.groupDetailPayments.innerHTML = d.payments.length
-      ? d.payments.map((p) => `<li class="category-row${p.involves_me ? ' group-me' : ''}"><div class="category-row-top">
-          <span class="category-name">${escapeHtml(p.from_name)} → ${escapeHtml(p.to_name)}</span><span>${formatMoney(p.amount, 'THB')}</span></div></li>`).join('')
-      : '<li class="empty-state">Everyone is settled up.</li>';
-    el.groupDetailMembers.innerHTML = d.members.map((m) => {
-      const cls = m.net > 0 ? 'income' : m.net < 0 ? 'expense' : '';
-      const label = m.net > 0 ? `+${formatMoney(m.net, 'THB')}` : m.net < 0 ? `-${formatMoney(-m.net, 'THB')}` : formatMoney(0, 'THB');
-      return `<li class="category-row"><div class="category-row-top">
-        <span class="category-name">${escapeHtml(m.name)}${m.is_me ? ' (you)' : ''}${m.left ? ' · left' : ''}</span>
-        <span class="summary-value ${cls} group-net">${label}</span></div></li>`;
-    }).join('');
-    el.groupDetailRecent.innerHTML = d.recent.length
-      ? d.recent.map((e) => {
-        const when = new Date(e.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'Asia/Bangkok' });
-        const what = e.kind === 'settlement'
-          ? `${escapeHtml(e.payer_name)} paid ${escapeHtml(e.to_name)}`
-          : `${escapeHtml(e.description || 'Expense')} · paid by ${escapeHtml(e.paid_by_me ? 'you' : e.payer_name)}`;
-        const sub = e.kind === 'settlement' ? 'Settle up' : `Split ${e.split_count} way${e.split_count === 1 ? '' : 's'}${e.my_share !== null ? ` · your share ${formatMoney(e.my_share, 'THB')}` : ''}`;
-        return `<li class="category-row"><div class="category-row-top"><span class="category-name">${what}</span><span>${formatMoney(e.amount, 'THB')}</span></div>
-          <div class="category-bar-label-row"><span>${escapeHtml(when)} · ${escapeHtml(sub)}</span></div></li>`;
-      }).join('')
-      : '<li class="empty-state">Nothing logged yet.</li>';
+    el.groupDetailOpen.innerHTML = billRows(d.open_bills, 'No open bills.');
+    el.groupDetailClosed.innerHTML = billRows(d.closed_bills, 'Nothing closed yet.');
+    [el.groupDetailOpen, el.groupDetailClosed].forEach((list) => list.querySelectorAll('.gbill-row').forEach((row) => onActivate(row, () => openGroupBill(row.dataset.bill))));
   } catch (error) {
     if (seq !== groupDetailSeq) return;
     el.groupDetailTitle.textContent = 'Group';
-    showModalError(el.groupDetailError, String(error.message).replace(/^\[\d+\]\s*/, ''));
+    showModalError(el.groupDetailError, plainError(error));
   }
+}
+
+// PromptPay QR: qrcode-generator (cdnjs) loaded on first use. Without it the
+// number and bank details still work ("QR unavailable").
+const QR_URL = 'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js';
+let qrPromise = null;
+function loadQrLib() {
+  if (window.qrcode) return Promise.resolve(window.qrcode);
+  qrPromise ||= new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = QR_URL;
+    script.onload = () => (window.qrcode ? resolve(window.qrcode) : reject(new Error('QR library missing')));
+    script.onerror = () => { qrPromise = null; reject(new Error('QR unavailable')); };
+    document.head.appendChild(script);
+  });
+  return qrPromise;
+}
+
+async function renderPromptPayQr(payload, seq) {
+  el.gbillQr.innerHTML = '';
+  el.gbillQr.dataset.payload = payload;
+  try {
+    const qrcode = await loadQrLib();
+    if (seq !== groupBillSeq) return;
+    const qr = qrcode(0, 'M');
+    qr.addData(payload);
+    qr.make();
+    el.gbillQr.innerHTML = qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true });
+  } catch {
+    if (seq !== groupBillSeq) return;
+    el.gbillQr.innerHTML = '<p class="group-hint">QR unavailable. Use the PromptPay number below.</p>';
+  }
+}
+
+const SHARE_PILL = {
+  owner: { text: 'Paid the bill', cls: 'settled' },
+  paid: { text: 'Paid', cls: 'paid' },
+  slip_pending: { text: 'Slip sent', cls: 'unpaid' },
+  unpaid: { text: 'Unpaid', cls: 'unpaid' },
+};
+const ORD = ['1st', '2nd', '3rd'];
+
+let groupBillSeq = 0;
+let currentGroupBill = null;
+async function openGroupBill(billId) {
+  const seq = ++groupBillSeq;
+  clearModalError(el.gbillError);
+  el.gbillTitle.textContent = 'Loading…';
+  [el.gbillMeta, el.gbillAmount, el.gbillProgress].forEach((n) => { n.textContent = ''; });
+  el.gbillShares.innerHTML = '';
+  el.gbillPay.hidden = true;
+  el.gbillCancel.hidden = true;
+  hideAiStatus(el.gbillSlipStatus);
+  el.groupBillModal.hidden = false;
+  try {
+    const d = await apiRequest(`/groups/${lineUserId}/bills/${billId}`);
+    if (seq !== groupBillSeq) return;
+    currentGroupBill = d;
+    renderGroupBill(d, seq);
+  } catch (error) {
+    if (seq !== groupBillSeq) return;
+    el.gbillTitle.textContent = 'Bill';
+    showModalError(el.gbillError, plainError(error));
+  }
+}
+
+function renderGroupBill(d, seq) {
+  const b = d.bill;
+  el.gbillTitle.textContent = b.description || 'Shared bill';
+  el.gbillMeta.textContent = `${b.is_owner ? 'You' : b.owner_name} paid · ${billDate(b.created_at)}${b.group_name ? ` · ${b.group_name}` : ''}`;
+  el.gbillAmount.textContent = formatMoney(b.amount, 'THB');
+  const owing = b.shares.filter((s) => s.status !== 'owner' && s.status !== 'none');
+  const paid = owing.filter((s) => s.status === 'paid').length;
+  el.gbillProgress.textContent = b.status === 'cancelled' ? 'Collection cancelled'
+    : b.status === 'paid' ? 'Fully paid' : `${paid} of ${owing.length} paid · ${formatMoney(b.unpaid_total, 'THB')} to go`;
+
+  // Pay section: only for a member who still owes on an open bill.
+  const p = d.pay_to;
+  el.gbillPay.hidden = !p;
+  if (p) {
+    el.gbillPayTitle.textContent = `Pay ${formatMoney(b.my_share, 'THB')} to ${p.name}`;
+    el.gbillQrBlock.hidden = !p.promptpay_payload;
+    if (p.promptpay_payload) {
+      el.gbillPromptpay.textContent = p.promptpay_id;
+      renderPromptPayQr(p.promptpay_payload, seq);
+    }
+    el.gbillBankBlock.hidden = !p.bank_account_no;
+    if (p.bank_account_no) {
+      el.gbillBankName.textContent = p.bank_name || 'Bank account';
+      el.gbillBankNo.textContent = p.bank_account_no;
+      el.gbillBankHolder.textContent = p.bank_account_name || '';
+    }
+    el.gbillNoDetails.hidden = !!(p.promptpay_payload || p.bank_account_no);
+    el.gbillNoDetails.textContent = `${p.name} hasn't added PromptPay or bank details yet. Ask them how to pay, then send your slip here.`;
+    const mine = b.shares.find((s) => s.is_me);
+    el.gbillSlipLabel.textContent = mine && mine.status === 'slip_pending' ? 'Replace slip' : 'Upload payment slip';
+    if (mine && mine.status === 'slip_pending') setAiStatus(el.gbillSlipStatus, 'info', `Slip sent. Waiting for ${p.name} to confirm.`);
+  }
+
+  el.gbillShares.innerHTML = b.shares.map((s) => {
+    const pill = SHARE_PILL[s.status] || SHARE_PILL.unpaid;
+    const rank = s.status === 'paid' && s.position && s.position <= 3 ? ` · ${ORD[s.position - 1]}` : '';
+    const actions = [];
+    if (b.is_owner && b.status === 'open' && s.status === 'slip_pending') {
+      if (s.slip_url) actions.push(`<a class="link-button" href="${escapeHtml(s.slip_url)}" target="_blank" rel="noopener">View slip</a>`);
+      actions.push(`<button type="button" class="link-button" data-act="confirm" data-member="${escapeHtml(s.line_user_id)}">Confirm</button>`);
+      actions.push(`<button type="button" class="link-button danger-link" data-act="reject" data-member="${escapeHtml(s.line_user_id)}">Reject</button>`);
+    } else if (b.is_owner && b.status === 'open' && s.status === 'unpaid') {
+      actions.push(`<button type="button" class="link-button" data-act="mark" data-member="${escapeHtml(s.line_user_id)}">Mark paid</button>`);
+    } else if (s.is_me && s.slip_url) {
+      actions.push(`<a class="link-button" href="${escapeHtml(s.slip_url)}" target="_blank" rel="noopener">View my slip</a>`);
+    }
+    return `<li class="category-row gbill-share">
+      <div class="category-row-top">
+        <span class="category-name">${escapeHtml(s.name)}${s.is_me ? ' (you)' : ''}</span>
+        <span>${formatMoney(s.share, 'THB')}</span>
+      </div>
+      <div class="category-bar-label-row gbill-share-meta">
+        <span class="bill-status-pill ${pill.cls}">${escapeHtml(pill.text + rank)}</span>
+        ${actions.length ? `<span class="gbill-actions">${actions.join('')}</span>` : ''}
+      </div>
+    </li>`;
+  }).join('');
+  el.gbillCancel.hidden = !(b.is_owner && b.status === 'open');
+}
+
+async function refreshAfterGroupBillChange() {
+  const billId = currentGroupBill && currentGroupBill.bill.id;
+  if (billId) await openGroupBill(billId);
+  if (openGroupId && !el.groupDetailModal.hidden) openGroupDetail(openGroupId);
+  renderHomeGroups().catch(() => {});
+}
+
+async function handleGroupBillShareAction(event) {
+  const button = event.target.closest('button[data-act]');
+  if (!button || !currentGroupBill) return;
+  const { act, member } = button.dataset;
+  const billId = currentGroupBill.bill.id;
+  const share = currentGroupBill.bill.shares.find((s) => s.line_user_id === member);
+  const who = share ? share.name : 'this member';
+  if (act === 'mark' && !(await confirmAction(`Mark ${who} as paid without a slip? The group will see it.`, 'Mark paid'))) return;
+  if (act === 'reject' && !(await confirmAction(`Reject ${who}'s slip? They'll be asked to send it again.`, 'Reject'))) return;
+  button.disabled = true;
+  clearModalError(el.gbillError);
+  try {
+    await apiRequest(`/groups/${lineUserId}/bills/${billId}/shares/${member}/${act === 'reject' ? 'reject' : 'confirm'}`, { method: 'POST' });
+    await refreshAfterGroupBillChange();
+  } catch (error) {
+    button.disabled = false;
+    showModalError(el.gbillError, plainError(error));
+  }
+}
+
+async function handleGroupBillSlip(event) {
+  const file = event.target.files[0];
+  event.target.value = '';
+  if (!file || !currentGroupBill) return;
+  const billId = currentGroupBill.bill.id;
+  setAiStatus(el.gbillSlipStatus, 'working', 'Sending slip…');
+  try {
+    const blob = await resizeImageToJpegBlob(file, 1600, 0.8);
+    const { base64 } = await blobToBase64AndHash(blob);
+    const result = await apiRequest(`/groups/${lineUserId}/bills/${billId}/slip`, { method: 'POST', body: JSON.stringify({ image_base64: base64 }) });
+    await refreshAfterGroupBillChange();
+    const owner = currentGroupBill ? currentGroupBill.bill.owner_name : 'the owner';
+    setAiStatus(el.gbillSlipStatus, 'done', result.notified === 'none'
+      ? `Slip sent. ${owner} will see it in the app.`
+      : `Slip sent. ${owner} has been asked to confirm it.`);
+  } catch (error) {
+    setAiStatus(el.gbillSlipStatus, 'error', plainError(error));
+  }
+}
+
+async function handleGroupBillCancel() {
+  if (!currentGroupBill) return;
+  if (!(await confirmAction('Cancel this collection? Everyone in the group will see it was cancelled.', 'Cancel collection'))) return;
+  clearModalError(el.gbillError);
+  try {
+    await apiRequest(`/groups/${lineUserId}/bills/${currentGroupBill.bill.id}/cancel`, { method: 'POST' });
+    await refreshAfterGroupBillChange();
+  } catch (error) {
+    showModalError(el.gbillError, plainError(error));
+  }
+}
+
+async function handleGroupBillCopy(event) {
+  const button = event.target.closest('button[data-copy]');
+  if (!button || !currentGroupBill || !currentGroupBill.pay_to) return;
+  const p = currentGroupBill.pay_to;
+  const text = (button.dataset.copy === 'promptpay' ? p.promptpay_id : p.bank_account_no || '').replace(/-/g, '');
+  try {
+    await navigator.clipboard.writeText(text);
+    button.textContent = 'Copied';
+  } catch {
+    button.textContent = text;
+  }
+  setTimeout(() => { button.textContent = 'Copy'; }, 2000);
+}
+
+// Settings: how I get paid back (PUT /users/:u/payment-details).
+function renderPaymentDetails() {
+  el.settingPromptpay.value = currentUser.promptpay_id || '';
+  el.settingBankName.value = currentUser.bank_name || '';
+  el.settingBankNo.value = currentUser.bank_account_no || '';
+  el.settingBankHolder.value = currentUser.bank_account_name || '';
+}
+
+async function handleSavePaymentDetails() {
+  el.savePaymentDetails.disabled = true;
+  try {
+    const { payment_details: saved } = await apiRequest(`/users/${lineUserId}/payment-details`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        promptpay_id: el.settingPromptpay.value,
+        bank_name: el.settingBankName.value,
+        bank_account_no: el.settingBankNo.value,
+        bank_account_name: el.settingBankHolder.value,
+      }),
+    });
+    Object.assign(currentUser, saved);
+    renderPaymentDetails();
+    setAiStatus(el.paymentDetailsStatus, 'info', 'Saved.');
+  } catch (error) {
+    setAiStatus(el.paymentDetailsStatus, 'error', plainError(error));
+  } finally {
+    el.savePaymentDetails.disabled = false;
+  }
+}
+
+// Opened from a group card's button: ?groupbill=<id> or ?group=<group id>.
+// Read after liff.init(): liff.line.me links first arrive as
+// ?liff.state=%3Fgroupbill%3D..., which init rewrites into the real query.
+let deepLink = { bill: null, group: null };
+function readDeepLink() {
+  let params = new URLSearchParams(window.location.search);
+  const state = params.get('liff.state');
+  if (state) params = new URLSearchParams(state.replace(/^[^?]*\?/, ''));
+  deepLink = { bill: params.get('groupbill'), group: params.get('group') };
+}
+
+function openDeepLink() {
+  if (deepLink.bill && /^[0-9a-f-]{36}$/i.test(deepLink.bill)) openGroupBill(deepLink.bill);
+  else if (deepLink.group && /^[CR][0-9a-f]{32}$/.test(deepLink.group)) openGroupDetail(deepLink.group);
 }
 
 // Compact "Investments" card, only for users with holdings; tapping it opens
@@ -3631,6 +3916,7 @@ async function loadSettingsTab() {
   el.settingGroupCopies.checked = currentUser.group_ledger_copies === true;
   el.settingCycleDay.value = currentUser.billing_cycle_start_day || 1;
   el.settingEmail.value = currentUser.email || '';
+  renderPaymentDetails();
   renderGoogleConnectState();
 }
 
@@ -3972,6 +4258,7 @@ async function handleDeleteRecurring(recurringId) {
 async function init() {
   try {
     await liff.init({ liffId: window.LIFF_ID });
+    readDeepLink();
 
     if (!liff.isLoggedIn()) {
       liff.login();
@@ -3988,6 +4275,9 @@ async function init() {
         line_user_id: profile.userId,
         display_name: profile.displayName,
         picture_url: profile.pictureUrl,
+        // Opening a group bill's link alone doesn't make someone an app user
+        // (no personal-ledger copies of group shares; migration 018).
+        ...(deepLink.bill || deepLink.group ? { via: 'group_bill' } : {}),
       }),
     });
 
@@ -3996,6 +4286,7 @@ async function init() {
 
     el.loading.hidden = true;
     el.app.hidden = false;
+    openDeepLink();
   } catch (error) {
     el.loading.hidden = true;
     showError(error.message || 'Something went wrong.');
@@ -4081,7 +4372,13 @@ el.perfViewButtons.forEach((button) => button.addEventListener('click', () => se
 el.divModeButtons.forEach((button) => button.addEventListener('click', () => setDivMode(button.dataset.divMode)));
 el.homeInvestmentsCard.addEventListener('click', () => switchTab('networth'));
 el.voiceButton.addEventListener('click', toggleVoiceRecording);
-el.closeGroupDetail.addEventListener('click', () => { el.groupDetailModal.hidden = true; });
+el.closeGroupDetail.addEventListener('click', () => { el.groupDetailModal.hidden = true; openGroupId = null; });
+el.closeGroupBill.addEventListener('click', () => { el.groupBillModal.hidden = true; currentGroupBill = null; groupBillSeq += 1; });
+el.gbillShares.addEventListener('click', handleGroupBillShareAction);
+el.gbillSlipInput.addEventListener('change', handleGroupBillSlip);
+el.gbillCancel.addEventListener('click', handleGroupBillCancel);
+el.gbillPay.addEventListener('click', handleGroupBillCopy);
+el.savePaymentDetails.addEventListener('click', handleSavePaymentDetails);
 el.goalSetupButton.addEventListener('click', openGoalModal);
 el.goalEditButton.addEventListener('click', openGoalModal);
 el.goalTableToggle.addEventListener('click', toggleGoalTable);

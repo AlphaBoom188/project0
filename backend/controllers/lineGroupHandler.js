@@ -1,22 +1,27 @@
-// LINE group / room events for the split tracker. lineWebhookController.js
-// routes every event whose source is a group or room here, so group chatter
-// never reaches the 1:1 expense parser (which would answer every message).
+// LINE group / room events for group bills (migrations 016 + 019).
+// lineWebhookController.js routes every event whose source is a group or room
+// here, so group chatter never reaches the 1:1 expense parser.
 //
 // The bot stays quiet unless addressed: exact command words, or an expense
 // starting with "+" / @mentioning the bot (services/groupSplitMath.js).
 // Anyone who sends any message joins the group's member list silently.
-const { replyText } = require('../services/lineMessagingClient');
+//
+// Each expense is a bill (owner decision 2026-11-19, KhunThong-style): the
+// person who paid asks everyone else for their share; people pay through the
+// LIFF app (PromptPay QR / bank transfer + slip) and the owner confirms.
+const { replyText, replyMessages } = require('../services/lineMessagingClient');
 const ledger = require('../services/groupLedger');
-const { parseGroupMessage, parseSettleAmount } = require('../services/groupSplitMath');
+const notify = require('../services/groupBillNotify');
+const { parseGroupMessage } = require('../services/groupSplitMath');
+const { cancelledCard } = require('../services/groupBillFlex');
 
 const baht = (n) => `฿${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const nameOf = (names, id) => names.get(id) || `Member ${String(id).slice(-4)}`;
 
 const HELP = [
-  'I split shared costs in this group.',
-  'Log a cost you paid: "+ข้าว 600" or "+taxi 300 @Ann @Bo" (only those mentioned share it).',
-  'Commands: "balance" (who owes whom), "settle @Ann" (you paid Ann back; add an amount for part of it), "undo" (remove your last entry), "members", "join".',
-  'Everyone who sends a message here is included in new splits. Each person\'s share is also added to their own expenses in the app.',
+  'I collect shared bills in this group.',
+  'Paid for everyone? Send "+ข้าว 600" (split with everyone here) or "+taxi 300 @Ann @Bo" (only those mentioned). I post a bill card; each person taps Pay, transfers by PromptPay or bank, and sends the slip. You confirm it in the app.',
+  'Commands: "bills" (who still owes), "rank" (fastest payers this month), "undo" (cancel your last open bill), "members", "join".',
+  'Everyone who sends a message here is included in new bills.',
 ].join('\n');
 
 const groupCache = new Map();
@@ -63,58 +68,28 @@ async function handleExpense(event, group, sourceType, userId, parsed) {
   const members = await ledger.listMembers(group.group_id);
   const participantIds = ids.length ? [userId, ...ids] : members.map((m) => m.line_user_id);
   if (!participantIds.includes(userId)) participantIds.push(userId);
-  const { shares } = await ledger.addExpense({ group, payerId: userId, amount: parsed.amount, description: parsed.description, participantIds });
-
-  const names = new Map(members.map((m) => [m.line_user_id, m.display_name]));
-  const lines = [`${parsed.description ? `${parsed.description} ` : ''}${baht(parsed.amount)} paid by ${nameOf(names, userId)}`];
-  if (shares.length === 1) {
-    lines.push('Only you have joined so far, so it\'s recorded as yours alone. Others join by sending any message here (or "join").');
-  } else {
-    lines.push(`Split ${shares.length} ways: ${shares.map((s) => `${nameOf(names, s.line_user_id)} ${baht(s.share)}`).join(', ')}`);
+  const { bill } = await ledger.addBill({ group, payerId: userId, amount: parsed.amount, description: parsed.description, participantIds });
+  if (participantIds.length === 1) {
+    return replyText(event.replyToken, `${parsed.description ? `${parsed.description} ` : ''}${baht(parsed.amount)} recorded, but only you have joined so far, so nobody owes you yet. Others join by sending any message here (or "join"), then log it again.`);
   }
-  lines.push('Wrong? Send "undo".');
-  return replyText(event.replyToken, lines.join('\n'));
+  const names = await ledger.memberNames(group.group_id);
+  const fresh = await ledger.getBill(bill.id);
+  return replyMessages(event.replyToken, notify.billMessages(fresh, names));
 }
 
-async function handleBalance(event, group) {
-  const { payments, names } = await ledger.groupBalances(group.group_id);
-  if (!payments.length) return replyText(event.replyToken, 'Everyone is settled up.');
-  const title = group.name ? `Balances in ${group.name}:` : 'Balances:';
-  return replyText(event.replyToken, [title, ...payments.map((p) => `${nameOf(names, p.from)} pays ${nameOf(names, p.to)} ${baht(p.amount)}`), 'Once paid, send "settle @name".'].join('\n'));
-}
-
-async function handleSettle(event, group, sourceType, userId, rest) {
-  const { ids, unresolved } = await resolveMentions(event, group, sourceType);
-  const { payments, names } = await ledger.groupBalances(group.group_id);
-  const mine = payments.filter((p) => p.from === userId);
-  if (unresolved.length) return replyText(event.replyToken, `I don't know ${unresolved.join(', ')} yet. Ask them to send any message here first.`);
-  if (ids.length !== 1 || ids[0] === userId) {
-    if (!mine.length) return replyText(event.replyToken, "You don't owe anyone here right now.");
-    return replyText(event.replyToken, [`You owe: ${mine.map((p) => `${nameOf(names, p.to)} ${baht(p.amount)}`).join(', ')}`, 'Once paid, send "settle @name" (add an amount for part of it).'].join('\n'));
-  }
-  const toId = ids[0];
-  let { amount } = parseSettleAmount(rest);
-  if (amount === null) {
-    const owed = mine.find((p) => p.to === toId);
-    if (!owed) {
-      return replyText(event.replyToken, `By the current balances you don't owe ${nameOf(names, toId)}.${mine.length ? ` You owe: ${mine.map((p) => `${nameOf(names, p.to)} ${baht(p.amount)}`).join(', ')}.` : ''} To record a payment anyway, add the amount: "settle @name 100".`);
-    }
-    amount = owed.amount;
-  }
-  if (!(amount > 0)) return replyText(event.replyToken, 'The amount has to be more than zero.');
-  await ledger.addSettlement({ groupId: group.group_id, fromId: userId, toId, amount });
-  return replyText(event.replyToken, `Recorded: ${nameOf(names, userId)} paid ${nameOf(names, toId)} ${baht(amount)}. Wrong? Send "undo".`);
+async function handleRemind(event, group) {
+  const messages = await notify.digestMessages(group.group_id);
+  if (!messages) return replyText(event.replyToken, 'No unpaid bills here. Everyone is square.');
+  return replyMessages(event.replyToken, messages);
 }
 
 async function handleUndo(event, group, userId) {
-  const removed = await ledger.undoLast(group.group_id, userId);
-  if (!removed) return replyText(event.replyToken, 'Nothing of yours to undo from the last 7 days.');
-  if (removed.kind === 'settlement') {
-    const members = await ledger.listMembers(group.group_id, { includeLeft: true });
-    const names = new Map(members.map((m) => [m.line_user_id, m.display_name]));
-    return replyText(event.replyToken, `Removed your payment of ${baht(removed.amount)} to ${nameOf(names, removed.group_expense_shares[0].line_user_id)}.`);
-  }
-  return replyText(event.replyToken, `Removed your last entry: ${removed.description ? `${removed.description} ` : ''}${baht(removed.amount)}.`);
+  const bill = await ledger.lastOpenBillBy(group.group_id, userId);
+  if (!bill) return replyText(event.replyToken, 'You have no open bill from the last 7 days to cancel.');
+  const names = await ledger.memberNames(group.group_id);
+  const unpaid = bill.shares.filter((s) => s.line_user_id !== userId && !s.paid_at).reduce((sum, s) => sum + s.share, 0);
+  await ledger.cancelBill(bill);
+  return replyMessages(event.replyToken, [cancelledCard({ bill, byName: notify.nameOf(names, userId), unpaid })]);
 }
 
 async function handleGroupMessage(event) {
@@ -135,8 +110,9 @@ async function handleGroupMessage(event) {
   if (parsed.kind === 'expense') return handleExpense(event, group, sourceType, userId, parsed);
 
   switch (parsed.command) {
-    case 'balance': return handleBalance(event, group);
-    case 'settle': return handleSettle(event, group, sourceType, userId, parsed.rest);
+    case 'remind': return handleRemind(event, group);
+    case 'leaderboard': return replyMessages(event.replyToken, [await notify.leaderboardMessage(group.group_id)]);
+    case 'paid': return replyText(event.replyToken, 'To pay a bill, tap Pay on its card (or send "bills"), transfer, then send your slip in the app. The person who paid confirms it, and I post it here.');
     case 'undo': return handleUndo(event, group, userId);
     case 'members': {
       const members = await ledger.listMembers(groupId);
@@ -144,7 +120,7 @@ async function handleGroupMessage(event) {
     }
     case 'join':
       await ledger.ensureMember(groupId, sourceType, userId, { force: true });
-      return replyText(event.replyToken, `${name || 'You'} joined. New expenses here will be split with you.`);
+      return replyText(event.replyToken, `${name || 'You'} joined. New bills here will include you.`);
     default:
       return replyText(event.replyToken, HELP);
   }

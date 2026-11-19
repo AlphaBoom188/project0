@@ -1992,3 +1992,106 @@ body {
 .transaction-row {
   padding: var(--space-2) var(--space-4);
 }
+
+/* ---- Group bill sheet (migration 019) ---- */
+.gbill-amount {
+  margin: var(--space-2) 0 0;
+  font-size: 30px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--foreground);
+}
+
+.gbill-progress {
+  margin: var(--space-1) 0 var(--space-4);
+  font-size: 14px;
+  color: var(--muted-foreground);
+}
+
+.gbill-pay {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--card);
+}
+
+.gbill-pay .group-subtitle {
+  margin: 0;
+}
+
+.gbill-qr-block,
+.gbill-bank {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* The QR stays black on white in both themes so bank apps can scan it. */
+.gbill-qr {
+  align-self: center;
+  width: 216px;
+  max-width: 100%;
+  padding: var(--space-2);
+  border-radius: var(--radius-lg);
+  background: #ffffff;
+}
+
+.gbill-qr svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.gbill-copy-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: var(--tap-min);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.gbill-slip-button.primary-button {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  min-height: var(--tap-min);
+  margin: var(--space-2) 0 0;
+}
+
+.gbill-share-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.gbill-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.gbill-actions .link-button {
+  min-height: var(--tap-min);
+  display: inline-flex;
+  align-items: center;
+}
+
+.danger-link {
+  color: var(--destructive);
+}
+
+#gbill-cancel {
+  margin-bottom: var(--space-2);
+  color: var(--destructive);
+  border: 1px solid var(--destructive-border);
+  background: var(--card);
+}

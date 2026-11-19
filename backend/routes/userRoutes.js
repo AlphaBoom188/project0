@@ -20,6 +20,9 @@ router.patch('/:line_user_id/preferences', userController.updatePreferences);
 // PUT /api/users/:line_user_id/emergency-fund - Set goal_amount and/or account_id
 router.put('/:line_user_id/emergency-fund', userController.updateEmergencyFund);
 
+// PUT /api/users/:line_user_id/payment-details - PromptPay ID / bank account for group bills
+router.put('/:line_user_id/payment-details', userController.updatePaymentDetails);
+
 // DELETE /api/users/:line_user_id - Delete user account
 router.delete('/:line_user_id', userController.deleteUser);
 
