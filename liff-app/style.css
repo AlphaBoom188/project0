@@ -1847,3 +1847,13 @@ body {
   border-color: var(--color-danger-border);
   font-variant-numeric: tabular-nums;
 }
+
+/* ---- Statement import undo ---- */
+.stmt-undo,
+.stmt-undo-last {
+  min-height: var(--tap-min);
+  padding: 0 var(--space-sm);
+}
+.stmt-recent-row .category-row-top {
+  align-items: center;
+}

@@ -92,7 +92,7 @@ async function readStatement(page, buffer, name = 'statement.pdf') {
   await Promise.all([page.waitForResponse((r) => r.url().includes('/import') && r.request().method() === 'POST', { timeout: 20000 }), page.click('#stmt-import')]);
   await page.waitForSelector('#statement-modal', { state: 'hidden', timeout: 10000 }).catch(() => {});
   assert(await page.isHidden('#statement-modal'), 'the sheet closes after importing');
-  assert((await page.textContent('#export-status')) === 'Imported 8 transactions.', `status message (got "${await page.textContent('#export-status')}")`);
+  assert((await page.textContent('#export-status')).startsWith('Imported 8 transactions.'), `status message (got "${await page.textContent('#export-status')}")`);
   const { data: stored } = await db.from('transactions').select('description, category_id, from_account_id, to_account_id, type').eq('line_user_id', U);
   assert(stored.length === 8 && !stored.some((t) => t.description === 'BTS TIM TVM'), 'exactly the 8 ticked rows were saved');
   assert(stored.filter((t) => t.type === 'transfer').map((t) => t.description).sort().join('|') === 'KBank •••7890 → another account|another account → KBank •••7890', 'own transfers were saved as Transfers labelled with the account');
@@ -121,6 +121,39 @@ async function readStatement(page, buffer, name = 'statement.pdf') {
   await readStatement(page, OTHER_PDF, 'other.pdf');
   await page.waitForSelector('#stmt-pick-error:not([hidden])', { timeout: 20000 }).catch(() => {});
   assert((await page.textContent('#stmt-pick-error')).startsWith("This statement format isn't supported yet"), `unsupported PDF shows the server's message (got "${await page.textContent('#stmt-pick-error')}")`);
+  // --- Undo right after an import ---
+  await page.click('#stmt-cancel');
+  await page.click('#import-statement-button');
+  await page.waitForSelector('#statement-modal:not([hidden])');
+  assert(!(await page.isHidden('#stmt-recent')) && (await page.$$eval('#stmt-recent-list li', (l) => l.length)) === 1, 'the first import is listed under Recent imports');
+  const recentText = (await page.textContent('#stmt-recent-list')).replace(/\s+/g, ' ');
+  assert(recentText.includes('KBank •••7890 · Jun 1 – Jun 30') && recentText.includes('8 added'), `recent import row (got "${recentText.trim()}")`);
+  await readStatement(page, PDF);
+  await page.waitForSelector('#stmt-review:not([hidden])', { timeout: 30000 }).catch(() => {});
+  await Promise.all([page.waitForResponse((r) => r.url().includes('/import'), { timeout: 20000 }), page.click('#stmt-import')]);
+  await page.waitForSelector('#export-status .stmt-undo-last', { timeout: 10000 }).catch(() => {});
+  assert((await page.textContent('#export-status')).startsWith('Imported 1 transaction.') && (await page.isVisible('#export-status .stmt-undo-last')), 'the status line offers Undo');
+  await page.click('#export-status .stmt-undo-last');
+  await page.waitForSelector('#confirm-modal:not([hidden])');
+  assert((await page.textContent('#confirm-message')).includes('Remove the 1 transaction added by this import') && (await page.textContent('#confirm-ok')) === 'Remove', 'Undo asks first');
+  await Promise.all([page.waitForResponse((r) => r.url().includes('/undo'), { timeout: 20000 }), page.click('#confirm-ok')]);
+  await page.waitForFunction(() => document.getElementById('export-status').textContent.startsWith('Import undone'), null, { timeout: 10000 }).catch(() => {});
+  assert((await page.textContent('#export-status')) === 'Import undone: 1 removed.', `undo status (got "${await page.textContent('#export-status')}")`);
+  assert(!(await db.from('transactions').select('description').eq('line_user_id', U)).data.some((t) => t.description === 'BTS TIM TVM'), 'the undone row is gone');
+
+  // --- Undo from Recent imports ---
+  await page.click('#import-statement-button');
+  await page.waitForSelector('#statement-modal:not([hidden])');
+  assert((await page.$$eval('#stmt-recent-list li', (l) => l.length)) === 1, 'the undone import left the list; the first one is still there');
+  await page.click('#stmt-recent-list .stmt-undo');
+  await page.waitForSelector('#confirm-modal:not([hidden])');
+  await Promise.all([page.waitForResponse((r) => r.url().includes('/undo'), { timeout: 20000 }), page.click('#confirm-ok')]);
+  await page.waitForFunction(() => document.getElementById('stmt-recent').hidden, null, { timeout: 10000 }).catch(() => {});
+  assert(await page.isHidden('#stmt-recent'), 'after undoing it, Recent imports is empty');
+  const { data: left } = await db.from('transactions').select('id').eq('line_user_id', U).like('slip_hash', 'stmt:%');
+  assert(left.length === 0, `every imported row is gone (got ${left.length})`);
+  await page.click('#stmt-cancel');
+
   assert(errors.length === 0, `no page JS errors (got ${JSON.stringify(errors)})`);
   await page.context().close();
 

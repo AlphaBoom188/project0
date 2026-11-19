@@ -75,6 +75,7 @@ function matchTransfer(pool, row, myLabel) {
 }
 
 // Fills in our side of a matched transfer (and our account, when linked).
+// -> { id, side } so the import can report it for undo.
 async function mergeTransfer(transfer, row, myLabel, accountId) {
   const dir = directionOf(row.type);
   const description = dir === 'out' ? describeTransfer(myLabel, transfer.to) : describeTransfer(transfer.from, myLabel);
@@ -82,6 +83,19 @@ async function mergeTransfer(transfer, row, myLabel, accountId) {
   if (accountId) update[dir === 'out' ? 'from_account_id' : 'to_account_id'] = accountId;
   const { error } = await supabase.from('transactions').update(update).eq('id', transfer.id);
   if (error) throw error;
+  return { id: transfer.id, side: dir === 'out' ? 'from' : 'to' };
 }
 
-module.exports = { BANK_LABEL, sideLabel, directionOf, describeTransfer, parseTransfer, fetchTransferPool, matchTransfer, mergeTransfer, UNKNOWN };
+// Undo of one statement's side: that side goes back to "another account"
+// and its account link is cleared; the other statement's side stays.
+// -> the update to apply, or null if `label` isn't on either side.
+function revertSide(transaction, label) {
+  const { from, to } = parseTransfer(transaction.description);
+  if (from === label) return { description: describeTransfer(null, to), from_account_id: null };
+  if (to === label) return { description: describeTransfer(from, null), to_account_id: null };
+  return null;
+}
+
+const isSideLabel = (label) => new RegExp(`^(${Object.values(BANK_LABEL).join('|')}) •••\\d{4}$`).test(String(label || ''));
+
+module.exports = { BANK_LABEL, sideLabel, directionOf, describeTransfer, parseTransfer, fetchTransferPool, matchTransfer, mergeTransfer, revertSide, isSideLabel, UNKNOWN };

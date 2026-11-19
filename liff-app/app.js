@@ -353,6 +353,8 @@ const el = {
   stmtReviewError: document.getElementById('stmt-review-error'),
   stmtImport: document.getElementById('stmt-import'),
   stmtBack: document.getElementById('stmt-back'),
+  stmtRecent: document.getElementById('stmt-recent'),
+  stmtRecentList: document.getElementById('stmt-recent-list'),
   exportEmailButton: document.getElementById('export-email-button'),
   exportStatus: document.getElementById('export-status'),
   txnFullList: document.getElementById('txn-full-list'),
@@ -2851,6 +2853,102 @@ async function extractPdfPages(file, password, onProgress) {
 
 const stripStatus = (message) => String(message).replace(/^\[\d+\]\s*/, '');
 
+// ---- Undo an import ----
+//
+// Each import response carries an `undo` object (the rows it added and the
+// transfers it joined); POST /statements/:u/undo reverses exactly that. The
+// last 5 imports are remembered in localStorage, so the Undo buttons are a
+// convenience of this phone: if storage is cleared, the imported rows stay
+// and can still be deleted one by one.
+const STMT_RECENT_MAX = 5;
+const stmtRecentKey = () => `stmtImports:${lineUserId}`;
+
+function loadRecentImports() {
+  try {
+    const list = JSON.parse(localStorage.getItem(stmtRecentKey()) || '[]');
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRecentImports(list) {
+  try {
+    localStorage.setItem(stmtRecentKey(), JSON.stringify(list.slice(0, STMT_RECENT_MAX)));
+  } catch {
+    // storage full or blocked: Undo just isn't offered later
+  }
+}
+
+function rememberImport(record) {
+  if (!record.undo || (!record.undo.inserted_ids.length && !record.undo.merged.length)) return;
+  saveRecentImports([record, ...loadRecentImports().filter((r) => r.id !== record.id)]);
+}
+
+const shortDate = (ymd) => (ymd ? new Date(`${ymd}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) : '');
+function importLabel(r) {
+  const period = r.period_start ? `${shortDate(r.period_start)} – ${shortDate(r.period_end)}` : '';
+  return `${STMT_BANK_NAME[r.bank] || 'Bank'} •••${r.last4 || '----'}${period ? ` · ${period}` : ''}`;
+}
+
+function renderRecentImports() {
+  const list = loadRecentImports();
+  el.stmtRecent.hidden = list.length === 0;
+  el.stmtRecentList.innerHTML = list.map((r, i) => `<li class="category-row stmt-recent-row">
+      <div class="category-row-top">
+        <span class="category-name">${escapeHtml(importLabel(r))}</span>
+        <button type="button" class="link-button stmt-undo" data-i="${i}">Undo</button>
+      </div>
+      <div class="category-bar-label-row"><span>${r.imported} added · imported ${escapeHtml(new Date(r.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'Asia/Bangkok' }))}</span></div>
+    </li>`).join('');
+}
+
+async function undoImport(record) {
+  const ok = await confirmAction(`Remove the ${record.imported} transaction${record.imported === 1 ? '' : 's'} added by this import (${importLabel(record)})?`, 'Remove');
+  if (!ok) return null;
+  const result = await apiRequest(`/statements/${lineUserId}/undo`, { method: 'POST', body: JSON.stringify(record.undo) });
+  saveRecentImports(loadRecentImports().filter((r) => r.id !== record.id));
+  return result;
+}
+
+function showImportStatus(text, record) {
+  el.exportStatus.hidden = false;
+  el.exportStatus.textContent = text;
+  if (!record) return;
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'link-button stmt-undo-last';
+  button.textContent = 'Undo';
+  button.addEventListener('click', async () => {
+    try {
+      const result = await undoImport(record);
+      if (!result) return;
+      showImportStatus(`Import undone: ${result.deleted} removed${result.reverted ? `, ${result.reverted} transfer${result.reverted === 1 ? '' : 's'} separated again` : ''}.`);
+      loadTransactionsTab().catch((error) => showError(error.message));
+    } catch (error) {
+      showImportStatus(`Couldn't undo: ${String(error.message).replace(/^\[\d+\]\s*/, '')}`, record);
+    }
+  });
+  el.exportStatus.append(' ', button);
+}
+
+async function handleRecentUndoClick(event) {
+  const button = event.target.closest('.stmt-undo');
+  if (!button) return;
+  const record = loadRecentImports()[Number(button.dataset.i)];
+  if (!record) return;
+  clearModalError(el.stmtPickError);
+  try {
+    const result = await undoImport(record);
+    if (!result) return;
+    renderRecentImports();
+    showImportStatus(`Import undone: ${result.deleted} removed${result.reverted ? `, ${result.reverted} transfer${result.reverted === 1 ? '' : 's'} separated again` : ''}.`);
+    loadTransactionsTab().catch((error) => showError(error.message));
+  } catch (error) {
+    showModalError(el.stmtPickError, `Couldn't undo: ${String(error.message).replace(/^\[\d+\]\s*/, '')}`);
+  }
+}
+
 async function openStatementModal() {
   el.stmtPick.hidden = false;
   el.stmtReview.hidden = true;
@@ -2858,6 +2956,7 @@ async function openStatementModal() {
   el.stmtFile.value = '';
   clearModalError(el.stmtPickError);
   el.stmtRead.disabled = false;
+  renderRecentImports();
   try {
     const { accounts } = await cachedGet(`/accounts/${lineUserId}`);
     el.stmtAccount.innerHTML = '<option value="">Don\'t link</option>' +
@@ -2982,11 +3081,21 @@ async function handleStatementImport() {
       method: 'POST',
       body: JSON.stringify({ rows, account_id: el.stmtAccount.value || null, statement: { bank: stmtPreview.bank, account_last4: stmtPreview.account_last4 } }),
     });
+    const record = {
+      id: Date.now(),
+      at: new Date().toISOString(),
+      bank: stmtPreview.bank,
+      last4: stmtPreview.account_last4,
+      period_start: stmtPreview.period_start,
+      period_end: stmtPreview.period_end,
+      imported: result.imported,
+      undo: result.undo,
+    };
+    rememberImport(record);
     closeStatementModal();
-    el.exportStatus.hidden = false;
-    el.exportStatus.textContent = `Imported ${result.imported} transaction${result.imported === 1 ? '' : 's'}` +
+    showImportStatus(`Imported ${result.imported} transaction${result.imported === 1 ? '' : 's'}` +
       (result.merged ? `, ${result.merged} joined with transfer${result.merged === 1 ? '' : 's'} from your other statement` : '') +
-      (result.skipped ? ` (${result.skipped} already imported)` : '') + '.';
+      (result.skipped ? ` (${result.skipped} already imported)` : '') + '.', result.imported ? record : null);
     loadTransactionsTab().catch((error) => showError(error.message));
   } catch (error) {
     showModalError(el.stmtReviewError, stripStatus(error.message));
@@ -3832,6 +3941,7 @@ el.stmtSelectNew.addEventListener('click', () => selectStatementRows('new'));
 el.stmtSelectNone.addEventListener('click', () => selectStatementRows('none'));
 el.stmtRows.addEventListener('change', (event) => { if (event.target.type === 'checkbox') updateStatementImportButton(); });
 el.stmtImport.addEventListener('click', handleStatementImport);
+el.stmtRecentList.addEventListener('click', handleRecentUndoClick);
 el.exportEmailButton.addEventListener('click', handleExportEmail);
 
 el.settingNotifications.addEventListener('change', () => handlePreferenceToggle('notifications_enabled', el.settingNotifications));

@@ -52,7 +52,7 @@ npm start  # Starts server on port 3000
 - `GET/POST /api/budget-events/:line_user_id` (`?month=YYYY-MM-01`), `PUT/DELETE /api/budget-events/:line_user_id/:event_id` - One-off, single-month event/occasion budget buckets layered on a category, with computed `spent`/`remaining`/`percent`
 - `POST /api/voice/:line_user_id/parse` - LIFF mic button: `{ audio_base64, mime_type }` (audio/mp4, webm, ogg, mpeg, wav; max 3 MB) -> `{ transcript, provider, expense: { is_expense, amount, description, category_id, category_name } }`; writes nothing (422 when nothing was heard)
 - `GET /api/groups/:line_user_id`, `GET /api/groups/:line_user_id/:group_id` - Read-only LINE group split-tracker views for the LIFF Groups card (group ids must be `C`/`R` + 32 hex, else 400; 404 unless the user is or was a member)
-- `POST /api/statements/:line_user_id/parse`, `POST /api/statements/:line_user_id/import` - Bank statement import (KBank savings/current, Bangkok Bank savings): preview from pdf.js text pieces, then insert the kept rows (see Bank Statement Import below)
+- `POST /api/statements/:line_user_id/parse`, `POST /api/statements/:line_user_id/import`, `POST /api/statements/:line_user_id/undo` - Bank statement import (KBank savings/current, Bangkok Bank savings) and undoing one import: preview from pdf.js text pieces, then insert the kept rows (see Bank Statement Import below)
 - `GET /api/google/login-url/:line_user_id`, `GET /api/google/callback` - Google OAuth used *only* to verify the CSV-export email (not a login method); 501 if not configured
 - `GET /api/line/login-url` - Generate LINE Login URL
 - `GET /api/line/callback` - Handle LINE OAuth callback
@@ -724,6 +724,17 @@ That personal copy is best-effort: a failure is logged and the group record stan
 - **The import body** carries `statement: { bank, account_last4 }` (required when any row has `type: 'transfer'`, with `direction` `'out' | 'in'`). It returns `merged` alongside `imported`/`skipped`.
 - **Verified on real data:** with the real KBank statement's 88 own transfers imported as Transfers, the real Bangkok Bank ฿27,130.67 "TRF TO OTH BK" matched KBank's same-day deposit and merged into one "Bangkok Bank •••1111 → KBank •••2222" entry.
 - **Tests:** `api/statements` (56, including a two-bank scenario: a +1-day match, a same-amount payment that must not match, re-parse/re-import of both statements, balances untouched) and `liff/statement_import` (28).
+
+✅ **Undo an import** (no migration; owner approved keeping the history on the phone).
+- **What import returns:** an `undo` object listing everything it changed: `{ label, inserted_ids, merged: [{ id, side }] }`.
+- **`POST /api/statements/:u/undo`** takes that object back:
+  - Rows the import inserted are deleted.
+  - Transfers it joined lose this statement's side again (`revertSide()`: that side becomes "another account" and its account link is cleared).
+  - If a *later* import joined one of this import's own transfers, that row is kept with only the other side, and its slip_hash is retired (`stmt:` + sha of `undone|id`), so this statement's row shows as new on re-import.
+  - Only the user's own `stmt:` rows are touched; another user's ids are a no-op.
+  - Validation: uuids, side `'from' | 'to'`, label shaped like `KBank •••1234`, at most 5,000 ids. Undoing twice is harmless.
+- **LIFF:** after an import the status line has an **Undo** button (through `confirmAction()`). The Import sheet lists **Recent imports on this phone**: the last 5 import records, kept in localStorage under `stmtImports:<line_user_id>`, each with Undo. That's a per-device convenience: if storage is cleared, the imported rows stay and can be deleted individually.
+- **Tests:** `api/statements` (74: validation; a foreign user; undoing a joining import, then a joined-since import; a plain import whose rows come back as new) and `liff/statement_import` (37: Undo from the status line and from Recent imports).
 
 **Not built:** other banks, credit card statements, e-wallet exports.
 

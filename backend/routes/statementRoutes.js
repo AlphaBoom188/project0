@@ -8,4 +8,7 @@ router.post('/:line_user_id/parse', statementController.parse);
 // POST /api/statements/:line_user_id/import - Import the rows the user kept (re-imports skipped via slip_hash)
 router.post('/:line_user_id/import', statementController.import);
 
+// POST /api/statements/:line_user_id/undo - Reverse one import (the `undo` object its response returned)
+router.post('/:line_user_id/undo', statementController.undo);
+
 module.exports = router;

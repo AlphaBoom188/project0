@@ -2,7 +2,8 @@ const supabase = require('../config/supabase');
 const { parseStatement, UnsupportedStatementError } = require('../services/statementParser');
 const { buildPreview } = require('../services/statementImport');
 const { isUuid } = require('../services/uuid');
-const { BANK_LABEL, sideLabel, describeTransfer, fetchTransferPool, matchTransfer, mergeTransfer } = require('../services/statementTransfers');
+const crypto = require('crypto');
+const { BANK_LABEL, sideLabel, describeTransfer, parseTransfer, fetchTransferPool, matchTransfer, mergeTransfer, revertSide, isSideLabel } = require('../services/statementTransfers');
 
 const MAX_PAGES = 100;
 const MAX_ITEMS = 60000;
@@ -10,6 +11,8 @@ const MAX_IMPORT_ROWS = 3000;
 const INSERT_CHUNK = 200;
 const RE_ROW_KEY = /^stmt:[0-9a-f]{64}$/;
 const RE_TXN_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00\+07:00$/;
+const MAX_UNDO_IDS = 5000;
+const ID_CHUNK = 150;
 
 const statementController = {
   // POST /api/statements/:line_user_id/parse
@@ -121,6 +124,7 @@ const statementController = {
 
       // Transfers: merge, skip, or add to the inserts.
       let merged = 0;
+      const mergedIds = [];
       if (transfers.length) {
         const myLabel = sideLabel(statement.bank, statement.account_last4);
         const pool = await fetchTransferPool(line_user_id, transfers.map((r) => r.transaction_date.slice(0, 10)));
@@ -129,7 +133,7 @@ const statementController = {
           const m = matchTransfer(pool, asRow, myLabel);
           if (m && m.kind === 'recorded') continue; // this side is already recorded: counted as skipped
           if (m) {
-            await mergeTransfer(m.transfer, asRow, myLabel, account_id || null);
+            mergedIds.push(await mergeTransfer(m.transfer, asRow, myLabel, account_id || null));
             merged += 1;
             continue;
           }
@@ -149,6 +153,7 @@ const statementController = {
       }
 
       let imported = 0;
+      const insertedIds = [];
       for (let i = 0; i < inserts.length; i += INSERT_CHUNK) {
         const { data, error } = await supabase
           .from('transactions')
@@ -156,10 +161,92 @@ const statementController = {
           .select('id');
         if (error) throw error;
         imported += data.length;
+        insertedIds.push(...data.map((t) => t.id));
       }
-      res.json({ success: true, imported: imported + merged, merged, skipped: rows.length - imported - merged });
+      res.json({
+        success: true,
+        imported: imported + merged,
+        merged,
+        skipped: rows.length - imported - merged,
+        // Everything this import changed, for POST /undo.
+        undo: {
+          label: statement && BANK_LABEL[statement.bank] ? sideLabel(statement.bank, statement.account_last4) : null,
+          inserted_ids: insertedIds,
+          merged: mergedIds,
+        },
+      });
     } catch (error) {
       console.error('Error in statement import:', error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  // POST /api/statements/:line_user_id/undo
+  // Body: the `undo` object an import returned: { label, inserted_ids, merged: [{ id, side }] }.
+  // Removes what that import added: its rows are deleted, and the transfers it
+  // joined lose this statement's side again. Only the user's own
+  // statement-imported rows are touched (slip_hash 'stmt:'); anything already
+  // gone is skipped. If a later import joined one of this import's own
+  // transfers, that transfer is kept with only the other statement's side.
+  async undo(req, res) {
+    try {
+      const { line_user_id } = req.params;
+      const { label = null, inserted_ids: insertedIds = [], merged = [] } = req.body || {};
+      if (!Array.isArray(insertedIds) || !Array.isArray(merged)) return res.status(400).json({ error: 'inserted_ids and merged must be arrays' });
+      if (insertedIds.length + merged.length === 0) return res.status(400).json({ error: 'Nothing to undo' });
+      if (insertedIds.length + merged.length > MAX_UNDO_IDS) return res.status(400).json({ error: `At most ${MAX_UNDO_IDS} rows per undo` });
+      if (![...insertedIds, ...merged.map((m) => m && m.id)].every(isUuid)) return res.status(400).json({ error: 'Invalid transaction id' });
+      if (merged.some((m) => m.side !== 'from' && m.side !== 'to')) return res.status(400).json({ error: "merged side must be 'from' or 'to'" });
+      if ((merged.length || label !== null) && !isSideLabel(label)) return res.status(400).json({ error: 'Invalid label' });
+
+      const fetchOwn = async (ids) => {
+        const out = [];
+        for (let i = 0; i < ids.length; i += ID_CHUNK) {
+          const { data, error } = await supabase
+            .from('transactions')
+            .select('id, type, description, slip_hash')
+            .eq('line_user_id', line_user_id)
+            .like('slip_hash', 'stmt:%')
+            .in('id', ids.slice(i, i + ID_CHUNK));
+          if (error) throw error;
+          out.push(...data);
+        }
+        return out;
+      };
+
+      let deleted = 0;
+      let reverted = 0;
+      const toDelete = [];
+      for (const t of await fetchOwn(insertedIds)) {
+        const sides = t.type === 'transfer' ? parseTransfer(t.description) : null;
+        const joinedLater = sides && label && sides.from && sides.to && (sides.from === label || sides.to === label);
+        if (!joinedLater) { toDelete.push(t.id); continue; }
+        // Keep the other statement's side. The row key is retired so this
+        // statement's row shows as new again if it's re-imported.
+        const update = revertSide(t, label);
+        update.slip_hash = `stmt:${crypto.createHash('sha256').update(`undone|${t.id}`).digest('hex')}`;
+        const { error } = await supabase.from('transactions').update(update).eq('id', t.id).eq('line_user_id', line_user_id);
+        if (error) throw error;
+        reverted += 1;
+      }
+      for (let i = 0; i < toDelete.length; i += ID_CHUNK) {
+        const { data, error } = await supabase.from('transactions').delete().eq('line_user_id', line_user_id).in('id', toDelete.slice(i, i + ID_CHUNK)).select('id');
+        if (error) throw error;
+        deleted += data.length;
+      }
+      const mergedRows = new Map((await fetchOwn(merged.map((m) => m.id))).map((t) => [t.id, t]));
+      for (const m of merged) {
+        const t = mergedRows.get(m.id);
+        if (!t || t.type !== 'transfer') continue;
+        const { from, to } = parseTransfer(t.description);
+        if ((m.side === 'from' ? from : to) !== label) continue; // already reverted or changed since
+        const { error } = await supabase.from('transactions').update(revertSide(t, label)).eq('id', t.id).eq('line_user_id', line_user_id);
+        if (error) throw error;
+        reverted += 1;
+      }
+      res.json({ success: true, deleted, reverted });
+    } catch (error) {
+      console.error('Error in statement undo:', error);
       res.status(500).json({ error: error.message });
     }
   },

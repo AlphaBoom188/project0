@@ -170,6 +170,49 @@ async function cleanup() {
   const again2 = await post(`/statements/${U2}/import`, { rows: bb.body.rows.filter((r) => r.status === 'transfer_match').map(asTransfer), account_id: bAcct.account.id, statement: { bank: 'bbl', account_last4: '3456' } });
   assert(again2.body.imported === 0 && again2.body.skipped === 2 && (await db.from('transactions').select('id').eq('line_user_id', U2).eq('type', 'transfer')).data.length === 2, 're-importing the BBL transfers changes nothing');
 
+  // --- Undo (POST /statements/:u/undo with the import's `undo` object) ---
+  const undo = (u, body) => post(`/statements/${u}/undo`, body);
+  assert(kImp.body.undo && kImp.body.undo.label === 'KBank •••7890' && kImp.body.undo.inserted_ids.length === 2 && kImp.body.undo.merged.length === 0, 'an import returns what it changed');
+  assert(bImp2.body.undo.inserted_ids.length === 0 && JSON.stringify(bImp2.body.undo.merged.map((m) => m.side).sort()) === JSON.stringify(['from', 'to']), 'a joining import lists the transfers it joined, with the side it filled');
+  assert((await undo(U2, {})).status === 400, 'undo: nothing to undo -> 400');
+  assert((await undo(U2, { inserted_ids: ['nope'] })).status === 400, 'undo: a malformed id -> 400');
+  assert((await undo(U2, { label: 'Evil •••1234', inserted_ids: [], merged: [{ id: xfers[0].id, side: 'from' }] })).status === 400, 'undo: a malformed label -> 400');
+  const foreign = await undo(OTHER, kImp.body.undo);
+  assert(foreign.status === 200 && foreign.body.deleted === 0 && foreign.body.reverted === 0 && (await db.from('transactions').select('id').eq('line_user_id', U2).eq('type', 'transfer')).data.length === 2, "another user can't undo someone else's import");
+
+  // Undo the Bangkok Bank import: the joined transfers lose the BBL side again.
+  const ub = await undo(U2, bImp2.body.undo);
+  assert(ub.status === 200 && ub.body.deleted === 0 && ub.body.reverted === 2, `undoing the joining import separates both transfers (got ${JSON.stringify(ub.body)})`);
+  ({ data: xfers } = await db.from('transactions').select('*').eq('line_user_id', U2).eq('type', 'transfer').order('transaction_date'));
+  assert(xfers[0].description === 'KBank •••7890 → another account' && xfers[0].from_account_id === kAcct.account.id && !xfers[0].to_account_id
+    && xfers[1].description === 'another account → KBank •••7890' && !xfers[1].from_account_id, 'back to the KBank side only, BBL account link removed');
+  assert((await undo(U2, bImp2.body.undo)).body.reverted === 0, 'undoing twice changes nothing');
+  const bb3 = await post(`/statements/${U2}/parse`, { pages: bPages });
+  assert(bb3.body.counts.transfer_match === 2, 'BBL re-parse after undo: the transfers match again');
+
+  // Join again, then undo the KBank import: its transfers were joined since,
+  // so they're kept with only the BBL side.
+  const rejoin = await post(`/statements/${U2}/import`, { rows: bb3.body.rows.filter((r) => r.status === 'transfer_match').map(asTransfer), account_id: bAcct.account.id, statement: { bank: 'bbl', account_last4: '3456' } });
+  assert(rejoin.body.merged === 2, 'rejoined');
+  const uk = await undo(U2, kImp.body.undo);
+  assert(uk.status === 200 && uk.body.deleted === 0 && uk.body.reverted === 2, `undoing the first import keeps transfers the other statement joined (got ${JSON.stringify(uk.body)})`);
+  ({ data: xfers } = await db.from('transactions').select('*').eq('line_user_id', U2).eq('type', 'transfer').order('transaction_date'));
+  assert(xfers.length === 2 && xfers[0].description === 'another account → Bangkok Bank •••3456' && !xfers[0].from_account_id && xfers[0].to_account_id === bAcct.account.id
+    && xfers[1].description === 'Bangkok Bank •••3456 → another account', `only the BBL side remains (got ${xfers.map((x) => x.description)})`);
+  const kb3 = await post(`/statements/${U2}/parse`, { pages });
+  assert(kb3.body.counts.transfer_match === 2 && kb3.body.counts.imported === 0, `KBank re-parse after undo: its transfers match the BBL side, nothing shows as imported (got ${JSON.stringify(kb3.body.counts)})`);
+
+  // Undo an ordinary import: rows are deleted and show as new again.
+  const before = (await db.from('transactions').select('id').eq('line_user_id', U).like('slip_hash', 'stmt:%')).data.length;
+  const uPlain = await undo(U, imp.body.undo);
+  assert(uPlain.status === 200 && uPlain.body.deleted === newRows.length && uPlain.body.reverted === 0, `undoing a plain import deletes its rows (got ${JSON.stringify(uPlain.body)})`);
+  const after = (await db.from('transactions').select('id').eq('line_user_id', U).like('slip_hash', 'stmt:%')).data.length;
+  assert(before - after === newRows.length && (await db.from('transactions').select('id').eq('line_user_id', U).is('slip_hash', null)).data.length === 1, 'only those rows: the manual BTS entry and the BBL import are still there');
+  const p3 = await post(`/statements/${U}/parse`, { pages });
+  assert(p3.body.counts.new === newRows.length && p3.body.counts.imported === 0, 're-parse after undo: the rows are new again');
+  const acctsAfter = (await db.from('accounts').select('id, balance').eq('line_user_id', U2)).data;
+  assert(acctsAfter.every((a) => Number(a.balance) === (a.id === kAcct.account.id ? 1000 : 2000)), 'balances still untouched after undo');
+
   await cleanup();
   process.exit(failures ? 1 : 0);
 })().catch(async (e) => { console.error(e); await cleanup(); process.exit(1); });
