@@ -89,13 +89,21 @@ const chartState = (page) => page.evaluate(() => {
   await page.waitForFunction(() => window.Chart.getChart(document.getElementById('div-chart')).data.labels.length === 8, null, { timeout: 10000 });
   chart = await chartState(page);
   assert(/^Q\d \d{4}$/.test(chart.labels[0]) && (await page.isVisible('[data-div-mode="quarterly"].active')) && !(await page.isVisible('[data-div-mode="monthly"].active')), `8 quarterly bars, active button follows (got ${chart.labels})`);
-  await Promise.all([page.waitForResponse((r) => r.url().includes('/dividends?mode=annual'), { timeout: 20000 }), page.click('[data-div-mode="annual"]')]);
+  const [annualResponse] = await Promise.all([page.waitForResponse((r) => r.url().includes('/dividends?mode=annual'), { timeout: 20000 }), page.click('[data-div-mode="annual"]')]);
+  const annual = await annualResponse.json();
   await page.waitForFunction(() => window.Chart.getChart(document.getElementById('div-chart')).data.labels[0] === '2023', null, { timeout: 10000 }).catch(() => {});
   chart = await chartState(page);
   const thisYear = String(new Date(Date.now() + 7 * 3600 * 1000).getUTCFullYear());
   const yearIndex = chart.labels.indexOf(thisYear);
   assert(chart.labels[0] === '2023' && yearIndex === chart.labels.length - 2, `annual bars from the first lot's year to next year (got ${chart.labels})`);
-  assert(chart.datasets[0].data[yearIndex] > 0 && chart.datasets[1].data[yearIndex] > 0, 'this year shows received + projected stacked');
+  // Projected for the rest of this year depends on the calendar: after AAPL's
+  // last ex-date of the year (~Nov 10) the next projected payout is next year,
+  // so the projected part of this year's bar is legitimately 0 until Jan 1.
+  const yearRow = annual.series.find((x) => x.label === thisYear);
+  assert(chart.datasets[0].data[yearIndex] > 0 && chart.datasets[0].data[yearIndex] === yearRow.received_thb && chart.datasets[1].data[yearIndex] === yearRow.projected_thb,
+    `this year's bar stacks the API's received + projected (received ${chart.datasets[0].data[yearIndex]}, projected ${chart.datasets[1].data[yearIndex]})`);
+  const nextYear = String(Number(thisYear) + 1);
+  assert(chart.datasets[1].data[chart.labels.indexOf(nextYear)] > 0, 'next year shows projected dividends');
   assert((await page.textContent('#div-trailing')) === baht(expected.summary.trailing_12m_thb), 'headline unchanged across modes');
   await page.$eval('#div-card', (c) => c.scrollIntoView());
   await page.screenshot({ path: `${OUTPUT}/dividends_light.png` });

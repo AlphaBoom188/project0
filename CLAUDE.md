@@ -572,7 +572,7 @@ A user with nothing that can pay a dividend gets zeros with no dividend fetches.
 **Tests:**
 - `api/dividend_math` (44, pure).
 - `api/dividends` (45, the real endpoint): AAPL bought 2023-01-03 then partly sold, PTT.BK, a bogus symbol, a crypto/gold-only user, the empty user, isolation, and series sums matching summary figures.
-- `liff/dividends_card` (25): includes the CDN-blocked fallback and light/dark screenshots.
+- `liff/dividends_card` (26): includes the CDN-blocked fallback and light/dark screenshots.
 
 ### Investments Phase D — Goal Tracker
 
