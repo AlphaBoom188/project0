@@ -1,7 +1,27 @@
 require('dotenv').config();
+
+// ---- Startup checks: fail fast with a clear message, not on first use ----
+const REQUIRED_ENV = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'LINE_MESSAGING_CHANNEL_SECRET', 'LINE_MESSAGING_CHANNEL_ACCESS_TOKEN', 'OPENAI_API_KEY', 'LIFF_ID'];
+const missingEnv = REQUIRED_ENV.filter((k) => !process.env[k]);
+if (missingEnv.length) {
+  console.error(`[startup] Missing required settings in backend/.env: ${missingEnv.join(', ')}. See backend/.env.example.`);
+  process.exit(1);
+}
+const IS_TEST_INSTANCE = process.env.DISABLE_CRON === '1';
+if (!IS_TEST_INSTANCE && !process.env.OWNER_LINE_USER_ID) {
+  console.warn('[startup] OWNER_LINE_USER_ID is not set: the ops agent can record errors but cannot alert you on LINE.');
+}
+
+// Error capture starts before anything else can log (services/opsAgent.js).
+// Test instances skip it: their deliberate failures shouldn't reach the
+// production error log or your LINE.
+const opsAgent = require('./services/opsAgent');
+if (!IS_TEST_INSTANCE && process.env.OPS_AGENT !== 'off') opsAgent.install();
+
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
+const cron = require('node-cron');
 const supabase = require('./config/supabase');
 
 const userRoutes = require('./routes/userRoutes');
@@ -27,7 +47,20 @@ const { startPayWindowReminderJob } = require('./jobs/payWindowReminders');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+// Security headers. The LIFF app, the public bill page and the API share this
+// origin, so cross-origin access is off unless CORS_ORIGINS lists origins
+// (comma-separated); the iOS app isn't a browser and doesn't need CORS.
+app.disable('x-powered-by');
+app.use((req, res, next) => {
+  res.set({
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'Permissions-Policy': 'camera=(self), microphone=(self), geolocation=()',
+  });
+  next();
+});
+const corsOrigins = String(process.env.CORS_ORIGINS || '').split(',').map((o) => o.trim()).filter(Boolean);
+if (corsOrigins.length) app.use(cors({ origin: corsOrigins }));
 
 // Mounted before express.json(): the LINE webhook middleware verifies the request
 // signature against the raw body itself and would break if the body were already
@@ -81,11 +114,11 @@ app.get('/liff-config.js', (req, res) => {
 });
 app.use('/liff', express.static(path.join(__dirname, '../liff-app')));
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
-  // DISABLE_CRON=1 is for extra instances (e.g. a test server on another port):
-  // only ONE process may run the scheduled jobs, or users get every LINE push twice.
-  if (process.env.DISABLE_CRON === '1') {
+  // DISABLE_CRON=1 is for extra instances (e.g. a test server on another port).
+  // Each job slot also runs at most once across processes (job_runs, opsAgent.runOnce).
+  if (IS_TEST_INSTANCE) {
     console.log('[cron] DISABLE_CRON=1 -- scheduled jobs NOT started on this instance');
     return;
   }
@@ -93,4 +126,26 @@ app.listen(PORT, () => {
   startRecurringTransactionsJob();
   startActivityReminderJob();
   startPayWindowReminderJob();
+  if (process.env.OPS_AGENT !== 'off') {
+    // Watchdog: every 5 minutes, one run per slot.
+    cron.schedule('*/5 * * * *', () => {
+      const slot = new Date(Math.floor(Date.now() / 300000) * 300000).toISOString().slice(0, 16);
+      opsAgent.runOnce('watchdog', slot, async () => JSON.stringify(await opsAgent.tick()));
+    });
+    console.log('[ops] watchdog scheduled every 5 minutes');
+  }
 });
+
+// Graceful shutdown (launchd/hosting send SIGTERM; Ctrl+C sends SIGINT):
+// stop scheduling jobs, finish in-flight requests, record buffered errors.
+let shuttingDown = false;
+function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[shutdown] ${signal}: finishing in-flight requests...`);
+  for (const task of cron.getTasks().values()) task.stop();
+  server.close(() => opsAgent.flush().finally(() => process.exit(0)));
+  setTimeout(() => process.exit(0), 10000).unref();
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

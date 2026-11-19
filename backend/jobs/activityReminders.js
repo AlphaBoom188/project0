@@ -1,3 +1,5 @@
+const { getBangkokYmd } = require('../services/bangkokDay');
+const { runOnce } = require('../services/opsAgent');
 const cron = require('node-cron');
 const supabase = require('../config/supabase');
 const { pushText } = require('../services/lineMessagingClient');
@@ -46,7 +48,7 @@ function startActivityReminderJob() {
       cronExpr,
       () => {
         console.log(`[activity-reminder] running (${label})...`);
-        sendActivityReminder().then(() => console.log(`[activity-reminder] done (${label})`));
+        runOnce('activityReminder', `${getBangkokYmd()}-${label}`, () => sendActivityReminder()).then(() => console.log(`[activity-reminder] done (${label})`));
       },
       { timezone: 'Asia/Bangkok' }
     );

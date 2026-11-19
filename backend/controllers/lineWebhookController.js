@@ -116,7 +116,7 @@ async function handleTextMessage(event) {
   const lineUserId = event.source?.userId;
   const text = event.message.text?.trim() || '';
   if (!lineUserId) return;
-  log('text: start', lineUserId, JSON.stringify(text));
+  log('text: start', lineUserId, `${text.length} chars`); // never the message itself: logs persist on disk
   return handleExpenseText(event, lineUserId, text);
 }
 
@@ -148,7 +148,7 @@ async function handleAudioMessage(event) {
     const audio = await getImageBuffer(event.message.id); // generic content download, despite the name
     const result = await transcribeVoice(audio);
     transcript = result.text;
-    log('audio: transcribed', lineUserId, result.provider, JSON.stringify(transcript));
+    log('audio: transcribed', lineUserId, result.provider, `${(transcript || '').length} chars`);
   } catch (error) {
     console.error('[line-webhook] audio: transcription failed:', error.message);
     await replyText(event.replyToken, "Sorry, I couldn't understand that voice message. Please try again or type it, e.g. \"coffee 120\".");
@@ -175,7 +175,7 @@ async function handleExpenseText(event, lineUserId, text, { heard = null } = {})
     return;
   }
   const parsed = await parseExpenseText(lineUserId, text);
-  log('text: parsed', lineUserId, JSON.stringify(parsed));
+  log('text: parsed', lineUserId, parsed.isExpense ? 'expense' : 'not an expense');
 
   if (!parsed.isExpense) {
     await replyText(
@@ -244,7 +244,7 @@ async function handleImageMessage(event) {
 
   const imageBase64 = imageBuffer.toString('base64');
   const extracted = await extractReceiptFromImage(lineUserId, imageBase64);
-  log('image: extracted', lineUserId, JSON.stringify(extracted));
+  log('image: extracted', lineUserId, extracted && extracted.amount != null ? 'amount found' : 'no amount');
 
   const category = await resolveCategory(lineUserId, extracted.suggested_category_id, extracted.suggested_category_name);
   log('image: category resolved', lineUserId, JSON.stringify(category));

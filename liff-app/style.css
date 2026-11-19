@@ -1857,3 +1857,17 @@ body {
 .stmt-recent-row .category-row-top {
   align-items: center;
 }
+
+/* ---- Legal links (Settings, public bill page) ---- */
+.legal-links {
+  text-align: center;
+  font-size: 13px;
+  margin: var(--space-lg) 0 var(--space-xl);
+}
+.legal-links a {
+  color: var(--color-text-secondary);
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap-min);
+  padding: 0 var(--space-sm);
+}

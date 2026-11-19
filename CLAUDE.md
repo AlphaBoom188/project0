@@ -2,7 +2,7 @@
 
 A Thai personal-finance app. **Backend:** Node.js/Express on Supabase (Postgres). **Clients:** a LINE MINI App (LIFF, `liff-app/`, the main client), a LINE Bot (chat, voice, receipt photos, group split tracker), and an older SwiftUI iOS app. LINE Login is the only identity; `line_user_id` is the primary key everywhere.
 
-Detailed per-feature notes (design decisions, edge cases, how each was verified) live in **`docs/FEATURES.md`**. Read the relevant section there before changing a feature. This file covers what every session needs.
+Detailed per-feature notes (design decisions, edge cases, how each was verified) live in **`docs/FEATURES.md`**. How production runs and what's planned: **`docs/PRODUCTION.md`**. Read the relevant section there before changing a feature. This file covers what every session needs.
 
 ## Run it
 
@@ -18,7 +18,8 @@ npm start              # port 3000; also serves the LIFF app at /liff and runs t
 - `OPENAI_API_KEY` (with billing): receipt OCR, text/voice expense parsing, auto-categorization, statement categories, voice fallback.
 - `LINE_MESSAGING_CHANNEL_SECRET` + `LINE_MESSAGING_CHANNEL_ACCESS_TOKEN` (bot), `LINE_LOGIN_*` (iOS login), `LIFF_ID`.
 - Optional: `TYPHOON_API_KEY` (Thai speech-to-text, else OpenAI); `GOOGLE_OAUTH_*` (verified export email, else 501); `APPS_SCRIPT_EMAIL_WEBHOOK_URL` + `APPS_SCRIPT_SHARED_SECRET` (CSV email relay, see `docs/APPS_SCRIPT_EMAIL_RELAY.md`, else 501).
-- `DISABLE_CRON=1` for any extra server instance (below).
+- `DISABLE_CRON=1` for any extra server instance (below). It also skips the ops agent there.
+- `OWNER_LINE_USER_ID` (who gets production alerts on LINE); optional `ANTHROPIC_API_KEY` (adds a Claude diagnosis to alerts; needs `@anthropic-ai/sdk`); `OPS_AGENT=off`; `CORS_ORIGINS`.
 - `AUTH_TEST_BYPASS=false` removes the local `test_` bypass, e.g. behind a proxy that doesn't add `X-Forwarded-For`.
 - `AUTH_REQUIRED=false` disables API authentication (default on; see Conventions). `EXPORT_LINK_SECRET` is optional; by default it's derived from the service role key.
 
@@ -61,6 +62,8 @@ npm run test:openai       # tests/openai/: real OpenAI calls (a few cents)
   - CSV download is a navigation and can't send headers, so the app first `POST`s `/transactions/:u/export-link`, which returns the query HMAC-signed for 2 minutes.
   - The LIFF app sends `liff.getIDToken()` from `apiRequest()`. A 401 `auth_invalid` triggers one silent `liff.login()`, guarded against loops.
   - The iOS app stores the LINE access token from `/line/callback` in the Keychain (`KeychainStore.swift`) and sends it on every request. On a 401 it logs out to the login screen.
+- **Ops agent** (`services/opsAgent.js`, migration 017): `console.error` is wrapped, so every logged error is recorded in `error_events` without changes at call sites. A 5-minute watchdog alerts the owner on LINE about big problems (6-hour cooldown per problem) and quietly handles small ones. Run scheduled jobs through `opsAgent.runOnce(job, slot, fn)` (the `job_runs` primary key makes each slot run once). Log failures with `console.error` so they're captured, and prefix a job's errors with `job:` to mark them critical.
+- **Startup and shutdown:** required settings are checked at boot (exit with a clear message). SIGTERM/SIGINT stops cron, finishes in-flight requests and flushes the error buffer. Security headers are on, and CORS is off unless `CORS_ORIGINS` is set.
 - **Rate limits** (`services/rateLimit.js`, in memory, per user, per 10 minutes) on everything that spends money: receipt OCR and bill item scans plus bot photos (30), voice parse plus bot voice (30), bot free text (60), statement preview (30). Over the limit, REST returns 429 `rate_limited` with `Retry-After`, and the bot replies asking the user to wait. Add a limit to any new paid endpoint.
 - **CSV exports** prefix text starting with `= + - @` (or a tab/CR) with `'`, which stops formula injection from statement merchant names or group members' descriptions.
 - **OAuth `state`** that round-trips a user id must be signed (`lineAuth.signState`/`verifyState`, 10 min), as the Google export-email link is. A bare id lets someone attach their Google email to another account.
@@ -81,6 +84,7 @@ npm run test:openai       # tests/openai/: real OpenAI calls (a few cents)
   - Async renders use a sequence-number stale guard (`txnLoadSeq`, `perfLoadSeq`, ...).
   - Chart.js 4.4.1 and pdf.js 3.11.174 load from cdnjs. Pages must still work ("Chart unavailable", "Couldn't load the PDF reader") when a CDN is blocked.
   - Modals stack at z-index 20, the confirm modal at 30, the FAB at 15, the nav at 10.
+- **Legal pages must stay true.** `liff-app/privacy.html` (+ `privacy-th.html`) states what is collected, who it goes to and how long it's kept: error reports 90 days, alerts 180 days, job records 30 days, server logs 30 days (`deploy/macos/logrotate.sh`). When a change sends data somewhere new, stores something new or changes retention, update both languages. Never log message text, transcripts or receipt contents.
 - **Privacy.** Never commit real user data, including from statements the owner shares for testing: names, account numbers, last-4 digits, counterparties. Keep extracted data in the session scratchpad and use the synthetic fixtures in tests. Run a grep sweep before committing.
 
 ## Architecture
@@ -100,13 +104,15 @@ backend/
                         activityReminders (12:00, 20:00), payWindowReminders (09:00), all Bangkok time
   supabase/migrations/  001-016 (run in order in the Supabase SQL Editor)
   tests/                see Tests
-liff-app/               index.html, app.js, style.css; bill.html/bill.js = public shared-bill page
+liff-app/               index.html, app.js, style.css; bill.html/bill.js = public shared-bill page;
+                        privacy(-th).html, terms(-th).html + legal.css = public legal pages (drafts)
 ios-app/                SwiftUI app (LINE Login, dashboard, receipt scan), largely untouched since Phase 2
-docs/                   FEATURES.md (detailed notes), PRD, specs, Apps Script relay
+docs/                   FEATURES.md (detailed notes), PRODUCTION.md (ops), PRD, specs, Apps Script relay
+deploy/macos/           LaunchAgents for self-hosting (backend, ngrok tunnel, keep-awake): install.sh <domain>
 ```
 
 **Endpoints** (all under `/api`, `:u` = `line_user_id`):
-- **Users:** `POST /users`, `GET /users/:u`, `PATCH /users/:u/preferences`, `PUT /users/:u/billing-cycle`, `PUT /users/:u/emergency-fund`.
+- **Users:** `POST /users`, `GET /users/:u`, `DELETE /users/:u` (with `{ confirm: "DELETE" }`: erases all data and thumbnails, for PDPA), `PATCH /users/:u/preferences`, `PUT /users/:u/billing-cycle`, `PUT /users/:u/emergency-fund`.
 - **Categories:** `GET|POST /categories/:u`, `PUT|DELETE /categories/:u/:category_id`.
 - **Transactions:** `GET|POST /transactions/:u`.
   - GET filters: `type`, `category_id`, `start_date`, `end_date`, `q` (description search), `account_id` (comma-separated, either side of a transfer).
@@ -146,6 +152,8 @@ docs/                   FEATURES.md (detailed notes), PRD, specs, Apps Script re
 | 014 | `recurring_transactions.paid_period` |
 | 015 | `asset_lots`, `investment_goals` |
 | 016 | LINE group split tracker: `line_groups`, `line_group_members`, `group_expenses`, `group_expense_shares` |
+| 017 | Ops: `error_events`, `job_runs`, `ops_alerts`; index `transactions(line_user_id, transaction_date DESC)` |
+| 018 | `users.group_ledger_copies` (consent for group shares in personal ledgers) |
 
 ## Features (details in `docs/FEATURES.md`)
 
@@ -158,7 +166,7 @@ docs/                   FEATURES.md (detailed notes), PRD, specs, Apps Script re
   - Free text ("coffee 120"), receipt photos and Thai voice messages each produce a Confirm/Cancel Flex card. Pending confirmations live in memory for 10 minutes.
   - "summary"/"สรุป" replies with the current cycle's totals.
   - Voice is transcribed by Typhoon ASR when `TYPHOON_API_KEY` is set, else OpenAI `gpt-4o-mini-transcribe`, then parsed like text. The card's first row shows what was heard.
-- **LINE group split tracker:** `+ข้าว 600` splits equally among joined members, or `+taxi 300 @Ann` between you and Ann. Then `balance` (fewest payments), `settle @name [amount]` and `undo`. Each share lands in that member's personal ledger. The LIFF Groups card on Home shows balances (read-only).
+- **LINE group split tracker:** `+ข้าว 600` splits equally among joined members, or `+taxi 300 @Ann` between you and Ann. Then `balance` (fewest payments), `settle @name [amount]` and `undo`. A share is copied into a member's personal ledger only if they use the app themselves and haven't turned it off (`users.group_ledger_copies` TRUE: set by `upsertUser` from the LIFF/iOS/1:1-bot paths, never from a group, and never overriding an explicit FALSE; Settings toggle). Group-only members are tracked in the group's balances only. The LIFF Groups card on Home shows balances (read-only).
 - **Notifications:** budget-crossing alerts, event-budget alerts at 80% and 100%, a 21:00 daily digest, 12:00/20:00 activity nudges, and pay-window due/overdue reminders. All respect `notifications_enabled`.
 - **LIFF app:**
   - Tabs: Home / Transactions / Budgets / Net Worth / Settings.

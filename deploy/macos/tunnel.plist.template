@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.expensetracker.tunnel</string>
+  <key>ProgramArguments</key>
+  <array><string>__NGROK__</string><string>http</string><string>--url=__DOMAIN__</string><string>3000</string><string>--log=stdout</string></array>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>__PATH__</string><key>HOME</key><string>__HOME__</string></dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>StandardOutPath</key><string>__LOGS__/tunnel.log</string>
+  <key>StandardErrorPath</key><string>__LOGS__/tunnel.err.log</string>
+</dict>
+</plist>

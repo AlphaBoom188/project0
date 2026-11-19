@@ -75,11 +75,12 @@ const userController = {
   async updatePreferences(req, res) {
     try {
       const { line_user_id } = req.params;
-      const { notifications_enabled, thumbnails_enabled, email } = req.body;
+      const { notifications_enabled, thumbnails_enabled, email, group_ledger_copies } = req.body;
 
       const updateData = {};
       if (notifications_enabled !== undefined) updateData.notifications_enabled = Boolean(notifications_enabled);
       if (thumbnails_enabled !== undefined) updateData.thumbnails_enabled = Boolean(thumbnails_enabled);
+      if (group_ledger_copies !== undefined) updateData.group_ledger_copies = Boolean(group_ledger_copies);
       if (email !== undefined) {
         if (email !== null && email !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
           return res.status(400).json({ error: 'email is not a valid address' });
@@ -88,7 +89,7 @@ const userController = {
       }
 
       if (Object.keys(updateData).length === 0) {
-        return res.status(400).json({ error: 'At least one of notifications_enabled, thumbnails_enabled, or email is required' });
+        return res.status(400).json({ error: 'At least one of notifications_enabled, thumbnails_enabled, group_ledger_copies, or email is required' });
       }
 
       const { data: user, error } = await supabase
@@ -158,18 +159,42 @@ const userController = {
   },
 
   // Delete user account
+  // DELETE /api/users/:line_user_id  body: { confirm: "DELETE" }
+  // "Delete my account" (PDPA right to erasure): every row of the user's data
+  // and their receipt thumbnails. Transactions and recurring rules go first,
+  // because they block deleting the categories they use (ON DELETE RESTRICT);
+  // the users row then cascades to everything else. Group expenses this user
+  // paid are removed from those groups' ledgers too (they can't outlive the
+  // user row they reference).
   async deleteUser(req, res) {
     try {
       const { line_user_id } = req.params;
+      if (!req.body || req.body.confirm !== 'DELETE') {
+        return res.status(400).json({ error: 'Send { "confirm": "DELETE" } to delete this account and all of its data.' });
+      }
 
-      const { error } = await supabase
-        .from('users')
-        .delete()
-        .eq('line_user_id', line_user_id);
+      const { BUCKET } = require('../services/receiptThumbnail');
+      let thumbnails = 0;
+      for (;;) {
+        const { data: files, error: listError } = await supabase.storage.from(BUCKET).list(line_user_id, { limit: 1000 });
+        if (listError || !files || files.length === 0) break;
+        const { error: removeError } = await supabase.storage.from(BUCKET).remove(files.map((f) => `${line_user_id}/${f.name}`));
+        if (removeError) throw removeError;
+        thumbnails += files.length;
+        if (files.length < 1000) break;
+      }
 
+      const counted = async (table) => {
+        const { data, error } = await supabase.from(table).delete().eq('line_user_id', line_user_id).select('line_user_id');
+        if (error) throw error;
+        return data.length;
+      };
+      const transactions = await counted('transactions');
+      await counted('recurring_transactions');
+      const { data: user, error } = await supabase.from('users').delete().eq('line_user_id', line_user_id).select('line_user_id');
       if (error) throw error;
 
-      res.json({ success: true, message: 'User deleted successfully' });
+      res.json({ success: true, deleted: { user: user.length, transactions, thumbnails } });
     } catch (error) {
       console.error('Error in deleteUser:', error);
       res.status(500).json({ error: error.message });

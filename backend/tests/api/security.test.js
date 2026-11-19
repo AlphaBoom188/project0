@@ -71,6 +71,14 @@ const cleanup = async () => { for (const u of [U, RL, BOT]) for (const t of ['tr
   r = await post(`/api/statements/${U}/parse`, { pages: [[{ x: 10, y: 10, s: `01/11/26 ${'A '.repeat(200000)}1.00 2.00` }, { x: 10, y: 20, s: 'Bangkok Bank STATEMENT OF SAVING ACCOUNT' }]] });
   assert(Date.now() - t0 < 5000 && [200, 422].includes(r.status), `a hostile 400 KB text run is capped and handled quickly (${Date.now() - t0} ms, ${r.status})`);
 
+  // --- 4. Group-ledger consent preference (migration 018) ---
+  const { data: me } = await db.from('users').select('group_ledger_copies').eq('line_user_id', U).single();
+  assert(me.group_ledger_copies === true, 'a user created through the app has group copies on');
+  r = await req(`/api/users/${U}/preferences`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ group_ledger_copies: false }) });
+  assert(r.status === 200 && (await db.from('users').select('group_ledger_copies').eq('line_user_id', U).single()).data.group_ledger_copies === false, 'PATCH preferences turns group copies off');
+  await post('/api/users', { line_user_id: U, display_name: 'Sec' });
+  assert((await db.from('users').select('group_ledger_copies').eq('line_user_id', U).single()).data.group_ledger_copies === false, 'opening the app again keeps it off');
+
   // --- 7. AUTH_TEST_BYPASS=false ---
   const local = { headers: {}, socket: { remoteAddress: '127.0.0.1' } };
   assert(auth.isLocalTestRequest(local, 'test_x') === true, 'the bypass applies to local test_ requests by default');

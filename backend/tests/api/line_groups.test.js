@@ -32,6 +32,7 @@ stub('services/textExpenseParser.js', { async parseExpenseText() { oneToOneParse
 
 const controller = require(`${BACKEND}/controllers/lineWebhookController.js`);
 const ledger = require(`${BACKEND}/services/groupLedger.js`);
+const { upsertUser } = require(`${BACKEND}/services/userUpsert.js`);
 
 let failures = 0;
 function assert(cond, label) {
@@ -61,6 +62,11 @@ async function cleanup() {
 }
 
 (async () => {
+  // Ann and Bo use the app themselves (LIFF login / 1:1 chat path); Cee only
+  // ever speaks in the group, so Cee gets no personal-ledger copies (migration 018).
+  await upsertUser({ lineUserId: A, displayName: 'Ann', pictureUrl: null });
+  await upsertUser({ lineUserId: B, displayName: 'Bo', pictureUrl: null });
+
   // --- Bot added ---
   let out = await fire({ type: 'join', source: { type: 'group', groupId: G } });
   assert(out.length === 1 && out[0].startsWith('Hi! I split shared costs'), 'join -> the help intro');
@@ -83,11 +89,14 @@ async function cleanup() {
   assert(out[0] && out[0].includes('ข้าว ฿600.00 paid by Ann') && out[0].includes('Split 3 ways: Bo ฿200.00, Cee ฿200.00, Ann ฿200.00'), `expense reply (got ${JSON.stringify(out)})`);
   const { data: e1 } = await db.from('group_expenses').select('*, group_expense_shares(*)').eq('group_id', G).single();
   assert(Number(e1.amount) === 600 && e1.payer_line_user_id === A && e1.group_expense_shares.length === 3, 'one expense, three shares');
-  assert(e1.group_expense_shares.every((s) => s.transaction_id), 'every share is linked to a personal transaction');
-  for (const u of [A, B, C]) {
+  assert(e1.group_expense_shares.filter((s) => s.transaction_id).length === 2, 'the two app users\' shares are linked to personal transactions');
+  for (const u of [A, B]) {
     const t = await personal(u);
-    assert(t.length === 1 && Number(t[0].amount) === 200 && t[0].description === 'ข้าว · Test Trip' && t[0].categories.name === 'Food', `${NAMES[u]}'s ledger: ฿200 "ข้าว · Test Trip" in Food`);
+    assert(t.length === 1 && Number(t[0].amount) === 200 && t[0].description === 'ข้าว · Test Trip' && t[0].categories.name === 'Food', `${NAMES[u]} (uses the app): ฿200 "ข้าว · Test Trip" in Food`);
   }
+  assert((await personal(C)).length === 0 && e1.group_expense_shares.find((x) => x.line_user_id === C && !x.transaction_id), 'Cee (group chat only) gets no personal-ledger copy, but still owes the share');
+  const { data: consent } = await db.from('users').select('line_user_id, group_ledger_copies').in('line_user_id', [A, C]);
+  assert(consent.find((x) => x.line_user_id === A).group_ledger_copies === true && consent.find((x) => x.line_user_id === C).group_ledger_copies === null, 'app users are TRUE, group-only members undecided (NULL)');
 
   out = await say(B, 'balance');
   const lines = out[0].split('\n');
@@ -136,6 +145,20 @@ async function cleanup() {
   out = await say(C, 'undo');
   assert(out[0] === 'Removed your payment of ฿100.00 to Ann.', 'undo a settlement');
   assert((await personal(B)).length === 2, 'settlements never touch personal ledgers');
+
+  // --- Consent: Settings opt-out, and a group-only member who starts using the app ---
+  await db.from('users').update({ group_ledger_copies: false }).eq('line_user_id', B); // Bo turns it off in Settings
+  await upsertUser({ lineUserId: B, displayName: 'Bo', pictureUrl: null }); // ...and logs in again later
+  assert((await db.from('users').select('group_ledger_copies').eq('line_user_id', B).single()).data.group_ledger_copies === false, 'logging in again never re-enables copies someone turned off');
+  await upsertUser({ lineUserId: C, displayName: 'Cee', pictureUrl: null }); // Cee opens the app for the first time
+  const bBefore = (await personal(B)).length;
+  const cBefore = (await personal(C)).length;
+  text = '+ข้าว 40 @Bo @Cee';
+  await say(A, text, [mention(text, '@Bo', B), mention(text, '@Cee', C)]);
+  assert((await personal(B)).length === bBefore, 'after opting out, Bo gets no new personal copies');
+  assert((await personal(C)).length === cBefore + 1, 'once Cee uses the app, Cee gets personal copies from then on');
+  await say(A, 'undo');
+  await db.from('users').update({ group_ledger_copies: true }).eq('line_user_id', B);
 
   // --- Members, join, leaving ---
   out = await say(A, 'members');

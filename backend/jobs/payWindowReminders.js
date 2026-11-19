@@ -1,3 +1,5 @@
+const { getBangkokYmd } = require('../services/bangkokDay');
+const { runOnce } = require('../services/opsAgent');
 const cron = require('node-cron');
 const supabase = require('../config/supabase');
 const { pushText } = require('../services/lineMessagingClient');
@@ -50,7 +52,7 @@ function startPayWindowReminderJob() {
     '0 9 * * *',
     () => {
       console.log('[pay-window] running...');
-      sendPayWindowReminders().then(() => console.log('[pay-window] done'));
+      runOnce('payWindowReminders', getBangkokYmd(), () => sendPayWindowReminders()).then(() => console.log('[pay-window] done'));
     },
     { timezone: 'Asia/Bangkok' }
   );

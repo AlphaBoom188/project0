@@ -1,3 +1,5 @@
+const { getBangkokYmd } = require('../services/bangkokDay');
+const { runOnce } = require('../services/opsAgent');
 const cron = require('node-cron');
 const supabase = require('../config/supabase');
 const { pushText } = require('../services/lineMessagingClient');
@@ -55,7 +57,7 @@ function startDailyDigestJob() {
     '0 21 * * *',
     () => {
       console.log('[daily-digest] running...');
-      sendDailyDigest().then(() => console.log('[daily-digest] done'));
+      runOnce('dailyDigest', getBangkokYmd(), () => sendDailyDigest()).then(() => console.log('[daily-digest] done'));
     },
     { timezone: 'Asia/Bangkok' }
   );

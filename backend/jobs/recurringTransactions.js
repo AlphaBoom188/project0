@@ -1,3 +1,5 @@
+const { getBangkokYmd } = require('../services/bangkokDay');
+const { runOnce } = require('../services/opsAgent');
 const cron = require('node-cron');
 const supabase = require('../config/supabase');
 const { createTransaction } = require('../services/transactionCreate');
@@ -81,7 +83,7 @@ function startRecurringTransactionsJob() {
     '5 0 * * *',
     () => {
       console.log('[recurring] running...');
-      processDueRecurringTransactions().then(() => console.log('[recurring] done'));
+      runOnce('recurringTransactions', getBangkokYmd(), () => processDueRecurringTransactions()).then(() => console.log('[recurring] done'));
     },
     { timezone: 'Asia/Bangkok' }
   );

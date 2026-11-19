@@ -50,7 +50,7 @@ async function ensureMember(groupId, sourceType, userId, { force = false } = {})
   if (!member || member.left_at || !name) {
     name = name || (await getGroupMemberName(sourceType, groupId, userId));
     const { data: user } = await supabase.from('users').select('line_user_id').eq('line_user_id', userId).maybeSingle();
-    if (!user) await upsertUser({ lineUserId: userId, displayName: name, pictureUrl: null });
+    if (!user) await upsertUser({ lineUserId: userId, displayName: name, pictureUrl: null, appUser: false });
     const { error: upsertError } = await supabase
       .from('line_group_members')
       .upsert({ group_id: groupId, line_user_id: userId, display_name: name, left_at: null }, { onConflict: 'group_id,line_user_id' });
@@ -73,11 +73,26 @@ async function listMembers(groupId, { includeLeft = false } = {}) {
   return data;
 }
 
-// Writes each member's share to their own ledger as an expense. Best-effort:
-// a failure is logged and the group record stands.
+// Members whose shares may be copied into their personal ledger: only those who
+// use the app and haven't turned it off (users.group_ledger_copies = TRUE,
+// migration 018). Anyone else in the group is tracked in the group's balances
+// only, so a group member can't write into someone's personal transactions.
+// Fails closed (no copies) if the column can't be read.
+async function membersAcceptingCopies(ids) {
+  const { data, error } = await supabase.from('users').select('line_user_id, group_ledger_copies').in('line_user_id', ids);
+  if (error) {
+    console.error('[group] could not read group_ledger_copies (migration 018?):', error.message);
+    return new Set();
+  }
+  return new Set(data.filter((u) => u.group_ledger_copies === true).map((u) => u.line_user_id));
+}
+
+// Writes each consenting member's share to their own ledger as an expense.
+// Best-effort: a failure is logged and the group record stands.
 async function writePersonalShares(expense, shares, groupName) {
   const label = `${expense.description || 'Group expense'} · ${groupName || 'group'}`;
-  await Promise.all(shares.filter((s) => s.share > 0).map(async (s) => {
+  const accepting = await membersAcceptingCopies(shares.map((s) => s.line_user_id));
+  await Promise.all(shares.filter((s) => s.share > 0 && accepting.has(s.line_user_id)).map(async (s) => {
     try {
       const category = await autoCategorize(s.line_user_id, expense.description || 'Group expense');
       if (!category) return;

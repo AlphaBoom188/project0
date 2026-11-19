@@ -364,12 +364,14 @@ const el = {
   themeOptionButtons: document.querySelectorAll('[data-theme-option]'),
   settingNotifications: document.getElementById('setting-notifications'),
   settingThumbnails: document.getElementById('setting-thumbnails'),
+  settingGroupCopies: document.getElementById('setting-group-copies'),
   settingCycleDay: document.getElementById('setting-cycle-day'),
   saveCycleDay: document.getElementById('save-cycle-day'),
   settingEmail: document.getElementById('setting-email'),
   saveEmail: document.getElementById('save-email'),
   settingsStatus: document.getElementById('settings-status'),
   clearHistoryButton: document.getElementById('clear-history-button'),
+  deleteAccountButton: document.getElementById('delete-account-button'),
 
   // Recurring expenses
   recurringList: document.getElementById('recurring-list'),
@@ -3560,6 +3562,8 @@ async function loadSettingsTab() {
   await ensureCurrentUser();
   el.settingNotifications.checked = currentUser.notifications_enabled !== false;
   el.settingThumbnails.checked = currentUser.thumbnails_enabled !== false;
+  // Only TRUE copies (NULL = never decided, FALSE = turned off): see migration 018.
+  el.settingGroupCopies.checked = currentUser.group_ledger_copies === true;
   el.settingCycleDay.value = currentUser.billing_cycle_start_day || 1;
   el.settingEmail.value = currentUser.email || '';
   renderGoogleConnectState();
@@ -3732,6 +3736,26 @@ async function handleClearHistory() {
     showSettingsStatus(error.message);
   } finally {
     el.clearHistoryButton.disabled = false;
+  }
+}
+
+// "Delete my account" (PDPA): two confirmations, then everything is erased
+// server-side and the app closes (or shows a farewell outside LINE).
+async function handleDeleteAccount() {
+  const first = await confirmAction('Delete your account and ALL of your data (transactions, accounts, budgets, investments, bills, receipt images)? This cannot be undone.', 'Continue');
+  if (!first) return;
+  const second = await confirmAction('Are you sure? Everything will be permanently erased.', 'Delete My Account');
+  if (!second) return;
+  el.deleteAccountButton.disabled = true;
+  try {
+    await apiRequest(`/users/${lineUserId}`, { method: 'DELETE', body: JSON.stringify({ confirm: 'DELETE' }) });
+    el.app.hidden = true;
+    el.loading.hidden = false;
+    el.loading.textContent = 'Your account and data have been deleted.';
+    if (liff.isInClient && liff.isInClient()) setTimeout(() => liff.closeWindow(), 2000);
+  } catch (error) {
+    showSettingsStatus(error.message);
+    el.deleteAccountButton.disabled = false;
   }
 }
 
@@ -3979,10 +4003,12 @@ el.exportEmailButton.addEventListener('click', handleExportEmail);
 
 el.settingNotifications.addEventListener('change', () => handlePreferenceToggle('notifications_enabled', el.settingNotifications));
 el.settingThumbnails.addEventListener('change', () => handlePreferenceToggle('thumbnails_enabled', el.settingThumbnails));
+el.settingGroupCopies.addEventListener('change', () => handlePreferenceToggle('group_ledger_copies', el.settingGroupCopies));
 el.saveCycleDay.addEventListener('click', handleSaveCycleDay);
 el.saveEmail.addEventListener('click', handleSaveEmail);
 el.saveEmergencyFund.addEventListener('click', handleSaveEmergencyFund);
 el.clearHistoryButton.addEventListener('click', handleClearHistory);
+el.deleteAccountButton.addEventListener('click', handleDeleteAccount);
 
 el.refreshPricesButton.addEventListener('click', handleRefreshPrices);
 el.perfRangePills.forEach((pill) => pill.addEventListener('click', () => setPerfRange(pill.dataset.perfRange)));

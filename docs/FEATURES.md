@@ -843,3 +843,22 @@ A review of the day's changes (auth, statement import/undo/transfers, groups, vo
 - **Learned categories** (`learnedCategories()` in `statementImport.js`): before any keyword rule or LLM call, a row whose description and type match one of the user's own statement-imported transactions gets that transaction's current category. The newest one wins, and only categories that still exist and match the type count. Re-categorizing during review, or editing a transaction later, carries forward to future imports. It scans at most 10,000 rows.
 - **Batches of 20 instead of 60:** the LLM batches already ran in parallel, so the wait was the slowest single batch. On the real 1,022-row KBank statement, the fresh preview went from 11.1 s to 8.5 s. With June-August imported, 160 of the 454 new September-November rows were from known merchants and skipped the LLM, but the wait barely moved (it's still the slowest remaining batch).
 - **Tests:** `api/statements` (77): a merchant imported with an edited category gets that category on the next statement, and a later edit changes the suggestion.
+
+
+### Group-Ledger Consent (2026-11-19, security review finding 4)
+
+Before this, any member of a shared LINE group could log `+x 99999 @you`, and a share landed in your personal transactions. Owner decision: copy shares only for people who use the app.
+
+- **Migration 018:** `users.group_ledger_copies` BOOLEAN.
+  - `NULL` = never decided (someone who only spoke in a group).
+  - `TRUE` = copies on: set automatically the first time they use the app themselves, or chosen in Settings.
+  - `FALSE` = turned off in Settings.
+  - The migration sets TRUE for existing users, except accounts created within a minute of joining their first group.
+- **`upsertUser({ appUser })`:** default `true` (REST `/api/users`, the iOS login callback, the bot's follow event and 1:1 messages) sets TRUE only when NULL, so an explicit FALSE is never overridden. `groupLedger.ensureMember` passes `appUser: false`.
+  - If the column is missing, upsert retries without it, so logins work before the migration.
+- **`groupLedger.writePersonalShares`** copies only to members with `group_ledger_copies === true`. It fails closed (no copies) if the column can't be read. The group's own balances, shares and settlements are unaffected.
+- **Settings → Preferences:** "Add my share of LINE group expenses to my transactions" (`PATCH /users/:u/preferences { group_ledger_copies }`).
+- **Tests:**
+  - `api/line_groups` (42): app users get copies, a group-only member doesn't but still owes their share; opting out stops copies and re-login doesn't re-enable them; a group-only member who opens the app gets copies from then on.
+  - `api/security` (18): the preference endpoint.
+  - `liff/group_copies_setting` (4).
