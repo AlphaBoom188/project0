@@ -55,7 +55,7 @@ npm start  # Starts server on port 3000
 - `GET /api/line/login-url` - Generate LINE Login URL
 - `GET /api/line/callback` - Handle LINE OAuth callback
 - `POST /api/ocr/scan/:line_user_id` - Scan a receipt image (OpenAI Vision), extract amount/date/merchant/category, and check `slip_hash` for duplicates
-- `POST /api/line/webhook` - LINE Bot webhook (signature-verified). Handles `follow` (provisions the user), text messages (free-text expense parsing, e.g. "coffee 120", plus a "summary"/"สรุป" command), image messages (same OCR pipeline as the REST endpoint), audio messages (Thai voice, transcribed then parsed like text; see Thai Voice Messages below), and `postback` (Confirm/Cancel on the resulting Flex card)
+- `POST /api/line/webhook` - LINE Bot webhook (signature-verified). Handles `follow` (provisions the user), text messages (free-text expense parsing, e.g. "coffee 120", plus a "summary"/"สรุป" command), image messages (same OCR pipeline as the REST endpoint), audio messages (Thai voice, transcribed then parsed like text; see Thai Voice Messages below), and `postback` (Confirm/Cancel on the resulting Flex card). Events from a **group or room** go to the split tracker instead (`controllers/lineGroupHandler.js`, see LINE Group Split Tracker below)
 
 ### Calendar: Asia/Bangkok everywhere
 
@@ -131,6 +131,8 @@ xcrun simctl io "iPhone 17 Pro" screenshot screenshot.png
    - 012_budget_events.sql
    - 013_google_email_verification.sql
    - 014_recurring_paid_period.sql
+   - 015_investment_lots_goals.sql
+   - 016_line_groups.sql
 
 **Note:** after running a migration in the SQL Editor, the REST API layer (PostgREST) caches the schema and can take a bit to notice new tables — if the backend immediately 500s with `Could not find the table '...' in the schema cache` right after a migration, that's this cache, not a failed migration; it clears on its own within roughly a minute, or immediately by running `NOTIFY pgrst, 'reload schema';` in the SQL Editor.
 
@@ -156,7 +158,8 @@ project0/
 │   │   ├── categoryController.js # Category management
 │   │   ├── transactionController.js # Transaction management
 │   │   ├── lineController.js    # LINE Login OAuth
-│   │   ├── lineWebhookController.js # LINE Bot webhook (follow/text/image/postback)
+│   │   ├── lineWebhookController.js # LINE Bot webhook (follow/text/image/audio/postback); routes group/room events to lineGroupHandler
+│   │   ├── lineGroupHandler.js  # LINE group split tracker: join/leave, passive members, expenses, balance, settle, undo
 │   │   ├── ocrController.js     # Receipt OCR (OpenAI Vision)
 │   │   ├── recurringController.js # Recurring expense/income rule CRUD
 │   │   ├── accountController.js # Accounts/wallets CRUD
@@ -194,6 +197,8 @@ project0/
 │   │   ├── billSplit.js         # cent-accurate equal/custom/itemized split math
 │   │   ├── billItemExtraction.js # OpenAI Vision -> itemized receipt line items (separate from receiptExtraction.js)
 │   │   ├── marketPrices.js      # Live prices: Yahoo Finance (stock/etf), CoinGecko (crypto); mutual_fund/gold are manual-only
+│   │   ├── groupSplitMath.js    # pure: group message parsing, equal splits, net balances, who-pays-whom
+│   │   ├── groupLedger.js       # group/member/expense DB ops + each member's share into their personal ledger
 │   │   ├── statementParser.js   # pure: positioned PDF text -> KBank statement rows, signs from the running balance, totals cross-check
 │   │   └── statementImport.js   # preview: row keys, own-transfer/duplicate/imported status, keyword-then-LLM categories
 │   ├── jobs/
@@ -607,6 +612,38 @@ Spec: `docs/master_uxui_specification_finance.md` Screen 2.4, adapted. Table `in
 **Tests:** `api/voice_message` (14, free: LINE, transcription and parser stubbed; refusals, Heard row, confirm → transaction, spoken "สรุป", typed text unchanged). `openai/voice_message` (5, plus 1 when a Typhoon key is set): real transcription of `tests/fixtures/voice_coffee_120_th.m4a` ("กาแฟ หนึ่งร้อยยี่สิบ บาท", made with macOS `say -v Kanya` + `afconvert`), bogus-key fallback, and the full webhook producing a 120 card.
 
 **Not built yet:** a mic button in the LIFF Add form.
+
+### LINE Group Split Tracker
+
+Spec: `docs/PHASE_3_SPEC.md` "Multi-User / Group Support: shared expense logging inside LINE group chats". Owner decisions:
+- a Splitwise-style split tracker;
+- split among all joined members by default, with @mentions to narrow it;
+- each member's share goes into their personal ledger.
+
+Migration `016_line_groups.sql` adds four tables: `line_groups`, `line_group_members`, `group_expenses` (kind `expense` | `settlement`) and `group_expense_shares` (with `transaction_id` → the personal copy).
+
+✅ **Routing.** `handleEvent()` sends every event whose `source.type` is `group` or `room` to `lineGroupHandler.handleGroupEvent()`. Before this, a bot added to a group would have run every chat message through the OpenAI 1:1 parser and replied to each one.
+
+✅ **Quiet by default** (`services/groupSplitMath.js`, pure). The bot only answers:
+- **Exact command words:** `balance`/`ยอด`/`สรุป`, `settle`/`เคลียร์` (the only command that takes arguments), `undo`/`ยกเลิก`, `members`/`สมาชิก`, `join`/`เข้าร่วม`, `help`.
+- **Expenses:** a message starting with `+` (`+ข้าว 600`, `+600 taxi`, `+ค่าที่พัก 1,250.50 บาท`) or one that @mentions the bot (`isSelf`). Plain "ข้าว 600" or "see you at 7" is ignored, and parsing is deterministic with no AI.
+
+✅ **Members.** A standard OA can't list group members, so anyone who sends any message joins silently (`ensureMember`). It fetches their display name with `getGroupMemberProfile` / `getRoomMemberProfile`, creates a `users` row if needed, and caches them in memory for 10 minutes. A `memberLeft` event sets `left_at`, which excludes them from new splits; `join` brings them back. The bot being removed (`leave`) sets `is_active = false`.
+
+✅ **Expenses.** Split equally in cents among all current members, or among the payer plus the @mentioned people. The spare cent goes to someone other than the payer. A mention without a `userId` (LINE omits it unless the person allows it) is matched against members' display names; an unknown mention is refused. Every share, the payer's included, is written to that member's personal ledger via `createTransaction`:
+- category from `autoCategorize` (keyword first, then the LLM);
+- description `"<desc> · <group name>"`;
+- `channel: 'group'`, so budget alerts push via LINE.
+
+That personal copy is best-effort: a failure is logged and the group record stands.
+
+✅ **Balances and settling.** Net = paid − shares. A settlement is a payment from payer to receiver: one share row, never written to personal ledgers. `simplifyDebts()` turns nets into at most n−1 "X pays Y" lines, largest debtor to largest creditor. `settle @Ann` records whatever the sender owes Ann in that plan; `settle @Ann 150` records an explicit amount; `settle` alone lists what you owe. `undo` deletes the sender's most recent entry from the last 7 days, along with its personal-ledger copies.
+
+**LINE console:** Messaging API channel → "Allow bot to join group chats" must be on. Group replies use the reply token, so they don't count against the push quota; budget alerts on members' shares are pushes.
+
+**Tests:** `api/group_split_math` (32, pure) and `api/line_groups` (38: the real webhook controller + DB with LINE stubbed; free, since every description hits a category keyword).
+
+**Not built:** a LIFF view of group balances, uneven/itemized group splits (the separate Shared Bills feature covers itemized), and multiple currencies.
 
 ### Bank Statement Import (KBank)
 

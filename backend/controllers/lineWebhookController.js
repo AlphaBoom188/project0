@@ -5,6 +5,7 @@ const { fetchExpenseCategories, matchCategoryByName } = require('../services/cat
 const { findDuplicateBySlipHash, extractReceiptFromImage } = require('../services/receiptExtraction');
 const { parseExpenseText } = require('../services/textExpenseParser');
 const { transcribeVoice } = require('../services/voiceTranscription');
+const { handleGroupEvent } = require('./lineGroupHandler');
 const { createTransaction, InvalidCategoryError, DuplicateSlipError } = require('../services/transactionCreate');
 const { signThumbnailPath } = require('../services/signedUrl');
 const pending = require('../services/pendingConfirmations');
@@ -316,6 +317,10 @@ async function handlePostback(event) {
 }
 
 async function handleEvent(event) {
+  // Group and room chats are the split tracker's; never the 1:1 flows below,
+  // which would try to parse (and answer) every message in the chat.
+  const sourceType = event.source && event.source.type;
+  if (sourceType === 'group' || sourceType === 'room') return handleGroupEvent(event);
   switch (event.type) {
     case 'follow':
       return handleFollow(event);

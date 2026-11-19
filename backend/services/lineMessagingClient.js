@@ -86,4 +86,27 @@ async function getImageBuffer(messageId) {
   return Buffer.concat(chunks);
 }
 
-module.exports = { replyText, pushText, replyConfirmationCard, getImageBuffer };
+// Group/room member display name (works for members who never friended the
+// Official Account). Null on any failure -- a name is nice-to-have.
+async function getGroupMemberName(sourceType, groupId, userId) {
+  try {
+    const profile = await withTimeout(
+      sourceType === 'room' ? client.getRoomMemberProfile(groupId, userId) : client.getGroupMemberProfile(groupId, userId),
+      10000, 'getMemberProfile');
+    return profile.displayName || null;
+  } catch (error) {
+    console.warn(`[line] member profile unavailable (${error.message})`);
+    return null;
+  }
+}
+
+async function getGroupName(groupId) {
+  try {
+    return (await withTimeout(client.getGroupSummary(groupId), 10000, 'getGroupSummary')).groupName || null;
+  } catch (error) {
+    console.warn(`[line] group summary unavailable (${error.message})`);
+    return null;
+  }
+}
+
+module.exports = { replyText, pushText, replyConfirmationCard, getImageBuffer, getGroupMemberName, getGroupName };
