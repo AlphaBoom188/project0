@@ -24,6 +24,48 @@ Research date: 2026-11-19. Goal: add a Thai personal income tax section to the a
 - **Withholding tools** (web): withholding calculator, PND 1/1ก files, social-security forms, payslips/50 ทวิ.
 - **Onboarding flow** (from iTAX pedia): Home, enter the first income, tap "รับสิทธิ์" on the personal allowance, enter birth date, sex and status, then tax recalculates automatically. Every deduction is a card you "claim".
 
+### 1b. iTAX flows, from the owner's screenshots (14 screens, tax year 2569)
+
+1. **Home (empty):**
+   - Dark hero showing **"จ่ายภาษีเพิ่ม ฿0"** (amount to pay); it becomes "refund" when negative.
+   - A **year pill** ("2569") with an avatar in the corner.
+   - One card: "เริ่มคำนวณภาษี: กรอกรายได้ก้อนแรกของคุณ" with **START**.
+   - Bottom nav: Home, Shop, **+**, Notifications, More.
+2. **"+" sheet: "เพิ่มรายได้ / ค่าลดหย่อน":**
+   - **รายได้** (income).
+   - **ค่าลดหย่อน** (deductions), *disabled* until the first income is entered and the personal allowance claimed.
+   - A banner: **"Import เงินเดือนอัตโนมัติ"** (pull income and deductions from the employer's payroll; a partner integration).
+3. **Add income ("รายได้ก้อนใหม่"):**
+   - A **6-tile shortcut grid** for the common cases: salary & bonus, freelance, online selling, food & drinks, deposit interest, dividends.
+   - Then the **full catalogue grouped 40(1) to 40(8)**, each row with a "?" help.
+   - Plain-language rows, e.g. 40(2) "คอมมิชชั่น, เบี้ยประชุม, ค่านายหน้า, ฟรีแลนซ์".
+   - 40(4) has about 20 investment rows: deposit and bond interest; Thai and foreign dividends; and gains on selling LTF, RMF, SSF/SSFX and ThaiESG, each split **"ถูกเงื่อนไข / ผิดเงื่อนไข"** (meets / breaks the holding conditions). Also unlisted shares, shareholder bonuses, capital reduction and increase, debt instruments, **crypto/digital token** gains and dividends, and Security Token dividends.
+   - 40(5) has five asset rows; 40(6) has six professions (medicine, law, engineering, architecture, accounting, fine arts); 40(7) contracting.
+   - 40(8) is the **business list (about 45 rows)** in everyday words: buy-and-sell trading, restaurants/cafés/noodle shops, **"ขนส่งหรือรับจ้างด้วยยานพาหนะ (Grab, LINE Man, Lalamove…)"**, salons and nails, pets, crypto mining, yield farming/staking, performers, inherited property sales…
+4. **Amount entry:** a full-screen **calculator keypad** (÷ × − + =, AC) for "รายได้ (ก่อนถูกหักภาษี) ฿ ต่อปี", then Next. It's followed by withheld tax and the payer.
+5. **Home with data:**
+   - The hero updates live: **"จ่ายภาษีเพิ่ม ฿12,500"**.
+   - **Income card:** rows per type (เงินเดือน และโบนัส ฿500,000 >), "รวมทั้งปี 2569 ฿500,000", and a round **+**.
+   - **Deductions card:** "กรุณารับสิทธิ ค่าลดหย่อนส่วนตัว" with a **[รับสิทธิ]** button.
+   - Then a donate-to-iTAX banner and an **iTAX shop** promo.
+6. **Income type detail:**
+   - Badge **"เงินได้ประเภท 40(1)"**, the title, and the year's income and withheld totals.
+   - An insurance-shop banner.
+   - One **card per payer** (บริษัท ฿500,000) with editable rows: รายได้ / ภาษีหัก ณ ที่จ่าย / รายละเอียด (payer), plus **Delete** and **เอกสารแนบ (0)**.
+   - **"+ รายได้ก้อนใหม่"**.
+
+**Worked example, for our test suite:** salary 500,000 with 5,000 withheld and no deductions claimed: 500,000 − 100,000 expense (50%, cap 100k) = 400,000; tax = 7,500 (5% of 150k) + 10,000 (10% of 100k) = 17,500; minus 5,000 withheld = **pay 12,500**. This matches iTAX exactly. Note that iTAX applies **no allowance, not even the personal 60,000, until you claim it**.
+
+**What this means for our design:**
+- **The data model:** each income entry is {type and sub-type (catalogue row), payer, gross, withheld, attachments}.
+- **The catalogue** is a user-facing list of plain-language rows mapped to legal types and expense rules. We'll ship the same breadth, in English, with Thai legal names in the help.
+- **We pre-fill** what iTAX makes you type:
+  - salary and its withholding from income transactions and 50 ทวิ OCR;
+  - dividends and withholding from the portfolio;
+  - **RMF/ThaiESG sale gains with the "meets conditions?" check computed from lot dates**, which iTAX can't know.
+- **We claim the personal allowance by default** once the profile exists (iTAX makes it a gate), and show every deduction as a checklist with its remaining room, rather than a blank list.
+- **No ads or shop banners;** recommendations come only from the planner.
+
 **Not visible without using the app:** the exact screens (income form, result screen, planning suggestions), how it compares the actual-expense and flat-rate methods, and how it presents "refund vs pay". Next step: screenshots of the iTAX app from the owner's phone to map the flows one-to-one.
 
 **Patterns worth copying:**
