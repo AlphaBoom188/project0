@@ -836,3 +836,10 @@ A review of the day's changes (auth, statement import/undo/transfers, groups, vo
 - Undo only touches `stmt:` rows of the caller.
 
 **Tests:** `api/security` (15).
+
+
+### Statement Import Speed-up (2026-11-19)
+
+- **Learned categories** (`learnedCategories()` in `statementImport.js`): before any keyword rule or LLM call, a row whose description and type match one of the user's own statement-imported transactions gets that transaction's current category. The newest one wins, and only categories that still exist and match the type count. Re-categorizing during review, or editing a transaction later, carries forward to future imports. It scans at most 10,000 rows.
+- **Batches of 20 instead of 60:** the LLM batches already ran in parallel, so the wait was the slowest single batch. On the real 1,022-row KBank statement, the fresh preview went from 11.1 s to 8.5 s. With June-August imported, 160 of the 454 new September-November rows were from known merchants and skipped the LLM, but the wait barely moved (it's still the slowest remaining batch).
+- **Tests:** `api/statements` (77): a merchant imported with an edited category gets that category on the next statement, and a later edit changes the suggestion.

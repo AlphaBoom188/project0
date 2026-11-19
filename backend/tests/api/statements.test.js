@@ -170,6 +170,18 @@ async function cleanup() {
   const again2 = await post(`/statements/${U2}/import`, { rows: bb.body.rows.filter((r) => r.status === 'transfer_match').map(asTransfer), account_id: bAcct.account.id, statement: { bank: 'bbl', account_last4: '3456' } });
   assert(again2.body.imported === 0 && again2.body.skipped === 2 && (await db.from('transactions').select('id').eq('line_user_id', U2).eq('type', 'transfer')).data.length === 2, 're-importing the BBL transfers changes nothing');
 
+  // --- Learned categories: a merchant imported before reuses that row's category ---
+  // Row 0 (CP AXTRA, keyword rule -> Shopping) was re-categorized to Food on import.
+  const { pages: julyPages } = buildStatement([{ ...SAMPLE[0], date: '2026-07-01', time: '08:00' }, { ...SAMPLE[4], date: '2026-07-02', time: '09:00' }], { perPage: 4, period: ['01/07/2026', '31/07/2026'] });
+  let jul = await post(`/statements/${U}/parse`, { pages: julyPages });
+  assert(jul.status === 200 && jul.body.rows[0].description === 'CP AXTRA PUBLIC COMPANY LIMITED (HEAD' && jul.body.rows[0].category_name === 'Food',
+    `a merchant imported before gets the category it was saved with, not the keyword rule's (got ${jul.body.rows && jul.body.rows[0].category_name})`);
+  assert(jul.body.rows[1].category_name === 'Food', 'an unchanged merchant keeps its category');
+  const { data: axtra } = await db.from('transactions').select('id').eq('line_user_id', U).eq('description', 'CP AXTRA PUBLIC COMPANY LIMITED (HEAD').single();
+  await api(`/transactions/${U}/${axtra.id}`, { method: 'PUT', body: JSON.stringify({ category_id: cat('Transport').id }) });
+  jul = await post(`/statements/${U}/parse`, { pages: julyPages });
+  assert(jul.body.rows[0].category_name === 'Transport', 'changing that transaction later changes what future imports suggest');
+
   // --- Undo (POST /statements/:u/undo with the import's `undo` object) ---
   const undo = (u, body) => post(`/statements/${u}/undo`, body);
   assert(kImp.body.undo && kImp.body.undo.label === 'KBank •••7890' && kImp.body.undo.inserted_ids.length === 2 && kImp.body.undo.merged.length === 0, 'an import returns what it changed');

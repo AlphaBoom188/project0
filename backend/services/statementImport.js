@@ -16,10 +16,13 @@
 //   statementTransfers.js), else 'new'. Own transfers, bank transfers and
 //   matches default to importing as a Transfer (transfer_default), never as
 //   spending or income; everything else imports with a category.
-// - Categories: one gpt-4o-mini call per batch of unique merchant names (a
-//   1,000-row statement has a few hundred), picking from the user's own
-//   categories; anything unmatched falls back to Others / the first income
-//   category.
+// - Categories, cheapest first:
+//   1. learned: the category the user's own previously imported row with the
+//      same description and type has *now* (so later re-categorizations carry
+//      forward), see learnedCategories();
+//   2. keyword rules for well-known Thai merchants;
+//   3. one gpt-4o-mini call per batch of the remaining unique merchant names;
+//   then Others / the first income category.
 const crypto = require('crypto');
 const OpenAI = require('openai');
 const supabase = require('../config/supabase');
@@ -27,7 +30,7 @@ const { getBangkokYmd } = require('./bangkokDay');
 const { sideLabel, fetchTransferPool, matchTransfer } = require('./statementTransfers');
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, timeout: 45000, maxRetries: 1 });
-const CATEGORY_BATCH = 60;
+const CATEGORY_BATCH = 20;
 const IN_CHUNK = 150;
 
 const TITLES = /^(MR\.?|MRS\.?|MS\.?|MISS|DR\.?|นาย|นาง|นางสาว|น\.ส\.)\s*/i;
@@ -146,6 +149,31 @@ async function fetchExisting(lineUserId, keys, parsed) {
   return { imported, manual };
 }
 
+// description|type -> category id, from the user's statement-imported rows
+// (newest wins). Only categories that still exist and match the type count.
+const LEARN_SCAN = 10000;
+const learnKey = (description, type) => `${type}|${String(description || '').trim().toLowerCase()}`;
+async function learnedCategories(lineUserId, categories) {
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('description, type, category_id')
+    .eq('line_user_id', lineUserId)
+    .like('slip_hash', 'stmt:%')
+    .in('type', ['income', 'expense'])
+    .not('category_id', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(LEARN_SCAN);
+  if (error) throw error;
+  const valid = new Map(categories.map((c) => [c.id, c]));
+  const learned = new Map();
+  for (const t of data) {
+    const cat = valid.get(t.category_id);
+    const key = learnKey(t.description, t.type);
+    if (cat && cat.type === t.type && !learned.has(key)) learned.set(key, cat);
+  }
+  return learned;
+}
+
 async function buildPreview(lineUserId, parsed, holderName) {
   const { data: categories, error } = await supabase.from('categories').select('id, name, type').eq('line_user_id', lineUserId);
   if (error) throw error;
@@ -177,8 +205,13 @@ async function buildPreview(lineUserId, parsed, holderName) {
     pool.get(k).push(t);
   }
 
+  const learned = await learnedCategories(lineUserId, categories);
+  const learnedFor = (r) => learned.get(learnKey(r.description, r.type)) || null;
   const toCategorize = { expense: new Set(), income: new Set() };
-  for (const r of rows) if (!imported.has(r.row_key) && !r.own && !r.is_bank_transfer && !transferMatches.has(r.row_key)) toCategorize[r.type].add(r.merchant_key);
+  for (const r of rows) {
+    if (imported.has(r.row_key) || r.own || r.is_bank_transfer || transferMatches.has(r.row_key) || learnedFor(r)) continue;
+    toCategorize[r.type].add(r.merchant_key);
+  }
   const [expCats, incCats] = await Promise.all([
     categorizeKeys([...toCategorize.expense], byType.expense),
     byType.income.length > 1 ? categorizeKeys([...toCategorize.income], byType.income) : Promise.resolve(new Map()),
@@ -203,7 +236,7 @@ async function buildPreview(lineUserId, parsed, holderName) {
       const match = (pool.get(`${r.date}|${r.type}|${r.amount_cents}`) || []).shift();
       if (match) { status = 'possible_duplicate'; note = `Already logged: ${match.description || 'same amount, same day'}`; }
     }
-    const category = picked[r.type].get(r.merchant_key) || fallback[r.type];
+    const category = learnedFor(r) || picked[r.type].get(r.merchant_key) || fallback[r.type];
     return {
       row_key: r.row_key,
       date: r.date,

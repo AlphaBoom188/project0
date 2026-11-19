@@ -180,6 +180,7 @@ docs/                   FEATURES.md (detailed notes), PRD, specs, Apps Script re
   - Signs come from the running balance, cross-checked against the statement's own totals.
   - The preview flags own transfers, bank transfers, possible duplicates of manual entries, and rows already imported.
   - Own-account transfers import as Transfer entries, and the two banks' sides merge into one ("Bangkok Bank •••1111 → KBank •••2222").
+  - Categories come from **learned** (what your own past imported row with the same description and type has now), then keyword rules, then `gpt-4o-mini` in parallel batches of 20.
   - Re-imports are no-ops (`slip_hash` = `stmt:` row key). Undo reverses an import, including separating merged transfers. The last 5 imports are listed on the phone.
 
 ## iOS app
