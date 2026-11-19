@@ -80,12 +80,16 @@ const cleanup = async () => {
   assert(rows.some((x) => x.label === 'Amount' && x.value === '120'), `the parser reads amount 120 from the transcript (got ${JSON.stringify(rows)})`);
 
   // --- LIFF mic endpoint, same fixture (iOS MediaRecorder also produces audio/mp4) ---
+  // The REST API needs a LINE token except for local test_ users (services/lineAuth.js).
   const { BASE } = require('../lib');
-  const r2 = await fetch(`${BASE}/api/voice/${U}/parse`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+  const TU = `test_voice_ep_${Date.now()}`;
+  await fetch(`${BASE}/api/users`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ line_user_id: TU, display_name: 'Voice EP' }) });
+  const r2 = await fetch(`${BASE}/api/voice/${TU}/parse`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ audio_base64: AUDIO.toString('base64'), mime_type: 'audio/mp4' }) }).then(async (x) => ({ status: x.status, body: await x.json() }));
   assert(r2.status === 200 && mentions120(r2.body.transcript) && r2.body.expense.is_expense && r2.body.expense.amount === 120,
     `POST /api/voice/:u/parse transcribes and parses the recording (got ${r2.status} ${JSON.stringify(r2.body)})`);
   assert(r2.body.expense.category_name === null || typeof r2.body.expense.category_id === 'string', 'category_id comes with category_name when matched');
+  for (const t of ['categories', 'users']) await db.from(t).delete().eq('line_user_id', TU);
 
   await cleanup();
   process.exit(failures ? 1 : 0);

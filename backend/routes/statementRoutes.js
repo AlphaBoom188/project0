@@ -1,5 +1,8 @@
 const express = require('express');
 const router = express.Router();
+const { requireOwnUser } = require('../services/lineAuth');
+// Every :line_user_id route requires that user's LINE token (services/lineAuth.js).
+router.param('line_user_id', requireOwnUser);
 const statementController = require('../controllers/statementController');
 
 // POST /api/statements/:line_user_id/parse - Preview a bank statement (pdf.js text pieces from the LIFF app); writes nothing

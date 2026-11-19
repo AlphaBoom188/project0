@@ -84,7 +84,7 @@ async function cleanup() {
   assert((await api(`/recurring/${U}/${weekly.id}/paid`, { method: 'PATCH', body: JSON.stringify({ paid: true }) })).status === 400, 'weekly rule cannot be marked paid -> 400');
   assert((await api(`/recurring/${U}/${rent.id}/paid`, { method: 'PATCH', body: JSON.stringify({ paid: 'yes' }) })).status === 400, 'non-boolean paid -> 400');
   assert((await api(`/recurring/${U}/00000000-0000-4000-8000-000000000000/paid`, { method: 'PATCH', body: JSON.stringify({ paid: true }) })).status === 404, 'unknown rule -> 404');
-  assert((await api(`/recurring/someone_else/${rent.id}/paid`, { method: 'PATCH', body: JSON.stringify({ paid: true }) })).status === 404, "another user's rule -> 404");
+  assert((await api(`/recurring/test_someone_else/${rent.id}/paid`, { method: 'PATCH', body: JSON.stringify({ paid: true }) })).status === 404, "another user's rule -> 404");
 
   await cleanup();
   process.exit(failures ? 1 : 0);

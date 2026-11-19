@@ -174,7 +174,8 @@ async function main() {
   assert(publicNotFound.status === 404, `public view 404s on unknown bill_id (got ${publicNotFound.status})`);
 
   // --- Deleting a bill creator doesn't own is a no-op (not found), not someone else's delete ---
-  const wrongOwnerDelete = await api(`/bills/some_other_user/${equalBillId}`, { method: 'DELETE' });
+  // test_ prefix: a real-looking id would now get 401 from API auth before reaching this check.
+  const wrongOwnerDelete = await api(`/bills/test_some_other_user/${equalBillId}`, { method: 'DELETE' });
   assert(wrongOwnerDelete.status === 200, `delete scoped by line_user_id returns success even when nothing matched (got ${wrongOwnerDelete.status})`);
   const stillThere = await api(`/bills/${lineUserId}/${equalBillId}`);
   assert(stillThere.status === 200, `bill was NOT actually deleted by the wrong-owner request (got ${stillThere.status})`);

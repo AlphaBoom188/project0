@@ -1,5 +1,8 @@
 const express = require('express');
 const router = express.Router();
+const { requireOwnUser } = require('../services/lineAuth');
+// Every :line_user_id route requires that user's LINE token (services/lineAuth.js).
+router.param('line_user_id', requireOwnUser);
 const googleController = require('../controllers/googleController');
 
 // GET /api/google/login-url/:line_user_id - Build the consent URL (open via liff.openWindow with external: true)

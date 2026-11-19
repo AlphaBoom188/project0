@@ -1,9 +1,12 @@
 const express = require('express');
 const router = express.Router();
+const { requireOwnUser, requireBodyUser } = require('../services/lineAuth');
+// Every :line_user_id route requires that user's LINE token (services/lineAuth.js).
+router.param('line_user_id', requireOwnUser);
 const userController = require('../controllers/userController');
 
 // POST /api/users - Create or update user after LINE Login
-router.post('/', userController.createOrUpdateUser);
+router.post('/', requireBodyUser, userController.createOrUpdateUser); // body.line_user_id must match the token
 
 // GET /api/users/:line_user_id - Get user profile
 router.get('/:line_user_id', userController.getUser);

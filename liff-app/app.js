@@ -437,12 +437,33 @@ const MANUAL_PRICE_ASSET_TYPES = ['mutual_fund', 'gold']; // mirrors backend/ser
 // session is instant instead of re-fetching.
 const getCache = new Map();
 
+// LINE ID token for the signed-in user (liff.getIDToken()), sent with every
+// API request; the backend verifies it and checks it matches the
+// :line_user_id being read or written (backend/services/lineAuth.js).
+let idToken = null;
+
+// An expired token gets one silent re-login (liff.login() returns to this
+// page with a fresh token); the timestamp guard stops a redirect loop.
+function reauthenticate() {
+  try {
+    const last = Number(sessionStorage.getItem('liffReauthAt') || 0);
+    if (Date.now() - last < 60 * 1000) return false;
+    sessionStorage.setItem('liffReauthAt', String(Date.now()));
+  } catch {
+    // no sessionStorage: still try once per page load
+    if (reauthenticate.tried) return false;
+    reauthenticate.tried = true;
+  }
+  liff.login({ redirectUri: window.location.href });
+  return true;
+}
+
 async function apiRequest(path, options = {}) {
   let response;
   try {
     response = await fetch(`${API_BASE}${path}`, {
-      headers: { 'Content-Type': 'application/json' },
       ...options,
+      headers: { 'Content-Type': 'application/json', ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}), ...(options.headers || {}) },
     });
   } catch (networkError) {
     // fetch() itself rejects (no response at all) on a dropped connection, CORS
@@ -456,6 +477,9 @@ async function apiRequest(path, options = {}) {
   // body can't be parsed, rather than silently swallowing it into a generic message.
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
+    if (response.status === 401 && body.code === 'auth_invalid' && reauthenticate()) {
+      throw new Error('Signing you in again…');
+    }
     throw new Error(`[${response.status}] ${body.error || body.message || response.statusText || 'Request failed'}`);
   }
 
@@ -3498,12 +3522,20 @@ async function loadTransactionsTab() {
   renderTransactionList(el.txnFullList, el.txnEmptyState, response.transactions, { showPaymentMethod: true });
 }
 
-function handleExportCsv() {
+async function handleExportCsv() {
   const params = buildTransactionFilterQuery();
   // A plain top-level navigation lets the browser handle the response's
   // Content-Disposition: attachment header natively (save/share prompt),
   // rather than fetching the CSV into JS just to hand it back off again.
-  window.location.href = `${API_BASE}/transactions/${lineUserId}/export?${params.toString()}`;
+  // A navigation can't send the Authorization header, so the server first
+  // signs this exact query for two minutes.
+  try {
+    const { query } = await apiRequest(`/transactions/${lineUserId}/export-link`, { method: 'POST', body: JSON.stringify({ query: params.toString() }) });
+    window.location.href = `${API_BASE}/transactions/${lineUserId}/export?${query}`;
+  } catch (error) {
+    el.exportStatus.hidden = false;
+    el.exportStatus.textContent = error.message;
+  }
 }
 
 async function handleExportEmail() {
@@ -3859,6 +3891,7 @@ async function init() {
 
     const profile = await liff.getProfile();
     lineUserId = profile.userId;
+    idToken = typeof liff.getIDToken === 'function' ? liff.getIDToken() : null;
 
     await apiRequest('/users', {
       method: 'POST',

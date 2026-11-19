@@ -19,8 +19,9 @@ npm start              # port 3000; also serves the LIFF app at /liff and runs t
 - `LINE_MESSAGING_CHANNEL_SECRET` + `LINE_MESSAGING_CHANNEL_ACCESS_TOKEN` (bot), `LINE_LOGIN_*` (iOS login), `LIFF_ID`.
 - Optional: `TYPHOON_API_KEY` (Thai speech-to-text, else OpenAI); `GOOGLE_OAUTH_*` (verified export email, else 501); `APPS_SCRIPT_EMAIL_WEBHOOK_URL` + `APPS_SCRIPT_SHARED_SECRET` (CSV email relay, see `docs/APPS_SCRIPT_EMAIL_RELAY.md`, else 501).
 - `DISABLE_CRON=1` for any extra server instance (below).
+- `AUTH_REQUIRED=false` disables API authentication (default on; see Conventions). `EXPORT_LINK_SECRET` is optional; by default it's derived from the service role key.
 
-**LINE setup:** a public HTTPS tunnel (e.g. `ngrok http 3000`). Register the webhook as `https://<tunnel>/api/line/webhook` and the LIFF endpoint as `https://<tunnel>/liff/`. The LINE Login and Messaging API channels must be linked, so app logins and webhook events share one `line_user_id`. Group chats need "Allow bot to join group chats" turned on.
+**LINE setup:** the LIFF app's scopes must include **openid**, or `liff.getIDToken()` returns null and every API call gets 401. Then a public HTTPS tunnel (e.g. `ngrok http 3000`). Register the webhook as `https://<tunnel>/api/line/webhook` and the LIFF endpoint as `https://<tunnel>/liff/`. The LINE Login and Messaging API channels must be linked, so app logins and webhook events share one `line_user_id`. Group chats need "Allow bot to join group chats" turned on.
 
 **After a migration**, PostgREST may 500 with `Could not find the table ... in the schema cache` for about a minute. Run `NOTIFY pgrst, 'reload schema';` in the SQL Editor to clear it immediately.
 
@@ -35,6 +36,7 @@ npm test -- -v            # full output
 npm run test:openai       # tests/openai/: real OpenAI calls (a few cents)
 ```
 
+- **Auth in tests.** Requests for `test_…` users made directly on this machine (loopback, no `X-Forwarded-For`) skip the LINE token check, so suites must use `test_` ids for any HTTP call. Random `U<hex>` ids are fine only for in-process webhook tests.
 - **Real database.** Suites run against the Supabase project in `.env`. Create only `test_`-prefixed or random `U<hex>` users, delete everything you create, and never call a job's all-users entry point unscoped (`processDueRecurringTransactions`, `sendDailyDigest`, `sendActivityReminder` and `sendPayWindowReminders` take `{ lineUserId }`).
 - **Testing changed backend code:** run a second instance with `DISABLE_CRON=1 PORT=3100 node index.js` and `TEST_BASE_URL=http://localhost:3100 npm test`. `DISABLE_CRON=1` is mandatory: two processes running the jobs means users get every LINE push twice.
 - **Layout:**
@@ -51,6 +53,13 @@ npm run test:openai       # tests/openai/: real OpenAI calls (a few cents)
 ## Conventions and gotchas
 
 - **Asia/Bangkok calendar everywhere.** Every day, week, month and billing-cycle boundary is Bangkok midnight, never UTC. The backend uses `services/bangkokDay.js` (`bangkokParts`, `bangkokMidnight`, `getBangkokDayRangeISO`, `getBangkokYmd`); `liff-app/app.js` mirrors it. Bangkok has no DST, so +7h is exact. Form dates are stamped `T12:00:00Z` (19:00 Bangkok, same date). Transaction-list day headers and the streak use the phone's local time.
+- **API authentication** (`services/lineAuth.js`):
+  - Every router registers `router.param('line_user_id', requireOwnUser)`, and `POST /api/users` uses `requireBodyUser`. The request must carry `Authorization: Bearer <token>` for that user: a LIFF **ID token** (verified with LINE against the LIFF_ID prefix channel or `LINE_LOGIN_CHANNEL_ID`) or a LINE Login **access token**. Verified tokens are cached until they expire.
+  - Outcomes: 401 `auth_invalid` for a missing or invalid token, 403 `forbidden` for someone else's id, 503 if LINE can't be reached.
+  - Public by design: `/health`, the LINE webhook (it has its own signature check), LINE/Google login and callbacks, and `/bills/public/*`.
+  - CSV download is a navigation and can't send headers, so the app first `POST`s `/transactions/:u/export-link`, which returns the query HMAC-signed for 2 minutes.
+  - The LIFF app sends `liff.getIDToken()` from `apiRequest()`. A 401 `auth_invalid` triggers one silent `liff.login()`, guarded against loops.
+  - The iOS app doesn't send a token yet. Run with `AUTH_REQUIRED=false`, or update it to send its LINE access token.
 - **IDs and errors.** Every router with an id param registers `router.param(name, requireUuidParam(label))` (`services/uuid.js`), so a malformed id gets `400 "Invalid <label> id"`. Update handlers map PostgREST `PGRST116` to `404 "<X> not found"`. Deletes of an unknown id succeed silently.
 - **Route order.** Literal paths are registered before `/:id` wildcards: `/transactions/:u/all`, `/bills/public/*`, `/portfolio/:u/lots|performance|dividends|goal`.
 - **Body size.** `express.json({ limit: '10mb' })` for base64 photos and audio. The LINE webhook route is mounted *before* `express.json()` because signature verification needs the raw body.
@@ -182,3 +191,4 @@ xcrun simctl openurl "iPhone 17 Pro" "com.expensetracker.app://line/callback?cod
 - Bundle ID `com.expensetracker.app`; URL scheme `com.expensetracker.app://line/callback`.
 - The backend URL is `http://localhost:3000/api`; use the Mac's IP address on a physical device.
 - The LINE Login channel ID is `2011983707`.
+- **Not yet updated for API auth.** The backend now requires `Authorization: Bearer <LINE access token>` on every request. Until `APIService.swift` sends the access token it receives at login, the iOS app only works with `AUTH_REQUIRED=false`.

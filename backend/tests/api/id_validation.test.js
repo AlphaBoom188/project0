@@ -10,22 +10,22 @@ const call = async (method, path, body = { amount: 1, is_paid: true, title: 'x',
 };
 (async () => {
   const malformed = [
-    ['GET', 'transactions/u/bad', 'transaction'], ['PUT', 'transactions/u/bad', 'transaction'], ['DELETE', 'transactions/u/bad', 'transaction'],
-    ['GET', 'bills/u/bad', 'bill'], ['DELETE', 'bills/u/bad', 'bill'],
-    ['PATCH', `bills/u/${UNKNOWN}/participants/bad`, 'participant'], ['PATCH', 'bills/u/bad/participants/bad', 'bill'],
+    ['GET', `transactions/${U}/bad`, 'transaction'], ['PUT', `transactions/${U}/bad`, 'transaction'], ['DELETE', `transactions/${U}/bad`, 'transaction'],
+    ['GET', `bills/${U}/bad`, 'bill'], ['DELETE', `bills/${U}/bad`, 'bill'],
+    ['PATCH', `bills/${U}/${UNKNOWN}/participants/bad`, 'participant'], ['PATCH', `bills/${U}/bad/participants/bad`, 'bill'],
     ['GET', 'bills/public/bad', 'bill'], ['PATCH', `bills/public/${UNKNOWN}/participants/bad`, 'participant'],
-    ['PUT', 'accounts/u/bad', 'account'], ['DELETE', 'accounts/u/bad', 'account'],
-    ['PUT', 'recurring/u/bad', 'recurring rule'], ['DELETE', 'recurring/u/bad', 'recurring rule'],
-    ['PUT', 'categories/u/bad', 'category'], ['DELETE', 'categories/u/bad', 'category'],
-    ['PUT', 'portfolio/u/bad', 'holding'], ['DELETE', 'portfolio/u/bad', 'holding'], ['POST', 'portfolio/u/bad/refresh-price', 'holding'],
-    ['PUT', 'budget-events/u/bad', 'budget event'], ['DELETE', 'budget-events/u/bad', 'budget event'],
+    ['PUT', `accounts/${U}/bad`, 'account'], ['DELETE', `accounts/${U}/bad`, 'account'],
+    ['PUT', `recurring/${U}/bad`, 'recurring rule'], ['DELETE', `recurring/${U}/bad`, 'recurring rule'],
+    ['PUT', `categories/${U}/bad`, 'category'], ['DELETE', `categories/${U}/bad`, 'category'],
+    ['PUT', `portfolio/${U}/bad`, 'holding'], ['DELETE', `portfolio/${U}/bad`, 'holding'], ['POST', `portfolio/${U}/bad/refresh-price`, 'holding'],
+    ['PUT', `budget-events/${U}/bad`, 'budget event'], ['DELETE', `budget-events/${U}/bad`, 'budget event'],
   ];
   for (const [m, p, label] of malformed) {
     const r = await call(m, p);
     ok(r.s === 400 && r.b.error === `Invalid ${label} id`, `${m} ${p} -> 400 "Invalid ${label} id" (got ${r.s} ${JSON.stringify(r.b)})`);
   }
   // Non-id path segments that share a position with an id param must be untouched.
-  const reassign = await call('POST', 'categories/u/reassign', { from_category_id: UNKNOWN, to_category_id: UNKNOWN });
+  const reassign = await call('POST', `categories/${U}/reassign`, { from_category_id: UNKNOWN, to_category_id: UNKNOWN });
   ok(reassign.s !== 400 || !/Invalid category id/.test(reassign.b.error || ''), `POST categories/:u/reassign not caught by the id check (got ${reassign.s} ${JSON.stringify(reassign.b)})`);
   const refreshAll = await call('POST', `portfolio/${U}/refresh-all`, {});
   ok(refreshAll.s === 200, `POST portfolio/:u/refresh-all unaffected (got ${refreshAll.s})`);

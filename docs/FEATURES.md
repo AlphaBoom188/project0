@@ -784,3 +784,23 @@ The spec describes three other apps (Pa Nual, KhunTong, MeowJot). Only their gen
 **Verified**: `uxui_batch3_test.js` (ad hoc, same harness) — 27/27. That covers account_id matching both transfer sides, OR across multiple ids, 400s on a non-UUID and on an injection attempt, CSV export honouring and validating account_id, streak current/best/7-dot/alive-yesterday/zero cases, computed 16px/24px radii, sheet list/backdrop-dismiss/apply/two-selection label/clear, and zero JS errors. The Batch 1 and 2 browser suites and `accounts_test.js` / `alerts_test.js` / `bills_test.js` were re-run with no failures.
 
 **Account label fix (follow-up):** rows used to show `payment_method`, which defaults to "CASH", even when an account was attributed, so a Kbank expense read "CASH". The transaction list/get/update selects now embed `from_account`/`to_account` names (`accounts!transactions_from_account_id_fkey` / `..._to_account_id_fkey`, the same hint `transactionCreate.js` already used), and `transactionSourceLabel()` in the LIFF app shows the account, `From → To` for transfers, falling back to `payment_method` only when no account is attributed. Covered by 5 added assertions in `uxui_batch3_test.js` (32/32). The CSV export (download and email both, via the shared `services/csvExport.js`) gained an **Account** column, appended last so position-based spreadsheets keep working: account name, `From → To` for transfers, blank when none. The Payment Method column still exports the raw `payment_method`. `uxui_batch3_test.js` checks the header, BOM, per-row values and column count (39/39).
+
+
+### API Authentication (2026-11-19)
+
+Before this, every endpoint trusted the `:line_user_id` in the URL: anyone with the tunnel URL and a user's LINE id could read or change that user's data. `services/lineAuth.js` now requires proof of identity on every user route.
+
+- **Accepted tokens:**
+  - LIFF ID token (`liff.getIDToken()`), verified with `POST https://api.line.me/oauth2/v2.1/verify` (`id_token` + `client_id`), trying the LIFF app's channel (the numeric prefix of `LIFF_ID`) and then `LINE_LOGIN_CHANNEL_ID`.
+  - LINE Login access token, verified with `GET .../verify?access_token=` (the `client_id` must be one of those channels), then `GET /v2/profile` for the user id.
+  - A token is treated as an ID token when it has three dot-separated parts.
+- **Caching:** results are cached in memory until the token's expiry (access tokens for at most an hour), capped at 2,000 entries.
+- **Enforcement:** `router.param('line_user_id', requireOwnUser)` in every router; `requireBodyUser` on `POST /api/users`. Express runs param callbacks in path order, so auth runs before the uuid checks: an unauthenticated request with a malformed id gets 401, not 400.
+- **Errors:** 401 `auth_invalid`, 403 `forbidden`, 503 `auth_unavailable` (LINE unreachable), 401 `link_invalid` (bad or expired export link).
+- **Public by design:** `/`, `/health`, `/api/line/webhook` (LINE signature), `/api/line/login-url|callback|verify|logout` (these operate on the caller's own token), `/api/google/callback`, `/api/bills/public/*`.
+- **Signed export links:** `POST /transactions/:u/export-link { query }` returns `query&exp=<+120s>&sig=<HMAC-SHA256(secret, u|exp|sorted query without exp/sig)>`. `GET .../export` with a valid signature skips the token check. The secret is `EXPORT_LINK_SECRET`, else a hash of the service role key. Comparison is timing-safe.
+- **Test bypass:** only for ids starting with `test_` (real LINE ids are `U` + 32 hex), and only when the request reaches the server directly on loopback with no `X-Forwarded-For`/`Forwarded` header. A tunnel such as ngrok adds those headers, so outside traffic never gets the bypass.
+- **Switch:** `AUTH_REQUIRED=false` disables enforcement, e.g. for the iOS app until it sends its access token.
+- **LIFF:** `apiRequest()` adds the header. On a 401 `auth_invalid` it calls `liff.login({ redirectUri: location.href })` once; a `sessionStorage` timestamp blocks a second redirect within a minute. Download CSV gets a signed link, then navigates.
+- **Setup:** the LIFF app needs the `openid` scope for `getIDToken()` to return a token.
+- **Tests:** `api/auth` (27: 401s on several routes and on `POST /users`; bogus ID and access tokens rejected by LINE itself; public routes; the bypass locally but not via a tunnel; signed links working, tampered, cross-user and expired; and in-process the 403, an expired cached token, `AUTH_REQUIRED=false`, channel ids) and `liff/auth_client` (8: the header on every request, the signed CSV link, a single re-login). `openai/voice_message`'s REST call moved to a `test_` user.

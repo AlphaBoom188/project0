@@ -1,5 +1,8 @@
 const express = require('express');
 const router = express.Router();
+const { requireOwnUser } = require('../services/lineAuth');
+// Every :line_user_id route requires that user's LINE token (services/lineAuth.js).
+router.param('line_user_id', requireOwnUser);
 const { requireUuidParam } = require('../services/uuid');
 
 // Every :transaction_id route (GET/PUT/DELETE) gets a clean 400 for a malformed id.
@@ -12,6 +15,14 @@ router.get('/:line_user_id', transactionController.getTransactions);
 
 // GET /api/transactions/:line_user_id/summary - Get transaction summary by category
 router.get('/:line_user_id/summary', transactionController.getTransactionSummary);
+
+// POST /api/transactions/:line_user_id/export-link - { query } -> a 2-minute signed query string for
+// GET .../export: CSV download is a browser navigation, which can't send the Authorization header.
+router.post('/:line_user_id/export-link', (req, res) => {
+  const { signExportLink } = require('../services/lineAuth');
+  const query = typeof (req.body && req.body.query) === 'string' ? req.body.query : '';
+  res.json({ success: true, query: signExportLink(req.params.line_user_id, query) });
+});
 
 // GET /api/transactions/:line_user_id/export - Export transactions as CSV (UTF-8 BOM)
 router.get('/:line_user_id/export', transactionController.exportTransactions);
