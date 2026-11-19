@@ -1,5 +1,12 @@
+// Text that starts with = + - @ (or a tab/CR) runs as a formula when the CSV
+// is opened in Excel/Sheets ("CSV injection"). Descriptions can come from bank
+// statements (merchant names) or other LINE group members, so text fields get
+// a leading apostrophe. Numbers (amounts) are left alone.
+const FORMULA_START = /^[=+\-@\t\r]/;
+
 function toCsvField(value) {
-  const str = value === null || value === undefined ? '' : String(value);
+  let str = value === null || value === undefined ? '' : String(value);
+  if (typeof value === 'string' && FORMULA_START.test(str)) str = `'${str}`;
   return /[",\r\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
 }
 

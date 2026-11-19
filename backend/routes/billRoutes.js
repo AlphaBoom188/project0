@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { requireOwnUser } = require('../services/lineAuth');
+const { rateLimit, LIMITS } = require('../services/rateLimit');
 // Every :line_user_id route requires that user's LINE token (services/lineAuth.js).
 router.param('line_user_id', requireOwnUser);
 const { requireUuidParam } = require('../services/uuid');
@@ -23,7 +24,7 @@ router.get('/:line_user_id', billController.getBills);
 router.post('/:line_user_id', billController.createBill);
 
 // POST /api/bills/:line_user_id/scan-items - OCR a receipt into line items for an itemized split
-router.post('/:line_user_id/scan-items', billController.scanReceiptItems);
+router.post('/:line_user_id/scan-items', rateLimit('ocr', LIMITS.ocr.max, LIMITS.ocr.windowMs), billController.scanReceiptItems);
 
 // GET /api/bills/:line_user_id/:bill_id - Bill detail with participants + items
 router.get('/:line_user_id/:bill_id', billController.getBillDetail);

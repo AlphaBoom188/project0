@@ -6,6 +6,11 @@ const { findDuplicateBySlipHash, extractReceiptFromImage } = require('../service
 const { parseExpenseText } = require('../services/textExpenseParser');
 const { transcribeVoice } = require('../services/voiceTranscription');
 const { handleGroupEvent } = require('./lineGroupHandler');
+const { allow, LIMITS } = require('../services/rateLimit');
+
+const RATE_LIMITED_REPLY = "You're sending a lot right now. Please wait a few minutes and try again.";
+// Bot paths that call OpenAI share the REST endpoints' per-user budgets (services/rateLimit.js).
+const overLimit = (kind, lineUserId) => !allow(kind, lineUserId, LIMITS[kind].max, LIMITS[kind].windowMs);
 const { createTransaction, InvalidCategoryError, DuplicateSlipError } = require('../services/transactionCreate');
 const { signThumbnailPath } = require('../services/signedUrl');
 const pending = require('../services/pendingConfirmations');
@@ -129,6 +134,10 @@ async function handleAudioMessage(event) {
   const durationMs = event.message.duration || 0;
   log('audio: start', lineUserId, `${durationMs}ms`);
 
+  if (overLimit('voice', lineUserId)) {
+    await replyText(event.replyToken, RATE_LIMITED_REPLY);
+    return;
+  }
   if (durationMs > MAX_VOICE_MS) {
     await replyText(event.replyToken, 'That voice message is a bit long. Please keep it under a minute, e.g. "กาแฟ 120 บาท".');
     return;
@@ -161,6 +170,10 @@ async function handleExpenseText(event, lineUserId, text, { heard = null } = {})
   }
 
   await ensureUserExists(lineUserId);
+  if (!heard && overLimit('text', lineUserId)) {
+    await replyText(event.replyToken, RATE_LIMITED_REPLY);
+    return;
+  }
   const parsed = await parseExpenseText(lineUserId, text);
   log('text: parsed', lineUserId, JSON.stringify(parsed));
 
@@ -213,6 +226,10 @@ async function handleImageMessage(event) {
   log('image: start', lineUserId, event.message.id);
 
   await ensureUserExists(lineUserId);
+  if (overLimit('ocr', lineUserId)) {
+    await replyText(event.replyToken, RATE_LIMITED_REPLY);
+    return;
+  }
   const imageBuffer = await getImageBuffer(event.message.id);
   log('image: downloaded', lineUserId, `${imageBuffer.length} bytes`);
   const slipHash = crypto.createHash('sha256').update(imageBuffer).digest('hex');

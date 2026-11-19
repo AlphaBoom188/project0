@@ -330,7 +330,8 @@ const BBL_CODES = [
   [/^FEE|^CHARGE|^SERVICE CHG/i, 'Bank fee'],
 ];
 const bblDescription = (particulars) => (BBL_CODES.find(([re]) => re.test(particulars)) || [null, particulars])[1];
-const lineText = (line) => norm(line.items.map((it) => it.s).join(' '));
+// Capped: a real statement row is well under 300 characters.
+const lineText = (line) => norm(line.items.map((it) => it.s).join(' ')).slice(0, 1000);
 
 function parseBbl(pages) {
   // Header fields are on page 1; the debit/credit totals follow the last row,

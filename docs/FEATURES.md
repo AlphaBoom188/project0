@@ -810,3 +810,29 @@ Before this, every endpoint trusted the `:line_user_id` in the URL: anyone with 
 - `APIService.performRequest` sends it as a Bearer token. A 401 calls `logout()`, which also deletes the token. A saved session without a token counts as logged out.
 - The backend verifies it through the access-token path, `client_id` 2011983707 = `LINE_LOGIN_CHANNEL_ID`.
 - Verified: an `xcodebuild` simulator build, and a launch showing the login screen for a session with no token. A real LINE login can't be completed in the simulator; it needs a device.
+
+
+### Security Review Fixes (2026-11-19)
+
+A review of the day's changes (auth, statement import/undo/transfers, groups, voice, signed links) plus the older surfaces they newly depend on.
+
+| # | Severity | Finding | Fix |
+|---|---|---|---|
+| 1 | High | Google export-email OAuth used the bare `line_user_id` as `state`, so anyone knowing an id could finish the flow with their own Google account and swap in the victim's id. CSV exports would then go to the attacker. | `state` = `base64url(id).exp.HMAC` (`lineAuth.signState`, 10 min); the callback runs `verifyState` (400 "Link expired"). |
+| 2 | Medium | CSV formula injection: statement merchant names and group members' descriptions land in exports verbatim. | `csvExport.toCsvField` prefixes `'` to text starting with `= + - @ \t \r`. Numbers are untouched. |
+| 3 | Medium | No rate limits on paid AI endpoints; any LINE user could loop OCR, voice, statement or bill scans. | `services/rateLimit.js`: per-user 10-minute budgets shared by REST and the bot (OCR 30, voice 30, bot text 60, statements 30). 429 / a "please wait" reply. |
+| 5 | Low | Statement parse ran regexes over unbounded text. | Pieces capped at 500 chars before parsing; BBL line text capped at 1,000. |
+| 6 | Low | The Google callback page interpolated unescaped text. | `htmlPage` escapes its title and message. |
+| 7 | Info | The `test_` bypass depends on a tunnel adding `X-Forwarded-For`. | `AUTH_TEST_BYPASS=false` removes it. |
+
+**Finding 4 (open, owner's call):** any member of a shared LINE group can log `+x 99999 @you`, and your share lands in your personal ledger, per the "share into personal ledger" decision. Options: opt-in per member, a "remove me from this expense" command, or a per-expense cap.
+
+**Checked and fine:**
+- Ownership scoping on statement import, undo and transfer merge (pool and fetches scoped by `line_user_id`; ids from scoped queries).
+- Group detail requires membership.
+- The new LIFF screens escape server text (`escapeHtml`; textContent for transcripts).
+- Signed export links bind the user and the full query and are compared timing-safe.
+- Access tokens must belong to our channels.
+- Undo only touches `stmt:` rows of the caller.
+
+**Tests:** `api/security` (15).

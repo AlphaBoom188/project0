@@ -35,9 +35,13 @@ const statementController = {
       if (userError) throw userError;
       if (!user) return res.status(404).json({ error: 'User not found' });
 
+      // Real statement text runs are short; capping them keeps every regex in
+      // the parser linear-ish even for a hostile request.
+      const MAX_PIECE = 500;
+      const safePages = pages.map((items) => items.map((it) => (it && typeof it === 'object' ? { ...it, s: String(it.s == null ? '' : it.s).slice(0, MAX_PIECE) } : it)));
       let parsed;
       try {
-        parsed = parseStatement(pages);
+        parsed = parseStatement(safePages);
       } catch (error) {
         if (error instanceof UnsupportedStatementError) return res.status(422).json({ error: error.message });
         throw error;

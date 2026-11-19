@@ -19,6 +19,7 @@ npm start              # port 3000; also serves the LIFF app at /liff and runs t
 - `LINE_MESSAGING_CHANNEL_SECRET` + `LINE_MESSAGING_CHANNEL_ACCESS_TOKEN` (bot), `LINE_LOGIN_*` (iOS login), `LIFF_ID`.
 - Optional: `TYPHOON_API_KEY` (Thai speech-to-text, else OpenAI); `GOOGLE_OAUTH_*` (verified export email, else 501); `APPS_SCRIPT_EMAIL_WEBHOOK_URL` + `APPS_SCRIPT_SHARED_SECRET` (CSV email relay, see `docs/APPS_SCRIPT_EMAIL_RELAY.md`, else 501).
 - `DISABLE_CRON=1` for any extra server instance (below).
+- `AUTH_TEST_BYPASS=false` removes the local `test_` bypass, e.g. behind a proxy that doesn't add `X-Forwarded-For`.
 - `AUTH_REQUIRED=false` disables API authentication (default on; see Conventions). `EXPORT_LINK_SECRET` is optional; by default it's derived from the service role key.
 
 **LINE setup:** the LIFF app's scopes must include **openid**, or `liff.getIDToken()` returns null and every API call gets 401. Then a public HTTPS tunnel (e.g. `ngrok http 3000`). Register the webhook as `https://<tunnel>/api/line/webhook` and the LIFF endpoint as `https://<tunnel>/liff/`. The LINE Login and Messaging API channels must be linked, so app logins and webhook events share one `line_user_id`. Group chats need "Allow bot to join group chats" turned on.
@@ -60,6 +61,9 @@ npm run test:openai       # tests/openai/: real OpenAI calls (a few cents)
   - CSV download is a navigation and can't send headers, so the app first `POST`s `/transactions/:u/export-link`, which returns the query HMAC-signed for 2 minutes.
   - The LIFF app sends `liff.getIDToken()` from `apiRequest()`. A 401 `auth_invalid` triggers one silent `liff.login()`, guarded against loops.
   - The iOS app stores the LINE access token from `/line/callback` in the Keychain (`KeychainStore.swift`) and sends it on every request. On a 401 it logs out to the login screen.
+- **Rate limits** (`services/rateLimit.js`, in memory, per user, per 10 minutes) on everything that spends money: receipt OCR and bill item scans plus bot photos (30), voice parse plus bot voice (30), bot free text (60), statement preview (30). Over the limit, REST returns 429 `rate_limited` with `Retry-After`, and the bot replies asking the user to wait. Add a limit to any new paid endpoint.
+- **CSV exports** prefix text starting with `= + - @` (or a tab/CR) with `'`, which stops formula injection from statement merchant names or group members' descriptions.
+- **OAuth `state`** that round-trips a user id must be signed (`lineAuth.signState`/`verifyState`, 10 min), as the Google export-email link is. A bare id lets someone attach their Google email to another account.
 - **IDs and errors.** Every router with an id param registers `router.param(name, requireUuidParam(label))` (`services/uuid.js`), so a malformed id gets `400 "Invalid <label> id"`. Update handlers map PostgREST `PGRST116` to `404 "<X> not found"`. Deletes of an unknown id succeed silently.
 - **Route order.** Literal paths are registered before `/:id` wildcards: `/transactions/:u/all`, `/bills/public/*`, `/portfolio/:u/lots|performance|dividends|goal`.
 - **Body size.** `express.json({ limit: '10mb' })` for base64 photos and audio. The LINE webhook route is mounted *before* `express.json()` because signature verification needs the raw body.

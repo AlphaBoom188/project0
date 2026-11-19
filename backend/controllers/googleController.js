@@ -1,7 +1,12 @@
+const { verifyState } = require('../services/lineAuth');
 const supabase = require('../config/supabase');
 const { buildAuthUrl, exchangeCodeForVerifiedEmail } = require('../services/googleOAuth');
 
-function htmlPage(title, message) {
+const escapeHtml = (str) => String(str).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+function htmlPage(rawTitle, rawMessage) {
+  const title = escapeHtml(rawTitle);
+  const message = escapeHtml(rawMessage);
   return `<!DOCTYPE html><html><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>${title}</title><style>body{font-family:-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;padding:24px;text-align:center;background:#f4f5f7;color:#1a1a1a;}</style></head>
 <body><div><h2>${title}</h2><p>${message}</p></div></body></html>`;
@@ -28,9 +33,13 @@ const googleController = {
   // picks up the new google_email next time it loads.
   async handleCallback(req, res) {
     try {
-      const { code, state: lineUserId } = req.query;
-      if (!code || !lineUserId) {
+      const { code, state } = req.query;
+      if (!code || !state) {
         return res.status(400).send(htmlPage('Something went wrong', 'Missing code or state. You can close this tab and try again.'));
+      }
+      const lineUserId = verifyState(state);
+      if (!lineUserId) {
+        return res.status(400).send(htmlPage('Link expired', 'This sign-in link is invalid or has expired. Go back to the app and tap Connect Google again.'));
       }
 
       const email = await exchangeCodeForVerifiedEmail(code);

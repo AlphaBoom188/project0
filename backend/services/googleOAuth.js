@@ -23,9 +23,11 @@ function requireConfig() {
   return { clientId, clientSecret, redirectUri };
 }
 
-// `state` carries the line_user_id through the redirect round-trip -- there's
-// no session system in this app (same trusted-state-param pattern lineController.js
-// already uses for LINE's own OAuth callback).
+// `state` carries the line_user_id through the redirect round-trip, HMAC-signed
+// and valid for 10 minutes (lineAuth.signState): a bare id could be swapped
+// for someone else's, linking the attacker's Google email to that account and
+// redirecting its CSV exports. The callback verifies it (verifyState).
+const { signState } = require('./lineAuth');
 function buildAuthUrl(lineUserId) {
   const { clientId, redirectUri } = requireConfig();
   const params = new URLSearchParams({
@@ -33,7 +35,7 @@ function buildAuthUrl(lineUserId) {
     redirect_uri: redirectUri,
     response_type: 'code',
     scope: 'openid email',
-    state: lineUserId,
+    state: signState(lineUserId),
     prompt: 'select_account',
   });
   return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;

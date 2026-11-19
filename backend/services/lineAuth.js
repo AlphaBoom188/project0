@@ -92,6 +92,9 @@ const bearer = (req) => {
 };
 
 function isLocalTestRequest(req, lineUserId) {
+  // AUTH_TEST_BYPASS=false removes the bypass entirely, e.g. when deployed
+  // behind a proxy that doesn't add X-Forwarded-For.
+  if (process.env.AUTH_TEST_BYPASS === 'false') return false;
   if (!String(lineUserId || '').startsWith('test_')) return false;
   if (req.headers['x-forwarded-for'] || req.headers.forwarded) return false;
   const addr = (req.socket && req.socket.remoteAddress) || '';
@@ -124,6 +127,26 @@ function verifyExportLink(lineUserId, query) {
   return crypto.timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(sig, 'hex'));
 }
 
+// ---- Signed OAuth state ----
+// For flows that round-trip a user id through a third party (Google OAuth):
+// "<base64url id>.<exp>.<hmac>", so the callback can't be handed someone
+// else's id.
+const b64url = (str) => Buffer.from(str, 'utf8').toString('base64url');
+function signState(value, ttlSeconds = 600) {
+  const exp = String(Math.floor(Date.now() / 1000) + ttlSeconds);
+  const body = `${b64url(value)}.${exp}`;
+  return `${body}.${crypto.createHmac('sha256', linkSecret()).update(`state|${body}`).digest('base64url')}`;
+}
+// -> the value, or null if forged, malformed or expired.
+function verifyState(state) {
+  const parts = String(state || '').split('.');
+  if (parts.length !== 3 || !/^\d+$/.test(parts[1]) || Number(parts[1]) < Date.now() / 1000) return null;
+  const expected = crypto.createHmac('sha256', linkSecret()).update(`state|${parts[0]}.${parts[1]}`).digest();
+  const given = Buffer.from(parts[2], 'base64url');
+  if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) return null;
+  return Buffer.from(parts[0], 'base64url').toString('utf8');
+}
+
 // ---- Middleware ----
 
 async function checkUser(req, res, next, lineUserId) {
@@ -149,4 +172,4 @@ const requireOwnUser = (req, res, next, lineUserId) => checkUser(req, res, next,
 // For routes that take the user in the body (POST /api/users).
 const requireBodyUser = (req, res, next) => checkUser(req, res, next, req.body && req.body.line_user_id);
 
-module.exports = { requireOwnUser, requireBodyUser, userIdForToken, signExportLink, verifyExportLink, isLocalTestRequest, channelIds, _cache: cache };
+module.exports = { requireOwnUser, requireBodyUser, userIdForToken, signExportLink, verifyExportLink, signState, verifyState, isLocalTestRequest, channelIds, _cache: cache };
