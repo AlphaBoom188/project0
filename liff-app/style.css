@@ -1796,3 +1796,39 @@ body {
   color: var(--color-text-primary);
   padding: 0 var(--space-sm);
 }
+
+/* ---- LINE group balances (Home + detail sheet) ---- */
+.group-row {
+  cursor: pointer;
+}
+.bill-status-pill.settled {
+  background: var(--color-track);
+  color: var(--color-text-secondary);
+}
+.group-subtitle {
+  margin: var(--space-md) 0 var(--space-xs);
+  font-size: 14px;
+  color: var(--color-text-secondary);
+}
+.group-mine {
+  margin: var(--space-sm) 0 0;
+  font-size: 17px;
+  font-weight: 600;
+}
+.group-mine.paid {
+  color: var(--color-income);
+}
+.group-mine.unpaid {
+  color: var(--color-expense);
+}
+.group-me .category-name {
+  font-weight: 600;
+}
+.group-net {
+  font-size: 15px;
+}
+.group-hint {
+  margin: var(--space-md) 0;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}

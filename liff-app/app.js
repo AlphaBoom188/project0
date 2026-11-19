@@ -181,6 +181,18 @@ const el = {
   cancelGoal: document.getElementById('cancel-goal'),
   goalDelete: document.getElementById('goal-delete'),
   homeInvestmentsCard: document.getElementById('home-investments-card'),
+  // LINE group balances (Home) + detail sheet
+  homeGroups: document.getElementById('home-groups'),
+  groupsList: document.getElementById('groups-list'),
+  groupDetailModal: document.getElementById('group-detail-modal'),
+  groupDetailTitle: document.getElementById('group-detail-title'),
+  groupDetailMeta: document.getElementById('group-detail-meta'),
+  groupDetailMine: document.getElementById('group-detail-mine'),
+  groupDetailPayments: document.getElementById('group-detail-payments'),
+  groupDetailMembers: document.getElementById('group-detail-members'),
+  groupDetailRecent: document.getElementById('group-detail-recent'),
+  groupDetailError: document.getElementById('group-detail-error'),
+  closeGroupDetail: document.getElementById('close-group-detail'),
   homeInvestmentsValue: document.getElementById('home-investments-value'),
   homeInvestmentsToday: document.getElementById('home-investments-today'),
 
@@ -834,6 +846,10 @@ async function loadHomeTab() {
   // so instead of waiting on that before firing it, fetch a wide-enough window
   // (6 months, also covers the Monthly Pulse trend chart) in parallel with
   // everything else and filter the cycle window client-side.
+  // Independent of everything below, so it doesn't wait for the 6-month fetch.
+  renderHomeGroups().catch(() => {
+    el.homeGroups.hidden = true;
+  });
   const { year: nowYear, month: nowMonth } = bangkokParts();
   const sixMonthsAgoISO = bangkokMidnight(nowYear, nowMonth - 5, 1).toISOString();
   const [userResponse, transactionsResponse, billsResponse] = await Promise.all([
@@ -868,6 +884,88 @@ async function loadHomeTab() {
   renderHomeInvestments().catch(() => {
     el.homeInvestmentsCard.hidden = true;
   });
+}
+
+// ---- LINE group balances (read-only; logging and settling happen in the chat) ----
+
+const groupDisplayName = (g) => g.name || (g.source_type === 'room' ? 'LINE chat' : 'LINE group');
+
+// "You're owed ฿400.00" / "You owe ฿245.00" / "Settled up", with a pill class.
+function groupNetStatus(net) {
+  if (net > 0) return { text: `You're owed ${formatMoney(net, 'THB')}`, cls: 'paid' };
+  if (net < 0) return { text: `You owe ${formatMoney(-net, 'THB')}`, cls: 'unpaid' };
+  return { text: 'Settled up', cls: 'settled' };
+}
+
+const paymentLine = (p) => (p.direction === 'pay' ? `You pay ${p.name} ${formatMoney(p.amount, 'THB')}` : `${p.name} pays you ${formatMoney(p.amount, 'THB')}`);
+
+// Groups section on Home: hidden until the user is in a LINE group with the bot.
+async function renderHomeGroups() {
+  const { groups } = await cachedGet(`/groups/${lineUserId}`);
+  el.homeGroups.hidden = groups.length === 0;
+  el.groupsList.innerHTML = groups.map((g, i) => {
+    const status = groupNetStatus(g.my_net);
+    const detail = g.my_payments.length ? g.my_payments.map(paymentLine).join(' · ') : `${g.member_count} member${g.member_count === 1 ? '' : 's'}`;
+    return `<li class="category-row group-row" data-i="${i}" role="button" tabindex="0">
+      <div class="category-row-top">
+        <span class="category-name">${escapeHtml(groupDisplayName(g))}</span>
+        <span class="bill-status-pill ${status.cls}">${escapeHtml(status.text)}</span>
+      </div>
+      <div class="category-bar-label-row"><span>${escapeHtml(detail)}</span></div>
+    </li>`;
+  }).join('');
+  el.groupsList.querySelectorAll('.group-row').forEach((row) => {
+    const open = () => openGroupDetail(groups[Number(row.dataset.i)].group_id);
+    row.addEventListener('click', open);
+    row.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
+  });
+}
+
+let groupDetailSeq = 0;
+async function openGroupDetail(groupId) {
+  const seq = ++groupDetailSeq;
+  clearModalError(el.groupDetailError);
+  el.groupDetailTitle.textContent = 'Loading…';
+  el.groupDetailMeta.textContent = '';
+  el.groupDetailMine.textContent = '';
+  [el.groupDetailPayments, el.groupDetailMembers, el.groupDetailRecent].forEach((list) => { list.innerHTML = ''; });
+  el.groupDetailModal.hidden = false;
+  try {
+    const d = await cachedGet(`/groups/${lineUserId}/${groupId}`);
+    if (seq !== groupDetailSeq) return;
+    el.groupDetailTitle.textContent = groupDisplayName(d.group);
+    el.groupDetailMeta.textContent = `${d.group.member_count} member${d.group.member_count === 1 ? '' : 's'}${d.group.is_active ? '' : ' · bot removed from this chat'}`;
+    const status = groupNetStatus(d.my_net);
+    el.groupDetailMine.textContent = d.my_payments.length ? `${status.text}: ${d.my_payments.map(paymentLine).join(', ')}` : status.text;
+    el.groupDetailMine.className = `group-mine ${status.cls}`;
+
+    el.groupDetailPayments.innerHTML = d.payments.length
+      ? d.payments.map((p) => `<li class="category-row${p.involves_me ? ' group-me' : ''}"><div class="category-row-top">
+          <span class="category-name">${escapeHtml(p.from_name)} → ${escapeHtml(p.to_name)}</span><span>${formatMoney(p.amount, 'THB')}</span></div></li>`).join('')
+      : '<li class="empty-state">Everyone is settled up.</li>';
+    el.groupDetailMembers.innerHTML = d.members.map((m) => {
+      const cls = m.net > 0 ? 'income' : m.net < 0 ? 'expense' : '';
+      const label = m.net > 0 ? `+${formatMoney(m.net, 'THB')}` : m.net < 0 ? `-${formatMoney(-m.net, 'THB')}` : formatMoney(0, 'THB');
+      return `<li class="category-row"><div class="category-row-top">
+        <span class="category-name">${escapeHtml(m.name)}${m.is_me ? ' (you)' : ''}${m.left ? ' · left' : ''}</span>
+        <span class="summary-value ${cls} group-net">${label}</span></div></li>`;
+    }).join('');
+    el.groupDetailRecent.innerHTML = d.recent.length
+      ? d.recent.map((e) => {
+        const when = new Date(e.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'Asia/Bangkok' });
+        const what = e.kind === 'settlement'
+          ? `${escapeHtml(e.payer_name)} paid ${escapeHtml(e.to_name)}`
+          : `${escapeHtml(e.description || 'Expense')} · paid by ${escapeHtml(e.paid_by_me ? 'you' : e.payer_name)}`;
+        const sub = e.kind === 'settlement' ? 'Settle up' : `Split ${e.split_count} way${e.split_count === 1 ? '' : 's'}${e.my_share !== null ? ` · your share ${formatMoney(e.my_share, 'THB')}` : ''}`;
+        return `<li class="category-row"><div class="category-row-top"><span class="category-name">${what}</span><span>${formatMoney(e.amount, 'THB')}</span></div>
+          <div class="category-bar-label-row"><span>${escapeHtml(when)} · ${escapeHtml(sub)}</span></div></li>`;
+      }).join('')
+      : '<li class="empty-state">Nothing logged yet.</li>';
+  } catch (error) {
+    if (seq !== groupDetailSeq) return;
+    el.groupDetailTitle.textContent = 'Group';
+    showModalError(el.groupDetailError, String(error.message).replace(/^\[\d+\]\s*/, ''));
+  }
 }
 
 // Compact "Investments" card, only for users with holdings; tapping it opens
@@ -3637,6 +3735,7 @@ el.perfRangePills.forEach((pill) => pill.addEventListener('click', () => setPerf
 el.perfViewButtons.forEach((button) => button.addEventListener('click', () => setPerfView(button.dataset.perfView)));
 el.divModeButtons.forEach((button) => button.addEventListener('click', () => setDivMode(button.dataset.divMode)));
 el.homeInvestmentsCard.addEventListener('click', () => switchTab('networth'));
+el.closeGroupDetail.addEventListener('click', () => { el.groupDetailModal.hidden = true; });
 el.goalSetupButton.addEventListener('click', openGoalModal);
 el.goalEditButton.addEventListener('click', openGoalModal);
 el.goalTableToggle.addEventListener('click', toggleGoalTable);

@@ -147,18 +147,20 @@ async function undoLast(groupId, userId) {
   return last;
 }
 
-// -> { net: Map(id -> cents), payments: [{ from, to, amount }], names: Map }
+// -> { net: Map(id -> cents), payments: [{ from, to, amount }], names: Map,
+//      members (incl. left), entries (newest first) }
 async function groupBalances(groupId) {
   const { data, error } = await supabase
     .from('group_expenses')
-    .select('kind, payer_line_user_id, amount, group_expense_shares ( line_user_id, share )')
-    .eq('group_id', groupId);
+    .select('id, kind, payer_line_user_id, amount, description, created_at, group_expense_shares ( line_user_id, share )')
+    .eq('group_id', groupId)
+    .order('created_at', { ascending: false });
   if (error) throw error;
   const entries = data.map((e) => ({ ...e, shares: e.group_expense_shares }));
   const net = netBalances(entries);
   const members = await listMembers(groupId, { includeLeft: true });
   const names = new Map(members.map((m) => [m.line_user_id, m.display_name]));
-  return { net, payments: simplifyDebts(net), names };
+  return { net, payments: simplifyDebts(net), names, members, entries };
 }
 
 module.exports = {

@@ -50,6 +50,7 @@ npm start  # Starts server on port 3000
 - `POST /api/portfolio/:line_user_id/:holding_id/refresh-price`, `POST /api/portfolio/:line_user_id/refresh-all` - Live price refresh (Yahoo Finance for stock/etf, CoinGecko for crypto); 400s for mutual_fund/gold, which have no live source
 - `PUT /api/users/:line_user_id/emergency-fund` - Set the emergency fund goal amount and/or which existing account tracks progress
 - `GET/POST /api/budget-events/:line_user_id` (`?month=YYYY-MM-01`), `PUT/DELETE /api/budget-events/:line_user_id/:event_id` - One-off, single-month event/occasion budget buckets layered on a category, with computed `spent`/`remaining`/`percent`
+- `GET /api/groups/:line_user_id`, `GET /api/groups/:line_user_id/:group_id` - Read-only LINE group split-tracker views for the LIFF Groups card (group ids must be `C`/`R` + 32 hex, else 400; 404 unless the user is or was a member)
 - `POST /api/statements/:line_user_id/parse`, `POST /api/statements/:line_user_id/import` - Bank statement import (KBank savings/current): preview from pdf.js text pieces, then insert the kept rows (see Bank Statement Import below)
 - `GET /api/google/login-url/:line_user_id`, `GET /api/google/callback` - Google OAuth used *only* to verify the CSV-export email (not a login method); 501 if not configured
 - `GET /api/line/login-url` - Generate LINE Login URL
@@ -165,7 +166,8 @@ project0/
 │   │   ├── accountController.js # Accounts/wallets CRUD
 │   │   ├── billController.js    # Shared bills: create/list/detail/delete, settlement, public share view
 │   │   ├── portfolioController.js # Investment holdings CRUD + computed value/gain/allocation + emergency fund status
-│   │   └── statementController.js # Bank statement import: parse (preview) + import
+│   │   ├── statementController.js # Bank statement import: parse (preview) + import
+│   │   └── groupController.js   # Read-only LINE group balances for the LIFF Groups card
 │   ├── routes/                    # API routes
 │   │   ├── userRoutes.js
 │   │   ├── categoryRoutes.js
@@ -643,7 +645,16 @@ That personal copy is best-effort: a failure is logged and the group record stan
 
 **Tests:** `api/group_split_math` (32, pure) and `api/line_groups` (38: the real webhook controller + DB with LINE stubbed; free, since every description hits a category keyword).
 
-**Not built:** a LIFF view of group balances, uneven/itemized group splits (the separate Shared Bills feature covers itemized), and multiple currencies.
+✅ **LIFF Groups card** (`controllers/groupController.js`, read-only). Logging and settling stay in the chat, so the chat remains the one place everyone sees changes happen.
+- **`GET /api/groups/:u`:** every group the user is or was in (a member who left still sees past debts), newest activity first, with `my_net` and `my_payments` (their lines from the simplified plan).
+- **`GET /api/groups/:u/:group_id`:** the whole plan (`involves_me` flags), every member's net, and the 20 most recent entries with `my_share`.
+- **Home:** a Groups section appears only when the user is in a group. Each row shows a pill ("You're owed ฿X" green / "You owe ฿X" red / "Settled up" grey) and "Cee pays you ฿155.00 · …". An unnamed room shows as "LINE chat".
+- **Detail sheet:** tap a row for the summary, who pays whom, members with nets, recent entries, and a hint with the chat commands.
+- The groups fetch starts at the top of `loadHomeTab()`, in parallel with the 6-month fetch rather than after it.
+- `groupBalances()` now also returns `members` and `entries` (newest first).
+- **Tests:** `api/groups_api` (20) and `liff/group_balances` (16), both on `tests/fixtures/groupSeed.js`.
+
+**Not built:** uneven/itemized group splits (the separate Shared Bills feature covers itemized), and multiple currencies.
 
 ### Bank Statement Import (KBank)
 

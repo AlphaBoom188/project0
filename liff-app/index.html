@@ -72,6 +72,11 @@
           </div>
         </button>
 
+        <section id="home-groups" hidden>
+          <h2 class="section-title">Groups</h2>
+          <ul id="groups-list" class="categories-list"></ul>
+        </section>
+
         <div class="quick-actions-row">
           <button type="button" id="add-bill-button" class="quick-action-button">
             <span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></span>
@@ -699,6 +704,23 @@
           <button type="submit" class="primary-button">Save</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <div id="group-detail-modal" class="modal" hidden>
+    <div class="modal-content sheet-scroll">
+      <h2 class="section-title" id="group-detail-title"></h2>
+      <p id="group-detail-meta" class="transaction-date"></p>
+      <p id="group-detail-mine" class="group-mine"></p>
+      <h3 class="group-subtitle">Who pays whom</h3>
+      <ul id="group-detail-payments" class="categories-list"></ul>
+      <h3 class="group-subtitle">Members</h3>
+      <ul id="group-detail-members" class="categories-list"></ul>
+      <h3 class="group-subtitle">Recent</h3>
+      <ul id="group-detail-recent" class="categories-list"></ul>
+      <p class="group-hint">Log costs and settle up in the LINE group: "+ข้าว 600", "+taxi 300 @name", "settle @name", "balance".</p>
+      <p id="group-detail-error" class="modal-error" hidden></p>
+      <button type="button" id="close-group-detail" class="secondary-button recurring-add-button">Close</button>
     </div>
   </div>
 
