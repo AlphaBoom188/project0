@@ -231,3 +231,69 @@ Research date: 2026-11-19. Goal: add a Thai personal income tax section to the a
 - [PEAK: 8 income types](https://www.peakaccount.com/blog/tax/corporate-income-tax/income-tax), [PEAK: PIT 2569](https://www.peakaccount.com/blog/tax/personal-income-tax/calculation-of-personal-income-tax)
 - [HLB 2025 deductions](https://www.hlbthai.com/personal-income-tax-deductions-and-allowances-in-thailand-for-2025-what-you-need-to-know/), [Acclime](https://thailand.acclime.com/guides/personal-income-tax/), [Kalberry 2026 guide](https://www.kalberry.com/en/thailand/blog/thailand-income-tax-guide-2026/)
 - [Krungthai 2568 deductions](https://krungthai.com/th/financial-partner/learn-financial/1220), [Sanook 2568](https://www.sanook.com/money/946084/), [Sanook 2569](https://www.sanook.com/money/957511/), [CIMB 2569 funds](https://www.cimbthai.com/th/personal/blog/financial-guru/tax-deduction-investment.html), [Finnomena ThaiESG](https://www.finnomena.com/finnomenafunds/what-is-tesg/)
+
+---
+
+## 7. Verified against primary sources (2026-11-19)
+
+Checked against the Revenue Department's 2568 instruction booklets:
+- [Ins90](https://www.rd.go.th/fileadmin/tax_pdf/pit/2568/Ins90_241268.pdf), [Ins91](https://www.rd.go.th/fileadmin/tax_pdf/pit/2568/Ins91_241268.pdf), [Ins94](https://www.rd.go.th/fileadmin/tax_pdf/pit/2568/Ins94_050668.pdf), all dated 24 Dec 2568 / 5 Jun 2568;
+- MOF e-filing announcement No. 7/8/9;
+- RD press release 3/2569 (solar).
+
+**These supersede section 2 where they differ.**
+
+**Rates:**
+- Progressive table: confirmed for 2568. No change found for 2569, though no document restates it.
+- **0.5% method (confirmed):** applies when assessable income excluding 40(1) is ≥ 120,000. If 0.5% of that is ≤ 5,000, it's ignored; otherwise **pay the higher** of the two methods. PND 94 uses all income types.
+
+**Expenses:**
+
+| Type | Rule |
+|---|---|
+| 40(1)+(2) | 50%, cap 100k combined |
+| 40(3) | Goodwill/copyright only: 50% cap 100k, or actual (annuities none) |
+| 40(4) | None |
+| 40(5) | Houses/buildings/rafts 30%, **agricultural land 20%**, other land 15%, vehicles 30%, other property 10%; hire-purchase breach 20% flat |
+| 40(6) | **Medical arts and fine arts 60%**; law, engineering, architecture, accounting 30%; or actual |
+| 40(7) | 60% or actual |
+| 40(8) | Types (2)-(43) **60%**. Only type (1), performers/athletes, gets 60% on the first 300k + 40% above, with a 600k cap. Type (44), unlisted, uses actual only. Inherited/gifted real estate 50%; non-trade real estate on a holding-years table (92% at 1 year down to 50% at 8+). |
+
+**Allowances (2568), corrections:**
+- **Child:** 30k; the 2nd+ legitimate child born 2561 or later gets 60k; adopted max 3. Not claimable if the child has non-exempt income ≥ 30k.
+- **Parents:** 60+, income ≤ 30k (the exact boundary is ambiguous); the spouse's parents only if the spouse has no income; one child claims (ล.ย.03).
+- **Disabled dependant:** 60k (income ≤ 30k).
+- **Life insurance:** 10-year term required. **Pension insurance:** 15% of income up to 200k (plus any unused room in the 100k life cap).
+- **Provident fund:** 15% of **wages**. **GPF:** 500k with no % cap. RMF 30%.
+- **Combined 500k:** PVD/GPF/teachers' fund, RMF, pension insurance, NSF. **ThaiESG sits outside.**
+- **ThaiESG:** 30%, up to 300k, 5-year hold (purchases 2567-2569; from 2570 the cap is 100k with an 8-year hold).
+- **ThaiESGX:** separate from ThaiESG. New money 2568 only (≤ 30 Jun); the LTF switch spills over into 2569-2572 at up to 50k a year. **No combined ESG cap is stated.**
+- **SSF:** ended after 2567.
+- **Social security:** actual paid, with no tax cap. The 9,000/10,500 figures are the SSO wage ceiling (news only).
+- **Donations:** the 2x categories first (state hospitals, Justice Fund, culture funds, education equity / science / 26 foundations / Red Cross / OKMD by e-Donation), capped at 10%; then general donations at 1x, capped at 10% of the remainder.
+- **Artwork:** up to 100k, 2568-2570.
+- **Solar rooftop:** up to 200k, on-grid, e-Tax invoice, one system, until 31 Dec 2571.
+- **New-home construction:** claimed in the year it finishes (contracts 9 Apr 2567 to 31 Dec 2568).
+- **Easy E-Receipt 2.0** and **เที่ยวดีมีคืน** (10k + 10k e-invoice, 1.5x in secondary cities): 2568 only.
+- **65+/disabled exemption:** 190k (not both).
+- **Dividend credit:** 15/85 or 25/75; all dividends of that type must be included; the alternative is the 10% final withholding.
+
+**Filing:**
+- PND 91: 40(1) only, filing required above 120k single / 220k married.
+- PND 90: any other mix, above 60k single / 120k married.
+- PND 94: half-year return for 40(5)-(8).
+- Tax year 2568: paper by **31 Mar 2569**, online by **8 Apr 2569**.
+- **The 2569 online date isn't announced yet.**
+- Instalments: 3 equal parts if tax ≥ 3,000. Surcharge 1.5% a month, capped at the tax due; late-filing fine up to 2,000.
+
+**Still unverified:**
+- the 2569 rate restatement;
+- the SSO caps;
+- a GPF % limit;
+- the NSF contribution limit;
+- the solar decree's exact start date;
+- Decree 812 (social enterprise, 2569);
+- 2569 filing dates and measures;
+- the exact 30k boundary for parents/dependants.
+
+The extracted booklet text is in the session scratchpad (`rd/Ins90_241268.n.txt` …) for reference while building `taxMath`.
