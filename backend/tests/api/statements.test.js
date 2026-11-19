@@ -10,6 +10,7 @@ const { buildBblStatement, BBL_SAMPLE } = require(`${FIXTURES}/bblStatement.js`)
 const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const U = `test_stmt_${Date.now()}`;
 const OTHER = `test_stmt_other_${Date.now()}`;
+const U2 = `test_stmt_xfer_${Date.now()}`;
 
 let failures = 0;
 function assert(cond, label) {
@@ -23,7 +24,7 @@ async function api(path, options = {}) {
 const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body) });
 
 async function cleanup() {
-  for (const u of [U, OTHER]) {
+  for (const u of [U, OTHER, U2]) {
     await db.from('transactions').delete().eq('line_user_id', u);
     await db.from('accounts').delete().eq('line_user_id', u);
     await db.from('categories').delete().eq('line_user_id', u);
@@ -58,7 +59,7 @@ async function cleanup() {
   assert(own.length === 2 && own.some((r) => r.type === 'expense') && own.some((r) => r.type === 'income'), 'own-account transfers both ways are marked own_transfer');
   const dup = rows.find((r) => r.status === 'possible_duplicate');
   assert(dup && dup.description === 'BTS TIM TVM' && /bts/.test(dup.note), `the BTS fare already logged by hand is a possible duplicate (${dup && dup.note})`);
-  assert(JSON.stringify(p.body.counts) === JSON.stringify({ total: 10, new: 7, imported: 0, own_transfer: 2, bank_transfer: 0, possible_duplicate: 1 }), `counts (got ${JSON.stringify(p.body.counts)})`);
+  assert(JSON.stringify(p.body.counts) === JSON.stringify({ total: 10, new: 7, imported: 0, own_transfer: 2, bank_transfer: 0, transfer_match: 0, possible_duplicate: 1 }), `counts (got ${JSON.stringify(p.body.counts)})`);
   assert(byDesc('LINE MAN (QR by ttb)').category_name === 'Food' && byDesc('CS 7-Eleven Vending MPQ 00016').category_name === 'Shopping' && byDesc('แกร็บแท็กซี่ (ประเทศไทย)').category_name === 'Transport',
     'keyword rules: LINE MAN -> Food, 7-Eleven -> Shopping, Thai Grab taxi -> Transport');
   assert(byDesc('GRABPAY WALLET').category_name === 'Others', 'a wallet top-up is left uncategorized (Others)');
@@ -112,15 +113,62 @@ async function cleanup() {
   const { pages: bblPages } = buildBblStatement(BBL_SAMPLE);
   const b = await post(`/statements/${U}/parse`, { pages: bblPages });
   assert(b.status === 200 && b.body.bank === 'bbl' && b.body.verified && b.body.account_last4 === '3456', `BBL parse: bank, verified, account (got ${b.status} ${b.body.bank})`);
-  assert(JSON.stringify(b.body.counts) === JSON.stringify({ total: 7, new: 5, imported: 0, own_transfer: 0, bank_transfer: 2, possible_duplicate: 0 }), `BBL counts: the two TRF OTH BK rows are bank_transfer (got ${JSON.stringify(b.body.counts)})`);
+  assert(JSON.stringify(b.body.counts) === JSON.stringify({ total: 7, new: 5, imported: 0, own_transfer: 0, bank_transfer: 2, transfer_match: 0, possible_duplicate: 0 }), `BBL counts: the two TRF OTH BK rows are bank_transfer (got ${JSON.stringify(b.body.counts)})`);
   const out = b.body.rows.find((r) => r.status === 'bank_transfer' && r.type === 'expense');
-  assert(out && out.description === 'Transfer to another bank' && /Tick it if it wasn't your own account/.test(out.note), 'a bank transfer explains why it starts unticked');
+  assert(out && out.description === 'Transfer to another bank' && out.transfer_default && /imported as a Transfer/.test(out.note), 'a bank transfer defaults to a Transfer and says so');
   assert(b.body.rows.every((r) => r.transaction_date.endsWith('T12:00:00+07:00')), 'BBL rows have no time: noon Bangkok');
   assert(b.body.rows.filter((r) => r.type === 'expense').every((r) => r.category_name === 'Others'), 'generic bank codes go to Others without an AI call');
   const bImp = await post(`/statements/${U}/import`, { rows: b.body.rows.filter((r) => r.status === 'new' || r === out).map((r) => asImport(r)) });
   assert(bImp.status === 200 && bImp.body.imported === 6, `importing the new rows plus one ticked bank transfer (got ${JSON.stringify(bImp.body)})`);
   const b2 = await post(`/statements/${U}/parse`, { pages: bblPages });
   assert(b2.body.counts.imported === 6 && b2.body.counts.bank_transfer === 1, 'BBL re-parse: 6 already imported, the unticked transfer still flagged');
+
+  // --- Own transfers across two statements (statementTransfers.js) ---
+  await post('/users', { line_user_id: U2, display_name: 'Transfer Test' });
+  const { body: kAcct } = await post(`/accounts/${U2}`, { account_name: 'KBank', account_type: 'bank', balance: 1000 });
+  const { body: bAcct } = await post(`/accounts/${U2}`, { account_name: 'Bangkok Bank', account_type: 'bank', balance: 2000 });
+  const kb = await post(`/statements/${U2}/parse`, { pages });
+  const kOwn = kb.body.rows.filter((r) => r.status === 'own_transfer');
+  assert(kOwn.length === 2 && kOwn.every((r) => r.transfer_default), 'KBank own transfers default to importing as a Transfer');
+  assert(kb.body.rows.filter((r) => r.status === 'new').every((r) => !r.transfer_default), 'ordinary rows default to a category');
+  const asTransfer = (r) => ({ row_key: r.row_key, transaction_date: r.transaction_date, description: r.description, amount: r.amount, type: 'transfer', direction: r.type === 'expense' ? 'out' : 'in' });
+  const noStatement = await post(`/statements/${U2}/import`, { rows: kOwn.map(asTransfer) });
+  assert(noStatement.status === 400 && /statement/.test(noStatement.body.error), 'importing transfers without { statement } -> 400');
+  const badDir = await post(`/statements/${U2}/import`, { rows: [{ ...asTransfer(kOwn[0]), direction: 'sideways' }], statement: { bank: 'kbank', account_last4: '7890' } });
+  assert(badDir.status === 400 && /direction/.test(badDir.body.error), 'a transfer with a bad direction -> 400');
+  const kImp = await post(`/statements/${U2}/import`, { rows: kOwn.map(asTransfer), account_id: kAcct.account.id, statement: { bank: 'kbank', account_last4: '7890' } });
+  assert(kImp.status === 200 && kImp.body.imported === 2 && kImp.body.merged === 0, `KBank transfers inserted (got ${JSON.stringify(kImp.body)})`);
+  let { data: xfers } = await db.from('transactions').select('*').eq('line_user_id', U2).eq('type', 'transfer').order('transaction_date');
+  assert(xfers.length === 2 && xfers[0].description === 'KBank •••7890 → another account' && xfers[0].from_account_id === kAcct.account.id && !xfers[0].to_account_id && !xfers[0].category_id,
+    `outgoing own transfer: "KBank •••7890 → another account", from the KBank account, no category (got ${xfers[0] && xfers[0].description})`);
+  assert(xfers[1].description === 'another account → KBank •••7890' && xfers[1].to_account_id === kAcct.account.id, 'incoming own transfer: "another account → KBank •••7890"');
+
+  const { pages: bPages } = buildBblStatement([
+    { date: '2026-06-02', particulars: 'PMT FOR GOODS', amount: 544.58, sign: -1 },     // same amount and day, but a payment
+    { date: '2026-06-03', particulars: 'TRF FR OTH BK', amount: 544.58, sign: 1 },      // the KBank transfer out, a day later
+    { date: '2026-06-05', particulars: 'TRF TO OTH BK', amount: 26936.67, sign: -1 },   // the KBank transfer in
+  ], { opening: 3000000, period: ['01/06/2026', '30/06/2026'] });
+  const bb = await post(`/statements/${U2}/parse`, { pages: bPages });
+  assert(bb.body.verified && JSON.stringify(bb.body.counts) === JSON.stringify({ total: 3, new: 1, imported: 0, own_transfer: 0, bank_transfer: 0, transfer_match: 2, possible_duplicate: 0 }), `BBL: both transfers match KBank's, the payment doesn't (got ${JSON.stringify(bb.body.counts)})`);
+  const bIn = bb.body.rows.find((r) => r.type === 'income');
+  assert(bIn.status === 'transfer_match' && bIn.transfer_default && bIn.note.includes('KBank •••7890 → another account') && bIn.note.includes('2026-06-02'), `a match names the other side and its date (got ${bIn.note})`);
+  assert(bb.body.rows.find((r) => r.description === 'Payment for goods').status === 'new', 'a payment with the same amount and day is not treated as a transfer');
+  const bImp2 = await post(`/statements/${U2}/import`, { rows: bb.body.rows.filter((r) => r.status === 'transfer_match').map(asTransfer), account_id: bAcct.account.id, statement: { bank: 'bbl', account_last4: '3456' } });
+  assert(bImp2.status === 200 && bImp2.body.imported === 2 && bImp2.body.merged === 2, `both joined, nothing new inserted (got ${JSON.stringify(bImp2.body)})`);
+  ({ data: xfers } = await db.from('transactions').select('*').eq('line_user_id', U2).eq('type', 'transfer').order('transaction_date'));
+  assert(xfers.length === 2, `still one entry per move (got ${xfers.length})`);
+  assert(xfers[0].description === 'KBank •••7890 → Bangkok Bank •••3456' && xfers[0].from_account_id === kAcct.account.id && xfers[0].to_account_id === bAcct.account.id && xfers[0].transaction_date.startsWith('2026-06-02'),
+    `merged: "KBank •••7890 → Bangkok Bank •••3456" between both accounts, keeping the first side's date (got ${xfers[0].description})`);
+  assert(xfers[1].description === 'Bangkok Bank •••3456 → KBank •••7890' && xfers[1].from_account_id === bAcct.account.id && xfers[1].to_account_id === kAcct.account.id, 'merged the other way too');
+  const accts = (await db.from('accounts').select('id, balance').eq('line_user_id', U2)).data;
+  assert(accts.every((a) => Number(a.balance) === (a.id === kAcct.account.id ? 1000 : 2000)), 'account balances are untouched');
+
+  const bb2 = await post(`/statements/${U2}/parse`, { pages: bPages });
+  assert(bb2.body.counts.imported === 2 && bb2.body.rows.find((r) => r.type === 'income').note === 'Already recorded: KBank •••7890 → Bangkok Bank •••3456', 'BBL re-parse: the transfers are already recorded');
+  const kb2 = await post(`/statements/${U2}/parse`, { pages });
+  assert(kb2.body.counts.imported === 2 && kb2.body.counts.own_transfer === 0, 'KBank re-parse: its transfers are already recorded too');
+  const again2 = await post(`/statements/${U2}/import`, { rows: bb.body.rows.filter((r) => r.status === 'transfer_match').map(asTransfer), account_id: bAcct.account.id, statement: { bank: 'bbl', account_last4: '3456' } });
+  assert(again2.body.imported === 0 && again2.body.skipped === 2 && (await db.from('transactions').select('id').eq('line_user_id', U2).eq('type', 'transfer')).data.length === 2, 're-importing the BBL transfers changes nothing');
 
   await cleanup();
   process.exit(failures ? 1 : 0);

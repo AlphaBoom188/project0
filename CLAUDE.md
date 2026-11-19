@@ -204,7 +204,8 @@ project0/
 │   │   ├── groupSplitMath.js    # pure: group message parsing, equal splits, net balances, who-pays-whom
 │   │   ├── groupLedger.js       # group/member/expense DB ops + each member's share into their personal ledger
 │   │   ├── statementParser.js   # pure: positioned PDF text -> KBank statement rows, signs from the running balance, totals cross-check
-│   │   └── statementImport.js   # preview: row keys, own-transfer/duplicate/imported status, keyword-then-LLM categories
+│   │   ├── statementImport.js   # preview: row keys, own-transfer/duplicate/imported status, keyword-then-LLM categories
+│   │   └── statementTransfers.js # own-account transfers across statements: Transfer entries, matching and merging
 │   ├── jobs/
 │   │   ├── dailyDigest.js       # node-cron, 21:00 Asia/Bangkok, daily income/expense push
 │   │   ├── recurringTransactions.js # node-cron, 00:05 Asia/Bangkok, generates due recurring transactions
@@ -714,6 +715,15 @@ That personal copy is best-effort: a failure is logged and the group record stan
 - **New status `bank_transfer`:** "TRF TO/FR OTH BK" rows start unticked with "Tick it if it wasn't your own account". No name is printed, and they're typically moves to the holder's own account in another bank (which that bank's statement would also show).
 - **Verified by hand** on a real one-page statement: 4 rows, all four checks match. It's not in the repo; `tests/fixtures/bblStatement.js` is synthetic and builds both per-column (pdf.js-like) and per-row (PDFKit) pieces.
 - **Tests:** `api/statement_parser` (now 31), `api/statements` (38), `liff/statement_import` (27, including a BBL PDF through real pdf.js).
+
+✅ **Own-account transfers across statements** (`services/statementTransfers.js`; owner's choice: store them as Transfer entries, no migration).
+- **Import as Transfers by default.** Own transfers (KBank, by holder name), Bangkok Bank "TRF OTH BK" rows, and matched rows start ticked with `transfer_default: true`. Each row's category select gains "Transfer (between my accounts)" (preselected for those rows, available for any row, e.g. a wallet top-up).
+- **How a Transfer is stored:** as `type: 'transfer'` (never income or spending), with no category, the statement's account on its side when one is linked, and a description naming the statement accounts: `"KBank •••2222 → another account"`.
+- **Matching:** when another statement contains the other side (same amount, opposite direction, Bangkok dates at most a day apart, transfer-like rows only), the preview marks it `transfer_match`. Import merges it into the existing entry by filling in that side's label and account (`"Bangkok Bank •••1111 → KBank •••2222"`) instead of inserting a second one.
+- **Already recorded:** a row whose side already appears in a transfer's description shows as `imported` ("Already recorded: …"). The description is the record of which statements have seen a move, so no extra table is needed.
+- **The import body** carries `statement: { bank, account_last4 }` (required when any row has `type: 'transfer'`, with `direction` `'out' | 'in'`). It returns `merged` alongside `imported`/`skipped`.
+- **Verified on real data:** with the real KBank statement's 88 own transfers imported as Transfers, the real Bangkok Bank ฿27,130.67 "TRF TO OTH BK" matched KBank's same-day deposit and merged into one "Bangkok Bank •••1111 → KBank •••2222" entry.
+- **Tests:** `api/statements` (56, including a two-bank scenario: a +1-day match, a same-amount payment that must not match, re-parse/re-import of both statements, balances untouched) and `liff/statement_import` (28).
 
 **Not built:** other banks, credit card statements, e-wallet exports.
 

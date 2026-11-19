@@ -11,8 +11,11 @@
 //   spending), 'bank_transfer' (Bangkok Bank "TRF TO/FR OTH BK": no name is
 //   printed, so it may be the holder's own account), 'possible_duplicate'
 //   (a manually logged transaction on the same
-//   Bangkok day with the same amount and type), else 'new'. Only 'new' rows
-//   start ticked in the LIFF preview.
+//   Bangkok day with the same amount and type), 'transfer_match' (the other
+//   side of a transfer already imported from another statement; see
+//   statementTransfers.js), else 'new'. Own transfers, bank transfers and
+//   matches default to importing as a Transfer (transfer_default), never as
+//   spending or income; everything else imports with a category.
 // - Categories: one gpt-4o-mini call per batch of unique merchant names (a
 //   1,000-row statement has a few hundred), picking from the user's own
 //   categories; anything unmatched falls back to Others / the first income
@@ -21,6 +24,7 @@ const crypto = require('crypto');
 const OpenAI = require('openai');
 const supabase = require('../config/supabase');
 const { getBangkokYmd } = require('./bangkokDay');
+const { sideLabel, fetchTransferPool, matchTransfer } = require('./statementTransfers');
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, timeout: 45000, maxRetries: 1 });
 const CATEGORY_BATCH = 60;
@@ -153,6 +157,17 @@ async function buildPreview(lineUserId, parsed, holderName) {
 
   const rows = parsed.rows.map((r) => ({ ...r, row_key: rowKey(lineUserId, parsed, r), own: isOwnTransfer(r, holderName) }));
   const { imported, manual } = await fetchExisting(lineUserId, rows.map((r) => r.row_key), parsed);
+  const myLabel = sideLabel(parsed.bank, parsed.summary.account_last4);
+  const transferPool = await fetchTransferPool(lineUserId, rows.map((r) => r.date));
+  // Only transfer-like rows are matched: a payment that happens to share an
+  // amount and day with a transfer elsewhere isn't one.
+  const transferLike = (r) => r.own || r.is_bank_transfer || /transfer|^TRF/i.test(r.bank_description);
+  const transferMatches = new Map();
+  for (const r of rows) {
+    if (imported.has(r.row_key) || !transferLike(r)) continue;
+    const m = matchTransfer(transferPool, r, myLabel);
+    if (m) transferMatches.set(r.row_key, m);
+  }
 
   // One-to-one duplicate matching against manual entries.
   const pool = new Map();
@@ -163,7 +178,7 @@ async function buildPreview(lineUserId, parsed, holderName) {
   }
 
   const toCategorize = { expense: new Set(), income: new Set() };
-  for (const r of rows) if (!imported.has(r.row_key) && !r.own && !r.is_bank_transfer) toCategorize[r.type].add(r.merchant_key);
+  for (const r of rows) if (!imported.has(r.row_key) && !r.own && !r.is_bank_transfer && !transferMatches.has(r.row_key)) toCategorize[r.type].add(r.merchant_key);
   const [expCats, incCats] = await Promise.all([
     categorizeKeys([...toCategorize.expense], byType.expense),
     byType.income.length > 1 ? categorizeKeys([...toCategorize.income], byType.income) : Promise.resolve(new Map()),
@@ -173,11 +188,16 @@ async function buildPreview(lineUserId, parsed, holderName) {
   const preview = rows.map((r) => {
     let status = 'new';
     let note = null;
+    const tm = transferMatches.get(r.row_key);
     if (imported.has(r.row_key)) status = 'imported';
-    else if (r.own) { status = 'own_transfer'; note = 'Transfer between your own accounts'; }
+    else if (tm && tm.kind === 'recorded') { status = 'imported'; note = `Already recorded: ${tm.transfer.description}`; }
+    else if (tm) {
+      status = 'transfer_match';
+      note = `Matches your transfer "${tm.transfer.description}" on ${tm.transfer.ymd}. Importing joins them into one.`;
+    } else if (r.own) { status = 'own_transfer'; note = 'Transfer between your own accounts. Imported as a Transfer, not spending.'; }
     else if (r.is_bank_transfer) {
       status = 'bank_transfer';
-      note = `Transfer ${r.type === 'expense' ? 'to' : 'from'} another bank. Tick it if it wasn't your own account.`;
+      note = `Transfer ${r.type === 'expense' ? 'to' : 'from'} another bank, likely your own account, so it's imported as a Transfer. Pick a category if it paid someone.`;
     }
     else {
       const match = (pool.get(`${r.date}|${r.type}|${r.amount_cents}`) || []).shift();
@@ -195,6 +215,7 @@ async function buildPreview(lineUserId, parsed, holderName) {
       type: r.type,
       category_id: category ? category.id : null,
       category_name: category ? category.name : null,
+      transfer_default: ['own_transfer', 'bank_transfer', 'transfer_match'].includes(status),
       status,
       note,
     };
@@ -209,7 +230,7 @@ async function buildPreview(lineUserId, parsed, holderName) {
     verified: parsed.ok,
     checks: parsed.checks,
     warnings: parsed.warnings,
-    counts: { total: preview.length, new: count('new'), imported: count('imported'), own_transfer: count('own_transfer'), bank_transfer: count('bank_transfer'), possible_duplicate: count('possible_duplicate') },
+    counts: { total: preview.length, new: count('new'), imported: count('imported'), own_transfer: count('own_transfer'), bank_transfer: count('bank_transfer'), transfer_match: count('transfer_match'), possible_duplicate: count('possible_duplicate') },
     rows: preview,
   };
 }

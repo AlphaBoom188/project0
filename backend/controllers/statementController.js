@@ -2,6 +2,7 @@ const supabase = require('../config/supabase');
 const { parseStatement, UnsupportedStatementError } = require('../services/statementParser');
 const { buildPreview } = require('../services/statementImport');
 const { isUuid } = require('../services/uuid');
+const { BANK_LABEL, sideLabel, describeTransfer, fetchTransferPool, matchTransfer, mergeTransfer } = require('../services/statementTransfers');
 
 const MAX_PAGES = 100;
 const MAX_ITEMS = 60000;
@@ -49,10 +50,16 @@ const statementController = {
   },
 
   // POST /api/statements/:line_user_id/import
-  // Body: { account_id?, rows: [{ row_key, transaction_date, description, amount, type, category_id }] }
-  // Inserts the kept rows. Re-imports are skipped via the slip_hash UNIQUE
-  // constraint. Account balances are NOT adjusted (statement rows are history;
-  // the account's balance is already current), and no budget alerts fire.
+  // Body: { account_id?, statement: { bank, account_last4 },
+  //         rows: [{ row_key, transaction_date, description, amount, type, category_id, direction? }] }
+  // type 'income'/'expense' rows are inserted with their category. type
+  // 'transfer' rows (direction 'out' | 'in') become Transfer entries: merged
+  // into the other side of the same move if another statement already
+  // recorded it, skipped if this statement's side is already recorded, else
+  // inserted (statementTransfers.js). Re-imports are skipped via the
+  // slip_hash UNIQUE constraint. Account balances are NOT adjusted (statement
+  // rows are history; the account's balance is already current), and no
+  // budget alerts fire.
   async import(req, res) {
     try {
       const { line_user_id } = req.params;
@@ -71,19 +78,32 @@ const statementController = {
       if (catError) throw catError;
       const categoryType = new Map(categories.map((c) => [c.id, c.type]));
 
+      const { statement } = req.body;
+      const hasTransfers = rows.some((r) => r && r.type === 'transfer');
+      if (hasTransfers && !(statement && BANK_LABEL[statement.bank] && /^\d{4}$/.test(String(statement.account_last4 || '')))) {
+        return res.status(400).json({ error: 'statement { bank, account_last4 } is required to import transfers' });
+      }
+
       const seen = new Set();
       const inserts = [];
+      const transfers = [];
       for (const [i, r] of rows.entries()) {
         const bad = (msg) => res.status(400).json({ error: `Row ${i + 1}: ${msg}` });
         if (!r || typeof r !== 'object') return bad('invalid row');
         if (!RE_ROW_KEY.test(r.row_key || '')) return bad('invalid row_key');
         if (!RE_TXN_DATE.test(r.transaction_date || '') || Number.isNaN(Date.parse(r.transaction_date))) return bad('invalid transaction_date');
-        if (r.type !== 'income' && r.type !== 'expense') return bad('type must be income or expense');
+        if (!['income', 'expense', 'transfer'].includes(r.type)) return bad('type must be income, expense or transfer');
         const amount = Number(r.amount);
         if (!Number.isFinite(amount) || amount <= 0 || amount >= 1e10) return bad('amount must be a positive number');
-        if (categoryType.get(r.category_id) !== r.type) return bad(`category must be one of your ${r.type} categories`);
+        if (r.type === 'transfer') {
+          if (r.direction !== 'out' && r.direction !== 'in') return bad("direction must be 'out' or 'in' for a transfer");
+        } else if (categoryType.get(r.category_id) !== r.type) return bad(`category must be one of your ${r.type} categories`);
         if (seen.has(r.row_key)) continue;
         seen.add(r.row_key);
+        if (r.type === 'transfer') {
+          transfers.push({ ...r, amount: Math.round(amount * 100) / 100 });
+          continue;
+        }
         const toAccount = account_id || null;
         inserts.push({
           line_user_id,
@@ -99,6 +119,35 @@ const statementController = {
         });
       }
 
+      // Transfers: merge, skip, or add to the inserts.
+      let merged = 0;
+      if (transfers.length) {
+        const myLabel = sideLabel(statement.bank, statement.account_last4);
+        const pool = await fetchTransferPool(line_user_id, transfers.map((r) => r.transaction_date.slice(0, 10)));
+        for (const r of transfers) {
+          const asRow = { date: r.transaction_date.slice(0, 10), amount_cents: Math.round(r.amount * 100), type: r.direction === 'out' ? 'expense' : 'income' };
+          const m = matchTransfer(pool, asRow, myLabel);
+          if (m && m.kind === 'recorded') continue; // this side is already recorded: counted as skipped
+          if (m) {
+            await mergeTransfer(m.transfer, asRow, myLabel, account_id || null);
+            merged += 1;
+            continue;
+          }
+          inserts.push({
+            line_user_id,
+            category_id: null,
+            amount: r.amount,
+            type: 'transfer',
+            description: r.direction === 'out' ? describeTransfer(myLabel, null) : describeTransfer(null, myLabel),
+            slip_hash: r.row_key,
+            transaction_date: r.transaction_date,
+            payment_method: 'BANK',
+            from_account_id: r.direction === 'out' ? account_id || null : null,
+            to_account_id: r.direction === 'in' ? account_id || null : null,
+          });
+        }
+      }
+
       let imported = 0;
       for (let i = 0; i < inserts.length; i += INSERT_CHUNK) {
         const { data, error } = await supabase
@@ -108,7 +157,7 @@ const statementController = {
         if (error) throw error;
         imported += data.length;
       }
-      res.json({ success: true, imported, skipped: rows.length - imported });
+      res.json({ success: true, imported: imported + merged, merged, skipped: rows.length - imported - merged });
     } catch (error) {
       console.error('Error in statement import:', error);
       res.status(500).json({ error: error.message });

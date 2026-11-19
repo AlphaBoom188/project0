@@ -2906,7 +2906,9 @@ async function handleStatementRead(event) {
   }
 }
 
-const STMT_STATUS_LABEL = { imported: 'Already imported', own_transfer: 'Own transfer', bank_transfer: 'Bank transfer', possible_duplicate: 'Possible duplicate' };
+const STMT_STATUS_LABEL = { imported: 'Already imported', own_transfer: 'Own transfer', bank_transfer: 'Bank transfer', transfer_match: 'Matched transfer', possible_duplicate: 'Possible duplicate' };
+const STMT_TRANSFER = '__transfer__'; // category select value: import as a Transfer
+const stmtStartsTicked = (r) => r.status === 'new' || r.transfer_default;
 const STMT_BANK_NAME = { kbank: 'KBank', bbl: 'Bangkok Bank' };
 
 function renderStatementReview() {
@@ -2921,20 +2923,22 @@ function renderStatementReview() {
     : `Check before importing: ${[...p.checks.filter((c) => !c.ok).map((c) => c.label.replace(/_/g, ' ')), ...p.warnings].slice(0, 3).join('; ')}`;
   el.stmtVerify.classList.toggle('warn', !p.verified);
   const c = p.counts;
-  el.stmtCounts.textContent = [`${c.new} new`, c.own_transfer && `${c.own_transfer} own transfers`, c.bank_transfer && `${c.bank_transfer} bank transfer${c.bank_transfer === 1 ? '' : 's'}`, c.possible_duplicate && `${c.possible_duplicate} possible duplicates`, c.imported && `${c.imported} already imported`]
+  el.stmtCounts.textContent = [`${c.new} new`, c.own_transfer && `${c.own_transfer} own transfers`, c.bank_transfer && `${c.bank_transfer} bank transfer${c.bank_transfer === 1 ? '' : 's'}`,
+    c.transfer_match && `${c.transfer_match} matched transfer${c.transfer_match === 1 ? '' : 's'}`, c.possible_duplicate && `${c.possible_duplicate} possible duplicates`, c.imported && `${c.imported} already imported`]
     .filter(Boolean).join(' · ');
 
   el.stmtRows.innerHTML = p.rows.map((r, i) => {
-    const options = stmtCategories[r.type]
-      .map((cat) => `<option value="${cat.id}"${cat.id === r.category_id ? ' selected' : ''}>${escapeHtml(cat.name)}</option>`).join('');
+    const options = `<option value="${STMT_TRANSFER}"${r.transfer_default ? ' selected' : ''}>Transfer (between my accounts)</option>` + stmtCategories[r.type]
+      .map((cat) => `<option value="${cat.id}"${!r.transfer_default && cat.id === r.category_id ? ' selected' : ''}>${escapeHtml(cat.name)}</option>`).join('');
     const status = STMT_STATUS_LABEL[r.status];
-    return `<li class="stmt-row${r.status === 'new' ? '' : ' muted'}">
-      <label class="stmt-check"><input type="checkbox" data-i="${i}"${r.status === 'new' ? ' checked' : ''}${r.status === 'imported' ? ' disabled' : ''} aria-label="Import this row" /></label>
+    const ticked = stmtStartsTicked(r);
+    return `<li class="stmt-row${ticked ? '' : ' muted'}">
+      <label class="stmt-check"><input type="checkbox" data-i="${i}"${ticked ? ' checked' : ''}${r.status === 'imported' ? ' disabled' : ''} aria-label="Import this row" /></label>
       <div class="stmt-main">
         <div class="stmt-line"><span class="stmt-desc">${escapeHtml(r.description)}</span>
           <span class="stmt-amount ${r.type}">${r.type === 'expense' ? '-' : '+'}${formatMoney(r.amount, 'THB')}</span></div>
         <div class="stmt-meta">${escapeHtml(fmt(r.date))}${r.time ? ` ${r.time}` : ''}${status ? ` · <span class="stmt-status">${status}</span>` : ''}</div>
-        ${r.note && (r.status === 'possible_duplicate' || r.status === 'bank_transfer') ? `<div class="stmt-meta">${escapeHtml(r.note)}</div>` : ''}
+        ${r.note && r.status !== 'new' ? `<div class="stmt-meta">${escapeHtml(r.note)}</div>` : ''}
         <select class="stmt-cat" data-i="${i}" aria-label="Category">${options}</select>
       </div>
     </li>`;
@@ -2954,7 +2958,7 @@ function updateStatementImportButton() {
 
 function selectStatementRows(mode) {
   el.stmtRows.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
-    if (!cb.disabled) cb.checked = mode === 'new' && stmtPreview.rows[Number(cb.dataset.i)].status === 'new';
+    if (!cb.disabled) cb.checked = mode === 'new' && stmtStartsTicked(stmtPreview.rows[Number(cb.dataset.i)]);
   });
   updateStatementImportButton();
 }
@@ -2965,18 +2969,23 @@ async function handleStatementImport() {
   const catFor = new Map([...el.stmtRows.querySelectorAll('select.stmt-cat')].map((sel) => [Number(sel.dataset.i), sel.value]));
   const rows = picked.map((i) => {
     const r = stmtPreview.rows[i];
-    return { row_key: r.row_key, transaction_date: r.transaction_date, description: r.description, amount: r.amount, type: r.type, category_id: catFor.get(i) || r.category_id };
+    const base = { row_key: r.row_key, transaction_date: r.transaction_date, description: r.description, amount: r.amount };
+    const choice = catFor.get(i);
+    return choice === STMT_TRANSFER
+      ? { ...base, type: 'transfer', direction: r.type === 'expense' ? 'out' : 'in' }
+      : { ...base, type: r.type, category_id: choice || r.category_id };
   });
   el.stmtImport.disabled = true;
   clearModalError(el.stmtReviewError);
   try {
     const result = await apiRequest(`/statements/${lineUserId}/import`, {
       method: 'POST',
-      body: JSON.stringify({ rows, account_id: el.stmtAccount.value || null }),
+      body: JSON.stringify({ rows, account_id: el.stmtAccount.value || null, statement: { bank: stmtPreview.bank, account_last4: stmtPreview.account_last4 } }),
     });
     closeStatementModal();
     el.exportStatus.hidden = false;
     el.exportStatus.textContent = `Imported ${result.imported} transaction${result.imported === 1 ? '' : 's'}` +
+      (result.merged ? `, ${result.merged} joined with transfer${result.merged === 1 ? '' : 's'} from your other statement` : '') +
       (result.skipped ? ` (${result.skipped} already imported)` : '') + '.';
     loadTransactionsTab().catch((error) => showError(error.message));
   } catch (error) {
