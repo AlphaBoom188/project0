@@ -59,7 +59,7 @@ npm run test:openai       # tests/openai/: real OpenAI calls (a few cents)
   - Public by design: `/health`, the LINE webhook (it has its own signature check), LINE/Google login and callbacks, and `/bills/public/*`.
   - CSV download is a navigation and can't send headers, so the app first `POST`s `/transactions/:u/export-link`, which returns the query HMAC-signed for 2 minutes.
   - The LIFF app sends `liff.getIDToken()` from `apiRequest()`. A 401 `auth_invalid` triggers one silent `liff.login()`, guarded against loops.
-  - The iOS app doesn't send a token yet. Run with `AUTH_REQUIRED=false`, or update it to send its LINE access token.
+  - The iOS app stores the LINE access token from `/line/callback` in the Keychain (`KeychainStore.swift`) and sends it on every request. On a 401 it logs out to the login screen.
 - **IDs and errors.** Every router with an id param registers `router.param(name, requireUuidParam(label))` (`services/uuid.js`), so a malformed id gets `400 "Invalid <label> id"`. Update handlers map PostgREST `PGRST116` to `404 "<X> not found"`. Deletes of an unknown id succeed silently.
 - **Route order.** Literal paths are registered before `/:id` wildcards: `/transactions/:u/all`, `/bills/public/*`, `/portfolio/:u/lots|performance|dividends|goal`.
 - **Body size.** `express.json({ limit: '10mb' })` for base64 photos and audio. The LINE webhook route is mounted *before* `express.json()` because signature verification needs the raw body.
@@ -191,4 +191,4 @@ xcrun simctl openurl "iPhone 17 Pro" "com.expensetracker.app://line/callback?cod
 - Bundle ID `com.expensetracker.app`; URL scheme `com.expensetracker.app://line/callback`.
 - The backend URL is `http://localhost:3000/api`; use the Mac's IP address on a physical device.
 - The LINE Login channel ID is `2011983707`.
-- **Not yet updated for API auth.** The backend now requires `Authorization: Bearer <LINE access token>` on every request. Until `APIService.swift` sends the access token it receives at login, the iOS app only works with `AUTH_REQUIRED=false`.
+- **API auth:** `LINEAuthService` saves the `access_token` the backend's `/line/callback` returns to the Keychain. `APIService` sends it as `Authorization: Bearer`, and a 401 logs out. Sessions saved before this change have no token, so the user logs in once more.

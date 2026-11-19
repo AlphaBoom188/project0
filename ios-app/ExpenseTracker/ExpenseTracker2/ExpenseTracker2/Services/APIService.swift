@@ -22,6 +22,9 @@ class APIService {
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token = LINEAuthService.shared.accessToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
         
         if let body = body {
             request.httpBody = body
@@ -39,6 +42,10 @@ class APIService {
             }
             
             guard 200..<300 ~= httpResponse.statusCode else {
+                // 401: the LINE token is missing, expired or revoked -> back to login.
+                if httpResponse.statusCode == 401 {
+                    DispatchQueue.main.async { LINEAuthService.shared.logout() }
+                }
                 completion(.failure(APIError.httpError(httpResponse.statusCode)))
                 return
             }

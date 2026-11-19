@@ -10,6 +10,11 @@ class LINEAuthService: NSObject, ObservableObject {
     
     private let channelId = "2011983707"
     private let redirectURI = "com.expensetracker.app://line/callback"
+    private static let tokenKey = "lineAccessToken"
+
+    /// LINE Login access token from the backend's /line/callback. Every API
+    /// request sends it as `Authorization: Bearer` (backend/services/lineAuth.js).
+    var accessToken: String? { KeychainStore.get(Self.tokenKey) }
     
     private override init() {
         super.init()
@@ -86,6 +91,9 @@ class LINEAuthService: NSObject, ObservableObject {
                     
                     let userData = try JSONSerialization.data(withJSONObject: userDict)
                     let user = try JSONDecoder().decode(User.self, from: userData)
+                    if let token = json["access_token"] as? String {
+                        KeychainStore.set(token, for: Self.tokenKey)
+                    }
                     
                     DispatchQueue.main.async {
                         self.currentUser = user
@@ -110,13 +118,15 @@ class LINEAuthService: NSObject, ObservableObject {
         if let data = UserDefaults.standard.data(forKey: "currentUser"),
            let user = try? JSONDecoder().decode(User.self, from: data) {
             self.currentUser = user
-            self.isLoggedIn = UserDefaults.standard.bool(forKey: "isLoggedIn")
+            // A session saved before API auth has no token: log in again once.
+            self.isLoggedIn = UserDefaults.standard.bool(forKey: "isLoggedIn") && accessToken != nil
         }
     }
     
     func logout() {
         currentUser = nil
         isLoggedIn = false
+        KeychainStore.remove(Self.tokenKey)
         UserDefaults.standard.removeObject(forKey: "currentUser")
         UserDefaults.standard.set(false, forKey: "isLoggedIn")
     }

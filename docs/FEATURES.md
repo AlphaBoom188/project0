@@ -804,3 +804,9 @@ Before this, every endpoint trusted the `:line_user_id` in the URL: anyone with 
 - **LIFF:** `apiRequest()` adds the header. On a 401 `auth_invalid` it calls `liff.login({ redirectUri: location.href })` once; a `sessionStorage` timestamp blocks a second redirect within a minute. Download CSV gets a signed link, then navigates.
 - **Setup:** the LIFF app needs the `openid` scope for `getIDToken()` to return a token.
 - **Tests:** `api/auth` (27: 401s on several routes and on `POST /users`; bogus ID and access tokens rejected by LINE itself; public routes; the bypass locally but not via a tunnel; signed links working, tampered, cross-user and expired; and in-process the 403, an expired cached token, `AUTH_REQUIRED=false`, channel ids) and `liff/auth_client` (8: the header on every request, the signed CSV link, a single re-login). `openai/voice_message`'s REST call moved to a `test_` user.
+
+**iOS (same day):**
+- `LINEAuthService` keeps the LINE Login access token returned by `GET /api/line/callback` in the Keychain (`Services/KeychainStore.swift`, `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`), not in UserDefaults.
+- `APIService.performRequest` sends it as a Bearer token. A 401 calls `logout()`, which also deletes the token. A saved session without a token counts as logged out.
+- The backend verifies it through the access-token path, `client_id` 2011983707 = `LINE_LOGIN_CHANNEL_ID`.
+- Verified: an `xcodebuild` simulator build, and a launch showing the login screen for a session with no token. A real LINE login can't be completed in the simulator; it needs a device.
