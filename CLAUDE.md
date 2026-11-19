@@ -52,7 +52,7 @@ npm start  # Starts server on port 3000
 - `GET/POST /api/budget-events/:line_user_id` (`?month=YYYY-MM-01`), `PUT/DELETE /api/budget-events/:line_user_id/:event_id` - One-off, single-month event/occasion budget buckets layered on a category, with computed `spent`/`remaining`/`percent`
 - `POST /api/voice/:line_user_id/parse` - LIFF mic button: `{ audio_base64, mime_type }` (audio/mp4, webm, ogg, mpeg, wav; max 3 MB) -> `{ transcript, provider, expense: { is_expense, amount, description, category_id, category_name } }`; writes nothing (422 when nothing was heard)
 - `GET /api/groups/:line_user_id`, `GET /api/groups/:line_user_id/:group_id` - Read-only LINE group split-tracker views for the LIFF Groups card (group ids must be `C`/`R` + 32 hex, else 400; 404 unless the user is or was a member)
-- `POST /api/statements/:line_user_id/parse`, `POST /api/statements/:line_user_id/import` - Bank statement import (KBank savings/current): preview from pdf.js text pieces, then insert the kept rows (see Bank Statement Import below)
+- `POST /api/statements/:line_user_id/parse`, `POST /api/statements/:line_user_id/import` - Bank statement import (KBank savings/current, Bangkok Bank savings): preview from pdf.js text pieces, then insert the kept rows (see Bank Statement Import below)
 - `GET /api/google/login-url/:line_user_id`, `GET /api/google/callback` - Google OAuth used *only* to verify the CSV-export email (not a login method); 501 if not configured
 - `GET /api/line/login-url` - Generate LINE Login URL
 - `GET /api/line/callback` - Handle LINE OAuth callback
@@ -705,6 +705,15 @@ That personal copy is best-effort: a failure is logged and the group record stan
 - `api/statements` (31, free): no OpenAI calls, since every sample merchant hits a keyword rule.
 - `liff/statement_import` (24): a real PDF written by `tests/fixtures/kbankStatement.js` (`statementPdf()`, Helvetica 6.5pt, ASCII rows only) goes through real pdf.js from cdnjs. Also covers an unsupported PDF and the pdf.js CDN blocked.
 - Not covered by tests: password-protected PDFs, since generating an encrypted PDF needs a library.
+
+✅ **Bangkok Bank savings** (`parseBbl()`, detected by "Bangkok Bank" + "STATEMENT OF SAVING ACCOUNT"). Parsed by **line text, not columns**: PDFKit returns each table row as a single piece, and pdf.js splits it differently.
+- **Rows:** a row is `dd/mm/yy particulars [chq no.] amount balance [via]`. A `B/F` row carries the balance forward (the opening balance, and on each page). The sign comes from the running balance, falling back to the particulars with a warning.
+- **Header and totals:** account, period and holder come from page 1. The debit/credit counts and amounts come from wherever they're printed, normally the last page; the credit amount is printed before its own label. No ending balance is printed, so there are four checks, not five.
+- **Descriptions:** particulars are bank codes with no counterparty, so they're mapped to readable text ("PMT. PROMPTPAY" → "PromptPay payment", "TRF TO OTH BK" → "Transfer to another bank", …). Generic codes skip the LLM and land in Others.
+- **Rows have no time,** so they're stored at noon Bangkok.
+- **New status `bank_transfer`:** "TRF TO/FR OTH BK" rows start unticked with "Tick it if it wasn't your own account". No name is printed, and they're typically moves to the holder's own account in another bank (which that bank's statement would also show).
+- **Verified by hand** on a real one-page statement: 4 rows, all four checks match. It's not in the repo; `tests/fixtures/bblStatement.js` is synthetic and builds both per-column (pdf.js-like) and per-row (PDFKit) pieces.
+- **Tests:** `api/statement_parser` (now 31), `api/statements` (38), `liff/statement_import` (27, including a BBL PDF through real pdf.js).
 
 **Not built:** other banks, credit card statements, e-wallet exports.
 

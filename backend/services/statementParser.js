@@ -6,7 +6,12 @@
 // the table rows from those positions. No AI involved: a 1,000-row statement
 // parses exactly, in milliseconds.
 //
-// Supported: KBank savings/current statements ("KBPDF (FM702-CA_SA-...)").
+// Supported:
+// - KBank savings/current statements ("KBPDF (FM702-CA_SA-...)"), parsed by
+//   column positions (below).
+// - Bangkok Bank savings statements ("STATEMENT OF SAVING ACCOUNT"), parsed
+//   by line text (parseBbl): every row fits on one line, and PDFKit returns
+//   it as a single piece anyway, so columns can't be relied on.
 // Layout per page: a header row (Date, Time/Eff.Date, Descriptions,
 // Withdrawal / Deposit, Outstanding Balance (THB), Channel, Details), then one
 // row per transaction starting with a dd-mm-yy date at the left; long Details
@@ -30,6 +35,7 @@ class UnsupportedStatementError extends Error {}
 
 function detectFormat(pages) {
   const all = pages.flat().map((it) => it.s).join('\n');
+  if (/Bangkok Bank/i.test(all) && /STATEMENT OF SAVING ACCOUNT/i.test(all)) return 'bbl';
   if (/KBPDF/.test(all) || (/Withdrawal \/ Deposit/.test(all) && /Outstanding Balance/.test(all) && /K PLUS|KBank/.test(all))) return 'kbank';
   return null;
 }
@@ -298,11 +304,143 @@ function parseKbank(pages) {
   };
 }
 
+// ---- Bangkok Bank savings ----
+//
+// Row: "01/11/26 PMT. PROMPTPAY 20.00 28,035.67 mPhone" -- date, particulars,
+// optional cheque number, amount (in the Withdrawal or Deposit column),
+// balance, channel ("Via"). "B/F" rows carry the balance forward (opening
+// balance, and possibly each page). Particulars are bank codes with no
+// counterparty ("PMT FOR GOODS", "TRF TO OTH BK"), so descriptions are a
+// readable version of the code.
+const RE_BBL_ROW = /^(\d{2})\/(\d{2})\/(\d{2})\s+(.+?)\s+(?:(\d{4,10})\s+)?(-?[\d,]+\.\d{2})\s+(-?[\d,]+\.\d{2})(?:\s+(.*))?$/;
+const RE_BBL_BF = /^(\d{2})\/(\d{2})\/(\d{2})\s+(?:B\/F|C\/F|BALANCE B\/F)\s+(-?[\d,]+\.\d{2})\s*$/i;
+const BBL_CODES = [
+  [/^PMT\.? PROMPTPAY/i, 'PromptPay payment'],
+  [/^PMT\.? FOR GOODS/i, 'Payment for goods'],
+  [/^PMT\.? BILL/i, 'Bill payment'],
+  [/^TRF\.? TO OTH\.? BK/i, 'Transfer to another bank'],
+  [/^TRF\.? FR(OM)?\.? OTH\.? BK/i, 'Transfer from another bank'],
+  [/^TRF\.? TO/i, 'Transfer out'],
+  [/^TRF\.? FR/i, 'Transfer in'],
+  [/^PROMPTPAY IN|^RECV\.? PROMPTPAY/i, 'PromptPay received'],
+  [/^ATM\b|^ATW\b|^CASH W/i, 'Cash withdrawal'],
+  [/^DEP\b|^DEPOSIT|^CASH DEP/i, 'Deposit'],
+  [/^INT(EREST)?\b/i, 'Interest'],
+  [/^WHT|^W\/H TAX|^TAX/i, 'Withholding tax'],
+  [/^FEE|^CHARGE|^SERVICE CHG/i, 'Bank fee'],
+];
+const bblDescription = (particulars) => (BBL_CODES.find(([re]) => re.test(particulars)) || [null, particulars])[1];
+const lineText = (line) => norm(line.items.map((it) => it.s).join(' '));
+
+function parseBbl(pages) {
+  // Header fields are on page 1; the debit/credit totals follow the last row,
+  // so they're on the last page.
+  const firstLines = toLines(pages[0] || []);
+  const allLines = pages.flatMap((items) => toLines(items));
+  const find = (lines, re) => { const l = lines.find((x) => re.test(lineText(x))); return l ? lineText(l) : ''; };
+  const textOf = (re) => find(firstLines, re);
+  const account = textOf(/Account No\./).match(/(\d{3}-\d-\d{5}-\d|\d{10})/);
+  const period = textOf(/Statement Period/).match(/(\d{2})\/(\d{2})\/(\d{4})\s*-\s*(\d{2})\/(\d{2})\/(\d{4})/);
+  const holder = textOf(/Name\s/).match(/Name\s+(.+?)(?:\s+เลขที่บัญชี.*|\s+Account No\..*)?$/);
+  const totals = (re) => {
+    const t = find(allLines, re);
+    if (!t) return { count: null, cents: null };
+    const rest = t.replace(/^.*?Total No\. of (Debits|Credits)/i, '');
+    const count = rest.match(/(?<![\d.,])(\d+)(?![\d.,])/);
+    const money = rest.match(/-?[\d,]+\.\d{2}/);
+    return { count: count ? parseInt(count[1], 10) : null, cents: money ? cents(money[0]) : null };
+  };
+  const debits = totals(/Total No\. of Debits/i);
+  const credits = totals(/Total No\. of Credits/i);
+  const digits = account ? account[1].replace(/\D/g, '') : '';
+  const summary = {
+    holder_name: holder ? norm(holder[1]) : null,
+    account_number: digits || null,
+    account_last4: digits ? digits.slice(-4) : null,
+    period_start: period ? `${period[3]}-${period[2]}-${period[1]}` : null,
+    period_end: period ? `${period[6]}-${period[5]}-${period[4]}` : null,
+    ending_balance_cents: null, // not printed on BBL statements
+    withdrawal_count: debits.count,
+    withdrawal_total_cents: debits.cents,
+    deposit_count: credits.count,
+    deposit_total_cents: credits.cents,
+  };
+
+  const out = [];
+  const warnings = [];
+  let openingCents = null;
+  let balance = null;
+  pages.forEach((items, pageIndex) => {
+    for (const line of toLines(items)) {
+      const text = lineText(line);
+      const bf = text.match(RE_BBL_BF);
+      if (bf) {
+        const carried = cents(bf[4]);
+        if (openingCents === null) openingCents = carried;
+        else if (balance !== null && carried !== balance) warnings.push(`Page ${pageIndex + 1}: carried balance ${carried / 100} doesn't match the previous balance ${balance / 100}`);
+        balance = carried;
+        continue;
+      }
+      const m = text.match(RE_BBL_ROW);
+      if (!m) continue;
+      const [, dd, mm, yy, particularsRaw, , amountStr, balanceStr, via] = m;
+      const particulars = norm(particularsRaw);
+      const amount = cents(amountStr);
+      const after = cents(balanceStr);
+      const delta = balance === null ? null : after - balance;
+      let type;
+      if (delta !== null && Math.abs(delta) === Math.abs(amount)) type = delta < 0 ? 'expense' : 'income';
+      else {
+        type = /^(DEP|DEPOSIT|TRF\.? FR|INT|PROMPTPAY IN|RECV)/i.test(particulars) ? 'income' : 'expense';
+        warnings.push(`Page ${pageIndex + 1}: ${dd}/${mm}/${yy} ${amount / 100} doesn't match the balance change; guessed ${type === 'income' ? 'deposit' : 'withdrawal'} from "${particulars}"`);
+      }
+      balance = after;
+      out.push({
+        date: `20${yy}-${mm}-${dd}`,
+        time: null,
+        bank_description: particulars,
+        channel: via ? norm(via) : null,
+        description: bblDescription(particulars),
+        merchant_key: particulars,
+        amount: Math.abs(amount) / 100,
+        amount_cents: Math.abs(amount),
+        balance_cents: after,
+        type,
+        // No counterparty is printed, so a transfer to/from another bank may be
+        // the holder's own account: statementImport starts these unticked.
+        is_bank_transfer: /^TRF\.? (TO|FR(OM)?)\.? OTH/i.test(particulars),
+      });
+    }
+  });
+
+  const sum = (type) => out.filter((r) => r.type === type).reduce((n, r) => n + r.amount_cents, 0);
+  const n = (type) => out.filter((r) => r.type === type).length;
+  const checks = [];
+  const check = (label, expected, actual) => { if (expected !== null && expected !== undefined) checks.push({ label, expected, actual, ok: expected === actual }); };
+  check('withdrawal_count', summary.withdrawal_count, n('expense'));
+  check('withdrawal_total_cents', summary.withdrawal_total_cents, sum('expense'));
+  check('deposit_count', summary.deposit_count, n('income'));
+  check('deposit_total_cents', summary.deposit_total_cents, sum('income'));
+  if (openingCents === null) warnings.push('No brought-forward (B/F) balance found, so signs are guessed from the descriptions.');
+
+  return {
+    bank: 'bbl',
+    summary: { ...summary, opening_balance_cents: openingCents },
+    rows: out,
+    checks,
+    ok: warnings.length === 0 && checks.length > 0 && checks.every((c) => c.ok),
+    warnings,
+  };
+}
+
+const SUPPORTED = 'KBank savings/current and Bangkok Bank savings statements';
+
 function parseStatement(pages) {
   if (!Array.isArray(pages) || pages.length === 0) throw new UnsupportedStatementError('No pages found in this PDF.');
   const format = detectFormat(pages);
   if (format === 'kbank') return parseKbank(pages);
-  throw new UnsupportedStatementError("This statement format isn't supported yet. Supported so far: KBank savings/current account statements.");
+  if (format === 'bbl') return parseBbl(pages);
+  throw new UnsupportedStatementError(`This statement format isn't supported yet. Supported so far: ${SUPPORTED}.`);
 }
 
 module.exports = { parseStatement, cleanDetails, toLines, detectFormat, UnsupportedStatementError };

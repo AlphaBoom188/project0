@@ -9,6 +9,7 @@ const { BASE, FIXTURES, OUTPUT } = require('../lib');
 const { chromium } = require('playwright-core');
 const { createClient } = require('@supabase/supabase-js');
 const { buildStatement, SAMPLE, statementPdf } = require(`${FIXTURES}/kbankStatement.js`);
+const { buildBblStatement, BBL_SAMPLE, bblStatementPdf } = require(`${FIXTURES}/bblStatement.js`);
 
 require('fs').mkdirSync(OUTPUT, { recursive: true });
 const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -104,6 +105,15 @@ async function readStatement(page, buffer, name = 'statement.pdf') {
   await page.waitForSelector('#stmt-review:not([hidden])', { timeout: 30000 }).catch(() => {});
   assert((await page.textContent('#stmt-counts')) === '1 new · 2 own transfers · 6 already imported', `re-reading: 6 already imported (got "${await page.textContent('#stmt-counts')}")`);
   assert((await page.$$eval('#stmt-rows input:disabled', (r) => r.length)) === 6, 'already-imported rows are disabled');
+  await page.click('#stmt-back');
+
+  // Bangkok Bank PDF through real pdf.js.
+  await readStatement(page, bblStatementPdf(buildBblStatement(BBL_SAMPLE).pages), 'bbl.pdf');
+  await page.waitForSelector('#stmt-review:not([hidden])', { timeout: 30000 }).catch(() => {});
+  assert((await page.textContent('#stmt-summary')).startsWith('Bangkok Bank •••3456 · Nov 1, 2026 – Nov 18, 2026'), `BBL summary line (got "${await page.textContent('#stmt-summary')}" / ${await page.textContent('#stmt-pick-error')})`);
+  assert((await page.textContent('#stmt-verify')) === `All ${BBL_SAMPLE.length} rows match the statement's totals.` && (await page.textContent('#stmt-counts')) === '5 new · 2 bank transfers', `BBL verified, counts (got "${await page.textContent('#stmt-verify')}" / "${await page.textContent('#stmt-counts')}")`);
+  const transferRows = await page.$$eval('#stmt-rows .stmt-row', (rows) => rows.filter((r) => r.textContent.includes('Bank transfer')).map((r) => ({ checked: r.querySelector('input').checked, note: r.textContent.includes("Tick it if it wasn't your own account") })));
+  assert(transferRows.length === 2 && transferRows.every((t) => !t.checked && t.note), 'bank transfers start unticked, with the explanation');
   await page.click('#stmt-back');
 
   // Unsupported PDF -> inline error from the server.

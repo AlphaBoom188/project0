@@ -86,4 +86,27 @@ assert(merged[0].some((it) => /^\d{2}-\d{2}-\d{2} \d{2}:\d{2} Payment$/.test(it.
 assert(mg.ok && mg.rows.length === SAMPLE.length && mg.rows.every((x, i) => x.amount === r.rows[i].amount && x.type === r.rows[i].type && x.channel === r.rows[i].channel && x.time === r.rows[i].time),
   `pdf.js-merged pieces split back into the same rows, amounts, signs, times and channels (ok=${mg.ok}, ${mg.rows.length} rows)`);
 
+// --- Bangkok Bank savings (tests/fixtures/bblStatement.js) ---
+const { buildBblStatement, BBL_SAMPLE } = require(`${FIXTURES}/bblStatement.js`);
+for (const merged of [false, true]) {
+  for (const perPage of [20, 3]) {
+    const label = `BBL ${merged ? 'one piece per row (PDFKit)' : 'one piece per column (pdf.js)'}, ${perPage === 3 ? '3 pages' : '1 page'}`;
+    const { pages: bp, totals: bt } = buildBblStatement(BBL_SAMPLE, { merged, perPage });
+    const b = parseStatement(bp);
+    assert(b.bank === 'bbl' && b.ok && b.rows.length === BBL_SAMPLE.length && b.checks.length === 4 && b.checks.every((c) => c.ok), `${label}: all rows, verified against the debit/credit totals`);
+    if (merged || perPage !== 20) continue;
+    assert(b.summary.account_last4 === '3456' && b.summary.period_start === '2026-11-01' && b.summary.period_end === '2026-11-18' && b.summary.holder_name === 'MR TEST STATEMENTUSER', 'BBL summary: account, period, holder');
+    assert(b.summary.opening_balance_cents === 1000000 && b.summary.withdrawal_count === bt.debits && b.summary.deposit_total_cents === bt.creditCents, 'BBL summary: B/F opening balance and totals (credit amount printed before its label)');
+    assert(b.rows.map((x) => x.type).join(',') === BBL_SAMPLE.map((x) => (x.sign < 0 ? 'expense' : 'income')).join(','), 'BBL signs from the balance change');
+    assert(b.rows[0].description === 'PromptPay payment' && b.rows[1].description === 'Payment for goods' && b.rows[6].description === 'Interest' && b.rows[0].time === null, 'BBL codes become readable descriptions; no time');
+    assert(b.rows[5].amount === 1500 && b.rows[5].bank_description === 'CHQ DEPOSIT' && b.rows[5].channel === 'Branch', 'a cheque number between particulars and amount is skipped');
+    assert(b.rows.filter((x) => x.is_bank_transfer).map((x) => x.type).join(',') === 'income,expense', 'TRF FR/TO OTH BK rows are flagged as bank transfers');
+  }
+}
+const bblTampered = buildBblStatement(BBL_SAMPLE, { merged: true }).pages;
+const row = bblTampered[0].find((it) => it.s.includes('PMT FOR GOODS'));
+row.s = row.s.replace('705.00', '750.00');
+const bTampered = parseStatement(bblTampered);
+assert(!bTampered.ok && bTampered.warnings.some((w) => /doesn't match the balance change/.test(w)), 'BBL: an amount that disagrees with the balance makes the statement unverified');
+
 process.exit(failures ? 1 : 0);

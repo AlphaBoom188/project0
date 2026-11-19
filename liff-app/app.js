@@ -2906,7 +2906,8 @@ async function handleStatementRead(event) {
   }
 }
 
-const STMT_STATUS_LABEL = { imported: 'Already imported', own_transfer: 'Own transfer', possible_duplicate: 'Possible duplicate' };
+const STMT_STATUS_LABEL = { imported: 'Already imported', own_transfer: 'Own transfer', bank_transfer: 'Bank transfer', possible_duplicate: 'Possible duplicate' };
+const STMT_BANK_NAME = { kbank: 'KBank', bbl: 'Bangkok Bank' };
 
 function renderStatementReview() {
   const p = stmtPreview;
@@ -2914,13 +2915,13 @@ function renderStatementReview() {
   el.stmtReview.hidden = false;
   clearModalError(el.stmtReviewError);
   const fmt = (ymd) => new Date(`${ymd}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
-  el.stmtSummary.textContent = `KBank •••${p.account_last4 || '----'} · ${p.period_start ? `${fmt(p.period_start)} – ${fmt(p.period_end)}` : `${p.counts.total} rows`}`;
+  el.stmtSummary.textContent = `${STMT_BANK_NAME[p.bank] || 'Bank'} •••${p.account_last4 || '----'} · ${p.period_start ? `${fmt(p.period_start)} – ${fmt(p.period_end)}` : `${p.counts.total} rows`}`;
   el.stmtVerify.textContent = p.verified
     ? `All ${p.counts.total} rows match the statement's totals.`
     : `Check before importing: ${[...p.checks.filter((c) => !c.ok).map((c) => c.label.replace(/_/g, ' ')), ...p.warnings].slice(0, 3).join('; ')}`;
   el.stmtVerify.classList.toggle('warn', !p.verified);
   const c = p.counts;
-  el.stmtCounts.textContent = [`${c.new} new`, c.own_transfer && `${c.own_transfer} own transfers`, c.possible_duplicate && `${c.possible_duplicate} possible duplicates`, c.imported && `${c.imported} already imported`]
+  el.stmtCounts.textContent = [`${c.new} new`, c.own_transfer && `${c.own_transfer} own transfers`, c.bank_transfer && `${c.bank_transfer} bank transfer${c.bank_transfer === 1 ? '' : 's'}`, c.possible_duplicate && `${c.possible_duplicate} possible duplicates`, c.imported && `${c.imported} already imported`]
     .filter(Boolean).join(' · ');
 
   el.stmtRows.innerHTML = p.rows.map((r, i) => {
@@ -2933,7 +2934,7 @@ function renderStatementReview() {
         <div class="stmt-line"><span class="stmt-desc">${escapeHtml(r.description)}</span>
           <span class="stmt-amount ${r.type}">${r.type === 'expense' ? '-' : '+'}${formatMoney(r.amount, 'THB')}</span></div>
         <div class="stmt-meta">${escapeHtml(fmt(r.date))}${r.time ? ` ${r.time}` : ''}${status ? ` · <span class="stmt-status">${status}</span>` : ''}</div>
-        ${r.note && r.status === 'possible_duplicate' ? `<div class="stmt-meta">${escapeHtml(r.note)}</div>` : ''}
+        ${r.note && (r.status === 'possible_duplicate' || r.status === 'bank_transfer') ? `<div class="stmt-meta">${escapeHtml(r.note)}</div>` : ''}
         <select class="stmt-cat" data-i="${i}" aria-label="Category">${options}</select>
       </div>
     </li>`;

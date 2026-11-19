@@ -8,7 +8,9 @@
 //   the same minute.
 // - Status per row: 'imported' (row_key already stored), 'own_transfer'
 //   (to/from the account holder's own name: a move between own accounts, not
-//   spending), 'possible_duplicate' (a manually logged transaction on the same
+//   spending), 'bank_transfer' (Bangkok Bank "TRF TO/FR OTH BK": no name is
+//   printed, so it may be the holder's own account), 'possible_duplicate'
+//   (a manually logged transaction on the same
 //   Bangkok day with the same amount and type), else 'new'. Only 'new' rows
 //   start ticked in the LIFF preview.
 // - Categories: one gpt-4o-mini call per batch of unique merchant names (a
@@ -50,6 +52,8 @@ const transactionDate = (row) => `${row.date}T${row.time || '12:00'}:00+07:00`;
 // applies when the user still has a category with that preset name.
 const MERCHANT_RULES = [
   // Order matters: brands (food, shops) before places ("LAWSON ... MRT", "KFC ... PTT").
+  // Bank codes with no merchant in them (Bangkok Bank): nothing to infer, skip the LLM.
+  { category: null, re: /^(PMT\.? (PROMPTPAY|FOR GOODS|BILL)|ATM\b|ATW\b|CASH W|TRF\.? (TO|FR)|CHQ|DEP\b|DEPOSIT|INT(EREST)?\b|WHT|FEE|CHARGE)/i },
   { category: null, re: /GRABPAY WALLET|TRUEMONEY(?! SHOP)|\bLINE PAY\b(?! MERCHANT)|RABBIT LINE PAY|SHOPEEPAY|G-WALL|YOUTRIP/i },
   { category: 'Food', re: /LINE MAN|WONGNAI|GRAB ?FOOD|FOODPANDA|ROBINHOOD|AMAZON|อเมซอน|STARBUCKS|CAFE|คาเฟ่|COFFEE|กาแฟ|RESTAURANT|ติ่มซำ|ก๋วยเตี๋ยว|บะหมี่|ข้าว|ชาบู|หมูกระทะ|FOOD ?COURT|ฟู้ด ?คอร์ท|KFC|MCDONALD|SWENSEN|MK RESTAURANT|BAR B Q|AFTER YOU/i },
   { category: 'Shopping', re: /7-ELEVEN|SEVEN ELEVEN|เซเว่น|LAWSON|FAMILYMART|CP AXTRA|LOTUS|โลตัส|MAKRO|แม็คโคร|\bTOPS\b|BIG ?C|GOURMET MARKET|VILLA MARKET|THE MALL|CENTRAL|ROBINSON|WATSONS|BOOTS|EVEANDBOY|SHOPEE|LAZADA|UNIQLO|IKEA|HOMEPRO/i },
@@ -159,7 +163,7 @@ async function buildPreview(lineUserId, parsed, holderName) {
   }
 
   const toCategorize = { expense: new Set(), income: new Set() };
-  for (const r of rows) if (!imported.has(r.row_key) && !r.own) toCategorize[r.type].add(r.merchant_key);
+  for (const r of rows) if (!imported.has(r.row_key) && !r.own && !r.is_bank_transfer) toCategorize[r.type].add(r.merchant_key);
   const [expCats, incCats] = await Promise.all([
     categorizeKeys([...toCategorize.expense], byType.expense),
     byType.income.length > 1 ? categorizeKeys([...toCategorize.income], byType.income) : Promise.resolve(new Map()),
@@ -171,6 +175,10 @@ async function buildPreview(lineUserId, parsed, holderName) {
     let note = null;
     if (imported.has(r.row_key)) status = 'imported';
     else if (r.own) { status = 'own_transfer'; note = 'Transfer between your own accounts'; }
+    else if (r.is_bank_transfer) {
+      status = 'bank_transfer';
+      note = `Transfer ${r.type === 'expense' ? 'to' : 'from'} another bank. Tick it if it wasn't your own account.`;
+    }
     else {
       const match = (pool.get(`${r.date}|${r.type}|${r.amount_cents}`) || []).shift();
       if (match) { status = 'possible_duplicate'; note = `Already logged: ${match.description || 'same amount, same day'}`; }
@@ -201,7 +209,7 @@ async function buildPreview(lineUserId, parsed, holderName) {
     verified: parsed.ok,
     checks: parsed.checks,
     warnings: parsed.warnings,
-    counts: { total: preview.length, new: count('new'), imported: count('imported'), own_transfer: count('own_transfer'), possible_duplicate: count('possible_duplicate') },
+    counts: { total: preview.length, new: count('new'), imported: count('imported'), own_transfer: count('own_transfer'), bank_transfer: count('bank_transfer'), possible_duplicate: count('possible_duplicate') },
     rows: preview,
   };
 }

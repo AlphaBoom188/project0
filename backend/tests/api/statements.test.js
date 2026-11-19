@@ -5,6 +5,7 @@
 const { BASE, FIXTURES } = require('../lib');
 const { createClient } = require('@supabase/supabase-js');
 const { buildStatement, SAMPLE } = require(`${FIXTURES}/kbankStatement.js`);
+const { buildBblStatement, BBL_SAMPLE } = require(`${FIXTURES}/bblStatement.js`);
 
 const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const U = `test_stmt_${Date.now()}`;
@@ -57,7 +58,7 @@ async function cleanup() {
   assert(own.length === 2 && own.some((r) => r.type === 'expense') && own.some((r) => r.type === 'income'), 'own-account transfers both ways are marked own_transfer');
   const dup = rows.find((r) => r.status === 'possible_duplicate');
   assert(dup && dup.description === 'BTS TIM TVM' && /bts/.test(dup.note), `the BTS fare already logged by hand is a possible duplicate (${dup && dup.note})`);
-  assert(JSON.stringify(p.body.counts) === JSON.stringify({ total: 10, new: 7, imported: 0, own_transfer: 2, possible_duplicate: 1 }), `counts (got ${JSON.stringify(p.body.counts)})`);
+  assert(JSON.stringify(p.body.counts) === JSON.stringify({ total: 10, new: 7, imported: 0, own_transfer: 2, bank_transfer: 0, possible_duplicate: 1 }), `counts (got ${JSON.stringify(p.body.counts)})`);
   assert(byDesc('LINE MAN (QR by ttb)').category_name === 'Food' && byDesc('CS 7-Eleven Vending MPQ 00016').category_name === 'Shopping' && byDesc('แกร็บแท็กซี่ (ประเทศไทย)').category_name === 'Transport',
     'keyword rules: LINE MAN -> Food, 7-Eleven -> Shopping, Thai Grab taxi -> Transport');
   assert(byDesc('GRABPAY WALLET').category_name === 'Others', 'a wallet top-up is left uncategorized (Others)');
@@ -106,6 +107,20 @@ async function cleanup() {
   assert(p2.body.counts.imported === newRows.length && p2.body.counts.new === 0, `re-parsing shows them as already imported (${JSON.stringify(p2.body.counts)})`);
   const pOther = await post(`/statements/${OTHER}/parse`, { pages });
   assert(pOther.body.counts.imported === 0 && pOther.body.rows[0].row_key !== rows[0].row_key, "another user's preview of the same statement isn't affected (keys are per user)");
+
+  // --- Bangkok Bank ---
+  const { pages: bblPages } = buildBblStatement(BBL_SAMPLE);
+  const b = await post(`/statements/${U}/parse`, { pages: bblPages });
+  assert(b.status === 200 && b.body.bank === 'bbl' && b.body.verified && b.body.account_last4 === '3456', `BBL parse: bank, verified, account (got ${b.status} ${b.body.bank})`);
+  assert(JSON.stringify(b.body.counts) === JSON.stringify({ total: 7, new: 5, imported: 0, own_transfer: 0, bank_transfer: 2, possible_duplicate: 0 }), `BBL counts: the two TRF OTH BK rows are bank_transfer (got ${JSON.stringify(b.body.counts)})`);
+  const out = b.body.rows.find((r) => r.status === 'bank_transfer' && r.type === 'expense');
+  assert(out && out.description === 'Transfer to another bank' && /Tick it if it wasn't your own account/.test(out.note), 'a bank transfer explains why it starts unticked');
+  assert(b.body.rows.every((r) => r.transaction_date.endsWith('T12:00:00+07:00')), 'BBL rows have no time: noon Bangkok');
+  assert(b.body.rows.filter((r) => r.type === 'expense').every((r) => r.category_name === 'Others'), 'generic bank codes go to Others without an AI call');
+  const bImp = await post(`/statements/${U}/import`, { rows: b.body.rows.filter((r) => r.status === 'new' || r === out).map((r) => asImport(r)) });
+  assert(bImp.status === 200 && bImp.body.imported === 6, `importing the new rows plus one ticked bank transfer (got ${JSON.stringify(bImp.body)})`);
+  const b2 = await post(`/statements/${U}/parse`, { pages: bblPages });
+  assert(b2.body.counts.imported === 6 && b2.body.counts.bank_transfer === 1, 'BBL re-parse: 6 already imported, the unticked transfer still flagged');
 
   await cleanup();
   process.exit(failures ? 1 : 0);
