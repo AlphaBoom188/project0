@@ -61,7 +61,7 @@ async function cleanup() {
 
   // Home: day-grouped recent list
   const homeHeaders = await page.$$eval('#transaction-list .transaction-day-header', (els) => els.map((e) => e.innerText.replace(/\s+/g, ' ').trim()));
-  assert(homeHeaders[0].startsWith('Today') && homeHeaders[0].includes('Spent 850.00'), `Home first header is Today with day spend (got "${homeHeaders[0]}")`);
+  assert(homeHeaders[0].startsWith('Today') && homeHeaders[0].includes('Spent ฿850'), `Home first header is Today with day spend (got "${homeHeaders[0]}")`);
   assert(homeHeaders[1]?.startsWith('Yesterday'), `second header is Yesterday (got "${homeHeaders[1]}")`);
   await page.screenshot({ path: `${SHOTS}/1_home.png`, fullPage: true });
 

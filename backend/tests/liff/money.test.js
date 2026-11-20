@@ -30,7 +30,7 @@ fs.writeFileSync(CSV, 'Date;Category;Amount;Note\n25/10/2026;Food;-120;Coffee\n2
 
     // --- CSV import ---
     await page.click('.nav-tab[data-tab="transactions"]');
-    await page.click('#import-csv-button');
+    await page.click('#txn-data-button'); await page.click('#import-csv-button');
     await page.waitForSelector('#csv-modal:not([hidden])');
     await page.setInputFiles('#csv-file', CSV);
     await page.waitForSelector('#csv-review:not([hidden])', { timeout: 10000 });

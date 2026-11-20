@@ -102,7 +102,6 @@ const el = {
   networthStatus: document.getElementById('networth-status'),
 
   // Transactions tab
-  txnScanButton: document.getElementById('txn-scan-button'),
 
   // Google connect (Settings tab, export-email verification only)
   connectGoogleButton: document.getElementById('connect-google-button'),
@@ -951,7 +950,7 @@ function renderTransactionList(target, emptyStateEl, transactions, { showPayment
     header.className = 'transaction-day-header';
     header.innerHTML = `
       <span>${escapeHtml(dayHeaderLabel(date))}</span>
-      ${spent > 0 ? `<span class="transaction-day-total">Spent ${spent.toFixed(2)}</span>` : ''}
+      ${spent > 0 ? `<span class="transaction-day-total">Spent ${formatBaht(spent)}</span>` : ''}
     `;
     target.appendChild(header);
     for (const t of dayTransactions) target.appendChild(buildTransactionRow(t, showPaymentMethod));
@@ -968,22 +967,23 @@ function transactionSourceLabel(t) {
   return from || to || t.payment_method || '';
 }
 
+// v5 row: tinted tile (photo badge for a receipt), title = description or
+// category, meta = "Category · Account" ("From → To" for transfers).
 function buildTransactionRow(t, showPaymentMethod) {
   const li = document.createElement('li');
   li.className = 'transaction-row';
-
-  const thumbHtml = t.thumbnail_url ? `<img class="transaction-thumbnail" src="${t.thumbnail_url}" alt="" />` : '';
+  const category = t.type === 'transfer' ? 'Transfer' : t.categories?.name || 'Uncategorized';
   const sourceLabel = transactionSourceLabel(t);
-  const paymentHtml = showPaymentMethod && sourceLabel ? `<div class="transaction-date">${escapeHtml(sourceLabel)}</div>` : '';
-
+  const badge = t.thumbnail_url ? `<img class="transaction-thumbnail" src="${t.thumbnail_url}" alt="" />` : '';
+  const title = t.description
+    ? `<span class="row-title transaction-description">${escapeHtml(t.description)}</span>`
+    : `<span class="row-title">${escapeHtml(category)}</span>`;
+  const metaBits = [`<span class="transaction-category">${escapeHtml(category)}</span>`];
+  if (showPaymentMethod && sourceLabel) metaBits.push(`<span class="transaction-date">${escapeHtml(sourceLabel)}</span>`);
   li.innerHTML = `
-    ${thumbHtml}
-    <div class="transaction-details">
-      <div class="transaction-category">${escapeHtml(t.type === 'transfer' ? 'Transfer' : t.categories?.name || 'Uncategorized')}</div>
-      ${t.description ? `<div class="transaction-description">${escapeHtml(t.description)}</div>` : ''}
-      ${paymentHtml}
-    </div>
-    <div class="transaction-amount ${t.type}">${entryAmount(t)}</div>
+    <span class="tile-wrap">${categoryTile(category)}${badge}</span>
+    <span class="row-main transaction-details">${title}<span class="row-meta">${metaBits.join(' · ')}</span></span>
+    <span class="transaction-amount ${t.type}">${entryAmount(t)}</span>
   `;
   return li;
 }
@@ -1039,20 +1039,6 @@ function renderStreak(transactions) {
 let homeCycleReport = Promise.resolve(null); // this cycle's report (offset 0)
 let homeTxns = []; // the 6-month window Home loaded, newest first
 let homeLoadSeq = 0;
-
-// Totals per month for the last 6 Bangkok months (oldest first).
-function monthlySeries(pred) {
-  const { year, month } = bangkokParts();
-  const keys = [];
-  for (let i = 5; i >= 0; i--) keys.push(monthKey(bangkokMidnight(year, month - i, 1)));
-  const totals = Object.fromEntries(keys.map((k) => [k, 0]));
-  for (const t of homeTxns) {
-    if (!pred(t)) continue;
-    const k = monthKey(new Date(t.transaction_date));
-    if (k in totals) totals[k] += parseFloat(t.amount) || 0;
-  }
-  return keys.map((k) => ({ key: k, label: monthLabel(k), value: totals[k] }));
-}
 
 // Hero sub line + bar, and Budgets to watch, from this cycle's report.
 async function renderHomeBudgets(seq, endISO) {
@@ -3991,6 +3977,8 @@ function buildTransactionFilterQuery() {
   const search = el.txnSearch.value.trim();
   if (search) params.set('q', search);
   if (txnAccountIds.length > 0) params.set('account_id', txnAccountIds.join(','));
+  const categoryId = document.getElementById('txn-filter-category').value;
+  if (categoryId && el.txnFilterType.value !== 'investments') params.set('category_id', categoryId);
   if (txnRange.mode === 'cycle') {
     const { startISO, endISO } = getBillingCycleRange(currentUser.billing_cycle_start_day, txnRange.offset);
     params.set('start_date', startISO);
@@ -4112,23 +4100,74 @@ async function loadInvestmentLots(seq, params) {
 
 async function loadTransactionsTab() {
   const seq = ++txnLoadSeq;
-  await ensureCurrentUser();
-  renderTxnRangeControls();
-  renderAccountFilterButton().catch(() => {});
-  const investments = el.txnFilterType.value === 'investments';
-  el.txnExportRow.hidden = investments;
-  if (investments) el.exportStatus.hidden = true;
-  el.txnAccountButton.hidden = investments;
-  if (investments) return loadInvestmentLots(seq, buildTransactionFilterQuery());
-  const params = buildTransactionFilterQuery();
-  params.set('limit', '200');
-  const response = await cachedGet(`/transactions/${lineUserId}?${params.toString()}`);
-  if (seq !== txnLoadSeq) return;
-  el.txnEmptyState.textContent = params.get('q')
-    ? `No transactions matching "${params.get('q')}" in this range.`
-    : 'No transactions match these filters.';
-  renderTransactionList(el.txnFullList, el.txnEmptyState, response.transactions, { showPaymentMethod: true });
+  const errorBox = document.getElementById('txn-error');
+  try {
+    await ensureCurrentUser();
+    renderTxnRangeControls();
+    renderAccountFilterButton().catch(() => {});
+    fillCategoryFilter().catch(() => {});
+    const investments = el.txnFilterType.value === 'investments';
+    el.txnExportRow.hidden = investments;
+    if (investments) el.exportStatus.hidden = true;
+    el.txnAccountButton.hidden = investments;
+    document.getElementById('txn-filter-category').hidden = investments;
+    document.getElementById('txn-period-sub').textContent = '';
+    if (investments) { errorBox.hidden = true; return await loadInvestmentLots(seq, buildTransactionFilterQuery()); }
+    const params = buildTransactionFilterQuery();
+    params.set('limit', '200');
+    const response = await cachedGet(`/transactions/${lineUserId}?${params.toString()}`);
+    if (seq !== txnLoadSeq) return;
+    errorBox.hidden = true;
+    const txns = response.transactions;
+    lastTxnCount = txns.length;
+    const sum = (type) => txns.filter((t) => t.type === type).reduce((acc, t) => acc + (parseFloat(t.amount) || 0), 0);
+    document.getElementById('txn-period-sub').textContent = `Spent ${formatBaht(sum('expense'))} · Income ${formatBaht(sum('income'))} · ${txns.length} entr${txns.length === 1 ? 'y' : 'ies'}`;
+    el.txnEmptyState.textContent = params.get('q') ? `No entries match "${params.get('q')}".` : 'No entries in this period.';
+    renderTransactionList(el.txnFullList, el.txnEmptyState, txns, { showPaymentMethod: true });
+  } catch (error) {
+    if (seq !== txnLoadSeq) return;
+    // Spec 4.2 item 8: an alert card, Try again, and skeleton rows.
+    errorBox.hidden = false;
+    el.txnFullList.hidden = true;
+    el.txnEmptyState.hidden = true;
+    console.warn('History load failed:', error.message);
+  }
 }
+
+let lastTxnCount = 0;
+let categoryFilterFilled = false;
+async function fillCategoryFilter() {
+  if (categoryFilterFilled) return;
+  const { categories } = await cachedGet(`/categories/${lineUserId}`);
+  const select = document.getElementById('txn-filter-category');
+  const keep = select.value;
+  select.innerHTML = '<option value="">Any category</option>' + categories
+    .slice().sort((a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name))
+    .map((c) => `<option value="${c.id}">${escapeHtml(c.name)}${c.type === 'income' ? ' (income)' : ''}</option>`).join('');
+  select.value = keep;
+  categoryFilterFilled = true;
+}
+
+// Export and import sheet (spec 6.2), from History and More.
+function txnScopeText() {
+  const period = txnRange.mode === 'cycle' ? el.txnPeriodLabel.textContent.replace(/^This cycle · /, '') : txnRange.mode === '3months' ? 'last 3 months' : txnRange.mode === 'all' ? 'all time' : 'custom dates';
+  const accounts = txnAccountIds.length ? `${txnAccountIds.length} account${txnAccountIds.length === 1 ? '' : 's'}` : 'all accounts';
+  return `Uses your current filters: ${period}, ${accounts}, ${lastTxnCount} entr${lastTxnCount === 1 ? 'y' : 'ies'}.`;
+}
+
+function renderDataRecent() {
+  const list = loadRecentImports();
+  document.getElementById('data-recent').hidden = list.length === 0;
+  const ul = document.getElementById('data-recent-list');
+  ul.innerHTML = list.map((r, i) => `<li class="row"><span class="row-main"><span class="row-title">${escapeHtml(importLabel(r))}</span><span class="row-meta">${r.imported} added · ${escapeHtml(new Date(r.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'Asia/Bangkok' }))}</span></span><button type="button" class="btn btn-outline btn-sm" data-undo="${i}">Undo</button></li>`).join('');
+}
+
+function openDataSheet() {
+  document.getElementById('data-scope').textContent = txnScopeText();
+  renderDataRecent();
+  document.getElementById('data-modal').hidden = false;
+}
+const closeDataSheet = () => { document.getElementById('data-modal').hidden = true; };
 
 async function handleExportCsv() {
   const params = buildTransactionFilterQuery();
@@ -4540,7 +4579,6 @@ async function init() {
 
     renderProfile(profile);
     await loadHomeTab();
-    renderHomeInsights(); // insights.js; never blocks Home
     setTimeout(() => loadChartJs().catch(() => {}), 1500); // warm up for the Wealth tab
 
     el.loading.hidden = true;
@@ -4573,8 +4611,8 @@ const moreActions = {
   'more-recurring': () => openTabAt('budgets', '#subs-header:not([hidden]), #advanced-toggle'),
   'more-groups': () => openTabAt('home', '#home-groups:not([hidden]), #bills-list'),
   'more-bills': () => openTabAt('home', '#bills-list'),
-  'more-export': () => openTabAt('transactions', '#txn-export-row'),
-  'more-import': () => openTabAt('transactions', '#txn-export-row'),
+  'more-export': () => { switchTab('transactions'); openDataSheet(); },
+  'more-import': () => { switchTab('transactions'); openDataSheet(); },
   'more-help': () => { document.getElementById('help-modal').hidden = false; },
   'settings-back': () => switchTab('more'),
 };
@@ -4602,6 +4640,30 @@ document.getElementById('home-import').addEventListener('click', () => document.
 document.getElementById('home-watch-all').addEventListener('click', () => switchTab('budgets'));
 document.getElementById('home-recent-all').addEventListener('click', () => switchTab('transactions'));
 document.getElementById('home-tax-row').addEventListener('click', () => switchTab('tax'));
+document.getElementById('txn-filter-category').addEventListener('change', () => loadTransactionsTab());
+document.getElementById('txn-retry').addEventListener('click', () => loadTransactionsTab());
+document.getElementById('txn-data-button').addEventListener('click', openDataSheet);
+document.getElementById('data-close').addEventListener('click', closeDataSheet);
+for (const id of ['export-csv-button', 'export-email-button', 'import-statement-button', 'import-csv-button']) {
+  document.getElementById(id).addEventListener('click', closeDataSheet); // its own flow takes over
+}
+document.getElementById('data-recent-list').addEventListener('click', async (event) => {
+  const b = event.target.closest('[data-undo]');
+  if (!b) return;
+  const record = loadRecentImports()[Number(b.dataset.undo)];
+  if (!record) return;
+  b.disabled = true;
+  try {
+    const result = await undoImport(record);
+    if (!result) { b.disabled = false; return; }
+    renderDataRecent();
+    showToast({ title: 'Import undone', description: `${result.deleted} removed${result.reverted ? `, ${result.reverted} transfer${result.reverted === 1 ? '' : 's'} separated again` : ''}` });
+    if (currentTab === 'transactions') loadTransactionsTab();
+  } catch (error) {
+    b.disabled = false;
+    showToast({ title: "Couldn't undo", description: plainError(error), kind: 'bad' });
+  }
+});
 el.cancelBill.addEventListener('click', closeBillModal);
 el.billForm.addEventListener('submit', handleBillSubmit);
 el.billAddParticipant.addEventListener('click', () => addParticipantRow());
@@ -4717,13 +4779,6 @@ el.addEventButton.addEventListener('click', () => openEventModal().catch((error)
 el.cancelEvent.addEventListener('click', closeEventModal);
 el.eventForm.addEventListener('submit', handleEventSubmit);
 
-el.txnScanButton.addEventListener('click', () => {
-  // el.fieldReceiptImage.click() must run synchronously inside this handler --
-  // mobile browsers only honor a programmatic file-picker click within the
-  // same tick as a real user gesture, not after an awaited promise resolves.
-  openAddExpenseModal().catch((error) => showError(error.message));
-  el.fieldReceiptImage.click();
-});
 
 el.connectGoogleButton.addEventListener('click', handleConnectGoogle);
 el.disconnectGoogle.addEventListener('click', handleConnectGoogle);

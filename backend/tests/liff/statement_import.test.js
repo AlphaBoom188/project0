@@ -38,7 +38,7 @@ async function openApp(browser, { blockPdfJs = false } = {}) {
   await page.goto(`${BASE}/liff/`);
   await page.waitForSelector('#app:not([hidden])', { timeout: 15000 });
   await page.click('.nav-tab[data-tab="transactions"]');
-  await page.click('#import-statement-button');
+  await page.click('#txn-data-button'); await page.click('#import-statement-button');
   await page.waitForSelector('#statement-modal:not([hidden])');
   return { page, errors };
 }
@@ -101,7 +101,7 @@ async function readStatement(page, buffer, name = 'statement.pdf') {
   assert(await relist, 'the Transactions list is re-fetched after importing');
 
   // Same statement again: the imported rows come back as already imported.
-  await page.click('#import-statement-button');
+  await page.click('#txn-data-button'); await page.click('#import-statement-button');
   await readStatement(page, PDF);
   await page.waitForSelector('#stmt-review:not([hidden])', { timeout: 30000 }).catch(() => {});
   assert((await page.textContent('#stmt-counts')) === '1 new · 8 already imported', `re-reading: 8 already imported (got "${await page.textContent('#stmt-counts')}")`);
@@ -123,7 +123,7 @@ async function readStatement(page, buffer, name = 'statement.pdf') {
   assert((await page.textContent('#stmt-pick-error')).startsWith("This statement format isn't supported yet"), `unsupported PDF shows the server's message (got "${await page.textContent('#stmt-pick-error')}")`);
   // --- Undo right after an import ---
   await page.click('#stmt-cancel');
-  await page.click('#import-statement-button');
+  await page.click('#txn-data-button'); await page.click('#import-statement-button');
   await page.waitForSelector('#statement-modal:not([hidden])');
   assert(!(await page.isHidden('#stmt-recent')) && (await page.$$eval('#stmt-recent-list li', (l) => l.length)) === 1, 'the first import is listed under Recent imports');
   const recentText = (await page.textContent('#stmt-recent-list')).replace(/\s+/g, ' ');
@@ -142,7 +142,7 @@ async function readStatement(page, buffer, name = 'statement.pdf') {
   assert(!(await db.from('transactions').select('description').eq('line_user_id', U)).data.some((t) => t.description === 'BTS TIM TVM'), 'the undone row is gone');
 
   // --- Undo from Recent imports ---
-  await page.click('#import-statement-button');
+  await page.click('#txn-data-button'); await page.click('#import-statement-button');
   await page.waitForSelector('#statement-modal:not([hidden])');
   assert((await page.$$eval('#stmt-recent-list li', (l) => l.length)) === 1, 'the undone import left the list; the first one is still there');
   await page.click('#stmt-recent-list .stmt-undo');

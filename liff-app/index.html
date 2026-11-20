@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#06c755" />
   <title>Expense Tracker</title>
-  <link rel="stylesheet" href="style.css?v=20261121g" />
+  <link rel="stylesheet" href="style.css?v=20261121i" />
   <script>
     // Set data-theme before first paint to avoid a flash of the wrong theme.
     (function () {
@@ -72,16 +72,6 @@
         <section id="home-watch" hidden>
           <div class="section-head"><h2>Budgets to watch</h2><button type="button" class="section-action" id="home-watch-all">See all</button></div>
           <ul id="home-watch-list" class="card card-flush row-list"></ul>
-        </section>
-
-        <section class="card insight-card" id="home-insights" hidden aria-roledescription="carousel" aria-label="Insights">
-          <p class="insight-kicker"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg><span>Insight</span></p>
-          <div id="home-insight-page" aria-live="polite"></div>
-          <div class="insight-foot" id="home-insight-foot">
-            <button type="button" class="icon-button" id="home-insight-prev" aria-label="Previous insight"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
-            <span class="insight-dots" id="home-insight-dots"></span>
-            <button type="button" class="icon-button" id="home-insight-next" aria-label="Next insight"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
-          </div>
         </section>
 
         <div class="card card-flush" id="home-tax" hidden>
@@ -157,21 +147,28 @@
             
             <h1 class="page-title">History</h1>
           </div>
-          <span class="avatar" data-avatar aria-hidden="true"></span>
+          <button type="button" class="btn btn-outline btn-sm data-pill" id="txn-data-button" aria-haspopup="dialog"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg><span>Export / Import</span></button>
         </header>
-        <div class="quick-actions-row">
-          <button type="button" id="txn-scan-button" class="quick-action-button">
-          <span class="icon"><svg class="lucide lucide-camera" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" /><circle cx="12" cy="13" r="3" /></svg></span>
-          <span>Scan a Receipt</span>
-        </button>
-        </div>
-
         <label class="search-field">
           <span class="icon"><svg class="lucide lucide-search" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg></span>
           <input type="search" id="txn-search" placeholder="Search descriptions" maxlength="100" autocomplete="off" enterkeyhint="search" aria-label="Search transactions" />
         </label>
 
-        <div class="range-pills" role="group" aria-label="Date range">
+        <div class="chip-row txn-chips">
+          <select id="txn-filter-type" class="chip chip-select" aria-label="Transaction type">
+            <option value="">All types</option>
+            <option value="expense">Expense</option>
+            <option value="income">Income</option>
+            <option value="transfer">Transfer</option>
+            <option value="investments">Investments</option>
+          </select>
+          <button type="button" id="txn-account-button" class="chip filter-select-button" aria-haspopup="dialog">All accounts</button>
+          <select id="txn-filter-category" class="chip chip-select" aria-label="Category">
+            <option value="">Any category</option>
+          </select>
+        </div>
+
+        <div class="seg range-pills" role="group" aria-label="Date range">
           <button type="button" class="range-pill active" data-range="cycle">Cycle</button>
           <button type="button" class="range-pill" data-range="3months">3 Months</button>
           <button type="button" class="range-pill" data-range="all">All</button>
@@ -182,7 +179,7 @@
           <button type="button" class="period-nav-button" id="txn-period-prev" aria-label="Previous cycle">
             <span class="icon"><svg class="lucide lucide-chevron-left" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg></span>
           </button>
-          <span class="period-nav-label" id="txn-period-label"></span>
+          <span class="period-nav-text"><span class="period-nav-label" id="txn-period-label"></span><span class="period-nav-sub" id="txn-period-sub"></span></span>
           <button type="button" class="period-nav-button" id="txn-period-next" aria-label="Next cycle">
             <span class="icon"><svg class="lucide lucide-chevron-right" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg></span>
           </button>
@@ -193,27 +190,18 @@
           <input type="date" id="txn-filter-end" aria-label="End date" />
         </div>
 
-        <div class="filter-row">
-          <select id="txn-filter-type" aria-label="Transaction type">
-            <option value="">All types</option>
-            <option value="expense">Expense</option>
-            <option value="income">Income</option>
-            <option value="transfer">Transfer</option>
-            <option value="investments">Investments</option>
-          </select>
-          <button type="button" id="txn-account-button" class="filter-select-button" aria-haspopup="dialog">All accounts</button>
-        </div>
-
-        <div class="export-row" id="txn-export-row">
-          <button id="export-csv-button" class="link-button">Download CSV</button>
-          <button id="export-email-button" class="link-button">Email CSV</button>
-          <button id="import-statement-button" class="link-button">Import Statement</button>
-          <button type="button" id="import-csv-button" class="link-button">Import CSV</button>
-        </div>
         <p id="export-status" class="settings-status" hidden></p>
 
+        <div id="txn-error" hidden>
+          <div class="alert-card" role="alert">
+            <span class="alert-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h.01"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/><path d="M5 12.859a10 10 0 0 1 5.17-2.69"/><path d="M19 12.859a10 10 0 0 0-2.007-1.523"/><path d="M2 8.82a15 15 0 0 1 4.177-2.643"/><path d="M22 8.82a15 15 0 0 0-11.288-3.764"/><path d="m2 2 20 20"/></svg></span>
+            <div><p class="alert-title">Couldn't load your entries</p><p class="alert-body">Check your connection and try again.</p></div>
+          </div>
+          <button type="button" class="btn btn-block txn-retry" id="txn-retry">Try again</button>
+          <ul class="card card-flush skeleton-list" aria-hidden="true"><li class="skeleton-row"></li><li class="skeleton-row"></li><li class="skeleton-row"></li><li class="skeleton-row"></li><li class="skeleton-row"></li></ul>
+        </div>
         <ul id="txn-full-list" class="transaction-list"></ul>
-        <p id="txn-empty-state" class="empty-state" hidden>No transactions match these filters.</p>
+        <p id="txn-empty-state" class="empty-dashed" hidden>No entries in this period.</p>
       </section>
 
       <!-- Budgets: recurring periods, event/occasion buckets, advanced (recurring rules) -->
@@ -739,6 +727,33 @@
         <span class="nav-tab-label">More</span>
       </button>
     </nav>
+  </div>
+
+  <div id="data-modal" class="modal" hidden>
+    <div class="modal-content">
+      <h2 class="sheet-title">Export and import</h2>
+      <p class="group-hint" id="data-scope"></p>
+      <div id="txn-export-row">
+        <h3 class="sheet-section">Export</h3>
+        <div class="card card-flush sheet-card">
+          <button type="button" class="row" id="export-csv-button"><span class="cat-tile" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg></span><span class="row-main"><span class="row-title">Download CSV</span><span class="row-meta">Opens in your browser</span></span></button>
+          <button type="button" class="row" id="export-email-button"><span class="cat-tile" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg></span><span class="row-main"><span class="row-title">Email CSV</span><span class="row-meta">To your verified email</span></span></button>
+        </div>
+      </div>
+      <h3 class="sheet-section">Import</h3>
+      <div class="card card-flush sheet-card">
+          <button type="button" class="row" id="import-statement-button"><span class="cat-tile" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg></span><span class="row-main"><span class="row-title">Bank statement (PDF)</span><span class="row-meta">KBank and Bangkok Bank</span></span></button>
+          <button type="button" class="row" id="import-csv-button"><span class="cat-tile" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h2"/><path d="M14 13h2"/><path d="M8 17h2"/><path d="M14 17h2"/></svg></span><span class="row-main"><span class="row-title">CSV file</span><span class="row-meta">Money Lover, Wallet, bank or spreadsheet</span></span></button>
+      </div>
+      <div id="data-recent" hidden>
+        <h3 class="sheet-section">Recent imports</h3>
+        <ul class="card card-flush sheet-card row-list" id="data-recent-list"></ul>
+      </div>
+      <p class="group-hint data-foot">Importing the same file again adds nothing. Imports don't change account balances or send budget alerts.</p>
+      <div class="modal-actions">
+        <button type="button" id="data-close" class="secondary-button">Close</button>
+      </div>
+    </div>
   </div>
 
   <div id="help-modal" class="modal" hidden>
@@ -1623,10 +1638,10 @@
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script src="/liff-config.js"></script>
   <!-- Chart.js for the Net Worth performance chart; app.js renders everything else without it if this is blocked. -->
-  <script src="app.js?v=20261121g"></script>
-  <script src="tasks.js?v=20261121g"></script>
-  <script src="tax.js?v=20261121g"></script>
-  <script src="insights.js?v=20261121g"></script>
-  <script src="money.js?v=20261121g"></script>
+  <script src="app.js?v=20261121i"></script>
+  <script src="tasks.js?v=20261121i"></script>
+  <script src="tax.js?v=20261121i"></script>
+  <script src="insights.js?v=20261121i"></script>
+  <script src="money.js?v=20261121i"></script>
 </body>
 </html>

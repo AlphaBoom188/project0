@@ -117,7 +117,9 @@ async function cleanup() {
   assert(txnRows.some((r) => r.includes('2 shares • $100.00') && r.includes('$200.00')), 'opening lot row: shares • price and total');
   const headers = await page.$$eval('#txn-full-list .transaction-day-header', (h) => h.map((x) => x.textContent.trim()));
   assert(headers.length === 2 && headers[0] === 'Today', `grouped under day headers (got ${JSON.stringify(headers)})`);
-  assert(await page.isHidden('#txn-export-row'), 'CSV export hidden for investments');
+  await page.click('#txn-data-button');
+  assert(await page.isHidden('#txn-export-row'), 'CSV export hidden for investments (in the Export and import sheet)');
+  await page.click('#data-close');
   await page.click('.range-pill[data-range="cycle"]');
   await page.waitForFunction(() => document.querySelectorAll('#txn-full-list .lot-badge').length === 2, null, { timeout: 10000 }).catch(() => {});
   assert((await page.$$('#txn-full-list .lot-badge')).length === 2, 'the date range filters lots by trade_date (Sept opening lot outside this cycle)');
@@ -125,8 +127,10 @@ async function cleanup() {
   await page.screenshot({ path: `${OUTPUT}/transactions_investments_dark.png` });
 
   await page.selectOption('#txn-filter-type', '');
-  await page.waitForSelector('#txn-export-row:not([hidden])', { timeout: 10000 });
+  await page.waitForSelector('#txn-export-row:not([hidden])', { state: 'attached', timeout: 10000 });
+  await page.click('#txn-data-button');
   assert(!(await page.isHidden('#txn-export-row')), 'switching back to cash transactions shows the export row again');
+  await page.click('#data-close');
 
   assert(errors.length === 0, `no page JS errors (got ${JSON.stringify(errors)})`);
   await browser.close();

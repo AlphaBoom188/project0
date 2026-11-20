@@ -43,7 +43,7 @@ async function openApp(browser, { expireOnce = false } = {}) {
   await page.waitForTimeout(500);
   const [nav] = await Promise.all([
     page.waitForRequest((r) => r.url().includes(`/transactions/${U}/export?`), { timeout: 15000 }),
-    page.click('#export-csv-button'),
+    page.click('#txn-data-button').then(() => page.click('#export-csv-button')),
   ]);
   const linkCall = apiCalls.find((c) => c.url.endsWith('/export-link'));
   assert(linkCall && linkCall.method === 'POST' && linkCall.auth === 'Bearer stub-id-token', 'Download CSV first asks for a signed link (with the token)');
