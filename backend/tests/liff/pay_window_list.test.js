@@ -1,7 +1,7 @@
 // Recurring pay window in the LIFF app: the rule shows "Due <start> - <end>"
 // with Unpaid/Overdue, and Mark Paid / Undo flip it for the current month.
 // Needs migration 014 (paid_period).
-const { BASE, OUTPUT } = require('../lib');
+const { BASE, OUTPUT, openTab } = require('../lib');
 const { chromium } = require('playwright-core');
 const { createClient } = require('@supabase/supabase-js');
 
@@ -34,7 +34,7 @@ async function cleanup() {
       getProfile: async () => ({ userId: '${U}', displayName: 'Pay Window LIFF', pictureUrl: '' }) };` }));
   await page.goto(`${BASE}/liff/`);
   await page.waitForSelector('#app:not([hidden])', { timeout: 15000 });
-  await page.click('.nav-tab[data-tab="budgets"]');
+  await openTab(page, 'budgets');
   await page.click('#advanced-toggle');
   await page.waitForSelector('.recurring-row', { timeout: 8000 });
 

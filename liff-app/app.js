@@ -5,8 +5,6 @@ const el = {
   app: document.getElementById('app'),
   errorBanner: document.getElementById('error-banner'),
   budgetAlertBanner: document.getElementById('budget-alert-banner'),
-  profilePicture: document.getElementById('profile-picture'),
-  profileName: document.getElementById('profile-name'),
 
   // Dashboard tab
   periodLabel: document.getElementById('period-label'),
@@ -74,6 +72,7 @@ const el = {
     budgets: document.getElementById('tab-budgets'),
     networth: document.getElementById('tab-networth'),
     settings: document.getElementById('tab-settings'),
+    more: document.getElementById('tab-more'),
   },
 
   // Home tab
@@ -776,11 +775,26 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+// Avatars in every page header and the More profile card: the LINE photo,
+// else initials on --brand-subtle.
 function renderProfile(profile) {
-  el.profileName.textContent = profile.displayName || 'You';
-  if (profile.pictureUrl) {
-    el.profilePicture.src = profile.pictureUrl;
+  const name = profile.displayName || 'You';
+  const initials = name.trim().split(/\s+/).slice(0, 2).map((w) => [...w][0] || '').join('').toUpperCase() || 'Y';
+  for (const node of document.querySelectorAll('[data-avatar]')) {
+    node.textContent = '';
+    if (profile.pictureUrl) {
+      const img = document.createElement('img');
+      img.src = profile.pictureUrl;
+      img.alt = '';
+      img.addEventListener('error', () => { node.textContent = initials; }, { once: true });
+      node.appendChild(img);
+    } else {
+      node.textContent = initials;
+    }
   }
+  for (const node of document.querySelectorAll('[data-profile-name]')) node.textContent = name;
+  const greeting = document.getElementById('home-greeting');
+  if (greeting) greeting.textContent = `Hi, ${name.trim().split(/\s+/)[0]}`;
 }
 
 // Generic yes/no confirmation, used for every destructive action across tabs.
@@ -854,6 +868,7 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () 
 // runs after, not blocking the switch, and reads through cachedGet so a repeat
 // visit this session resolves immediately instead of re-fetching.
 const TAB_LOADERS = {
+  more: async () => {},
   home: loadHomeTab,
   tasks: () => loadTasksTab(), // tasks.js
   tax: () => loadTaxTab(), // tax.js
@@ -864,17 +879,35 @@ const TAB_LOADERS = {
 };
 
 let currentTab = 'home';
+// v5 nav: 5 items. Every panel keeps its id; budgets/networth light up
+// Money (last one used is remembered), tax/settings/more light up More.
+const NAV_FOR_TAB = { budgets: 'money', networth: 'money', tax: 'more', settings: 'more', more: 'more' };
+const NO_FAB_TABS = new Set(['budgets', 'networth', 'more', 'settings']);
+function lastMoneyView() {
+  try { return localStorage.getItem('moneyView') === 'networth' ? 'networth' : 'budgets'; } catch { return 'budgets'; }
+}
+
 function switchTab(tabName) {
+  if (tabName === 'money') tabName = lastMoneyView();
+  if (!el.tabPanels[tabName]) tabName = 'home';
+  if (tabName === 'budgets' || tabName === 'networth') {
+    try { localStorage.setItem('moneyView', tabName); } catch { /* private mode */ }
+    for (const b of document.querySelectorAll('.money-switch [data-money]')) b.setAttribute('aria-selected', String(b.dataset.money === tabName));
+  }
   for (const [name, panel] of Object.entries(el.tabPanels)) {
     panel.hidden = name !== tabName;
   }
+  const navName = NAV_FOR_TAB[tabName] || tabName;
   for (const button of el.navTabs) {
-    button.classList.toggle('active', button.dataset.tab === tabName);
+    const on = button.dataset.tab === navName;
+    button.classList.toggle('active', on);
+    if (on) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current');
   }
   el.tabContent.scrollTop = 0;
+  window.scrollTo(0, 0);
   currentTab = tabName;
   TAB_LOADERS[tabName]().catch((error) => showError(error.message));
-  el.fabAdd.hidden = tabName === 'settings';
+  el.fabAdd.hidden = NO_FAB_TABS.has(tabName);
   el.fabAdd.setAttribute('aria-label', tabName === 'tasks' ? 'Add reminder or note' : tabName === 'tax' ? 'Add income for tax' : 'Add expense');
 }
 
@@ -882,6 +915,8 @@ function switchTab(tabName) {
 
 function renderSummary(transactions, periodLabel) {
   el.periodLabel.textContent = periodLabel;
+  const moneyKicker = document.getElementById('money-kicker');
+  if (moneyKicker) moneyKicker.textContent = periodLabel;
   const totals = transactions.reduce(
     (acc, t) => {
       acc[t.type] += parseFloat(t.amount);
@@ -4423,6 +4458,31 @@ async function init() {
 for (const button of el.navTabs) {
   button.addEventListener('click', () => switchTab(button.dataset.tab));
 }
+for (const button of document.querySelectorAll('.money-switch [data-money]')) {
+  button.addEventListener('click', () => switchTab(button.dataset.money));
+}
+
+// More panel. Export/Import go through History's controls until the
+// export/import sheet lands (spec 6.2).
+function openTabAt(tab, selector) {
+  switchTab(tab);
+  const target = selector && document.querySelector(selector);
+  if (target) requestAnimationFrame(() => target.scrollIntoView({ block: 'start' }));
+}
+const moreActions = {
+  'more-profile': () => switchTab('settings'),
+  'more-settings': () => switchTab('settings'),
+  'more-tax': () => switchTab('tax'),
+  'more-recurring': () => openTabAt('budgets', '#subs-header:not([hidden]), #advanced-toggle'),
+  'more-groups': () => openTabAt('home', '#home-groups:not([hidden]), #bills-list'),
+  'more-bills': () => openTabAt('home', '#bills-list'),
+  'more-export': () => openTabAt('transactions', '#txn-export-row'),
+  'more-import': () => openTabAt('transactions', '#txn-export-row'),
+  'more-help': () => { document.getElementById('help-modal').hidden = false; },
+  'settings-back': () => switchTab('more'),
+};
+for (const [id, fn] of Object.entries(moreActions)) document.getElementById(id)?.addEventListener('click', fn);
+document.getElementById('help-close')?.addEventListener('click', () => { document.getElementById('help-modal').hidden = true; });
 
 el.fabAdd.addEventListener('click', () => {
   if (currentTab === 'tasks') openTaskModal();

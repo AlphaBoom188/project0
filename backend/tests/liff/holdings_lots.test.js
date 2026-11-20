@@ -3,7 +3,7 @@
 // form (FIFO realized gain / win rate show up in the card, an oversell shows
 // the server's error inline), and the Transactions tab's "Investments" filter
 // lists the lots instead of cash transactions.
-const { BASE, OUTPUT } = require('../lib');
+const { BASE, OUTPUT, openTab } = require('../lib');
 const { chromium } = require('playwright-core');
 const { createClient } = require('@supabase/supabase-js');
 
@@ -40,7 +40,7 @@ async function cleanup() {
   await page.goto(`${BASE}/liff/`);
   await page.waitForSelector('#app:not([hidden])', { timeout: 15000 });
 
-  await page.click('.nav-tab[data-tab="networth"]');
+  await openTab(page, 'networth');
   await page.waitForSelector('#holdings-list .holding-row', { timeout: 15000 });
   const rowText = await page.textContent('#holdings-list .holding-row');
   assert(rowText.includes('$300.00') && rowText.includes('+$100.00 (+50.00%)') && rowText.includes('Today +$20.00'), `holding row: market value, total gain, day's gain (got "${rowText.replace(/\s+/g, ' ').trim()}")`);

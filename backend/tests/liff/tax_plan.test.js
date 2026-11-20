@@ -1,7 +1,7 @@
 // Tax tab -> "Lower your tax" planner and the "Filing" guide (Phase 4):
 // ranked options, tap-through to the deduction sheet, documents checklist
 // (kept on the phone), steps, figures to enter, and LINE reminders.
-const { BASE, OUTPUT } = require('../lib');
+const { BASE, OUTPUT, openTab } = require('../lib');
 const { chromium } = require('playwright-core');
 const { createClient } = require('@supabase/supabase-js');
 
@@ -28,7 +28,7 @@ const call = (method, p, body) => fetch(`${BASE}/api${p}`, { method, headers: { 
     const open2569 = async () => {
       await page.goto(`${BASE}/liff/`);
       await page.waitForSelector('#app:not([hidden])', { timeout: 15000 });
-      await page.click('.nav-tab[data-tab="tax"]');
+      await openTab(page, 'tax');
       await page.waitForSelector('#tax-years .segment', { timeout: 15000 });
       if (!(await page.$('#tax-years .segment.active[data-year="2569"]'))) await page.click('#tax-years [data-year="2569"]');
       await page.waitForSelector('#tax-incomes .tax-income-row', { timeout: 15000 });

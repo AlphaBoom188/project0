@@ -1,5 +1,5 @@
 // Renders the real LIFF page in Chrome with a stubbed LIFF SDK, against seeded data.
-const { BASE, BACKEND, FIXTURES, OUTPUT } = require('../lib');
+const { BASE, BACKEND, FIXTURES, OUTPUT, openTab } = require('../lib');
 const { chromium } = require('playwright-core');
 const { createClient } = require('@supabase/supabase-js');
 const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -113,7 +113,7 @@ async function cleanup() {
   assert(sizes.length > 0 && sizes.every((x) => parseFloat(x) >= 16), `every input/select is at least 16px (iOS zoom) (got ${JSON.stringify(sizes)})`);
 
   // Budgets tab: warn vs over
-  await page.click('.nav-tab[data-tab="budgets"]');
+  await openTab(page, 'budgets');
   await page.waitForSelector('#categories-list .category-row');
   await page.waitForTimeout(500);
   const fills = await page.$$eval('#categories-list .category-row', (rows) => rows.map((r) => ({ name: r.querySelector('.category-name').textContent, cls: r.querySelector('.category-budget-fill')?.className })));
@@ -148,7 +148,7 @@ async function cleanup() {
   await page.click('#close-bill-detail', { timeout: 5000 });
   assert(await page.isHidden('#bill-detail-modal'), 'modal Close button is clickable (not covered by bottom nav)');
   await page.emulateMedia({ colorScheme: 'dark' });
-  await page.click('.nav-tab[data-tab="budgets"]');
+  await openTab(page, 'budgets');
   await page.waitForTimeout(300);
   await page.screenshot({ path: `${SHOTS}/5_budgets_dark.png`, fullPage: true });
   await page.click('.nav-tab[data-tab="transactions"]');

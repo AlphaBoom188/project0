@@ -2,7 +2,7 @@
 // (shortcuts, expense method, dividend credit), profile sheet, deduction
 // checklist with limits, and the breakdown. Figures come from the API
 // (services/tax/taxMath.js); this checks the app shows them.
-const { BASE, OUTPUT } = require('../lib');
+const { BASE, OUTPUT, openTab } = require('../lib');
 const { chromium } = require('playwright-core');
 const { createClient } = require('@supabase/supabase-js');
 
@@ -25,11 +25,11 @@ const text = (page, sel) => page.textContent(sel).then((t) => t.replace(/\s+/g, 
     await page.goto(`${BASE}/liff/`);
     await page.waitForSelector('#app:not([hidden])', { timeout: 15000 });
 
-    // --- Nav: seven tabs fit at 360px ---
+    // --- Nav: five items fit at 360px; Tax lives under More ---
     const nav = await page.$$eval('.nav-tab', (ts) => ts.map((t) => ({ tab: t.dataset.tab, label: t.textContent.trim(), over: t.scrollWidth > t.clientWidth + 1 })));
-    assert(nav.length === 7 && nav[5].tab === 'tax' && nav[4].label === 'Wealth' && nav.every((n) => !n.over), `seven tabs, Tax sixth, no overflow at 360px (got ${JSON.stringify(nav.map((n) => n.label))})`);
+    assert(nav.length === 5 && nav[4].tab === 'more' && nav[3].label === 'Money' && nav.every((n) => !n.over), `five items, More last, no overflow at 360px (got ${JSON.stringify(nav.map((n) => n.label))})`);
 
-    await page.click('.nav-tab[data-tab="tax"]');
+    await openTab(page, 'tax');
     await page.waitForSelector('#tax-years .segment', { timeout: 15000 });
     const years = await page.$$eval('#tax-years .segment', (bs) => bs.map((b) => `${b.textContent}${b.classList.contains('active') ? '*' : ''}`));
     assert(years.join() === 'Tax year 2568,Tax year 2569*', `years, the current one selected in November (got ${years})`);

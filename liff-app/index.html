@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#06c755" />
   <title>Expense Tracker</title>
-  <link rel="stylesheet" href="style.css?v=20261121e" />
+  <link rel="stylesheet" href="style.css?v=20261121f" />
   <script>
     // Set data-theme before first paint to avoid a flash of the wrong theme.
     (function () {
@@ -25,17 +25,16 @@
   <div id="budget-alert-banner" class="error-banner" hidden></div>
 
   <div id="app" hidden>
-    <header class="header">
-      <img id="profile-picture" class="profile-picture" alt="" />
-      <div class="header-text">
-        <div class="profile-name" id="profile-name"></div>
-      </div>
-    </header>
-
     <main class="tab-content">
       <!-- Home: pulse, net liquidity, quick actions -->
       <section id="tab-home" class="tab-panel">
-        <div class="period-label" id="period-label"></div>
+        <header class="page-head">
+          <div>
+            <p class="page-kicker" id="period-label"></p>
+            <h1 class="page-title" id="home-greeting">Hi</h1>
+          </div>
+          <span class="avatar" data-avatar aria-hidden="true"></span>
+        </header>
 
         <section class="summary-card">
           <div class="summary-item">
@@ -146,6 +145,13 @@
         <p id="tasks-calendar-hint" class="group-hint" hidden>See your Google Calendar here too: connect it in Settings.</p>
       </section>
       <section id="tab-transactions" class="tab-panel" hidden>
+        <header class="page-head">
+          <div>
+            
+            <h1 class="page-title">History</h1>
+          </div>
+          <span class="avatar" data-avatar aria-hidden="true"></span>
+        </header>
         <div class="quick-actions-row">
           <button type="button" id="txn-scan-button" class="quick-action-button">
           <span class="icon"><svg class="lucide lucide-camera" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" /><circle cx="12" cy="13" r="3" /></svg></span>
@@ -205,6 +211,17 @@
 
       <!-- Budgets: recurring periods, event/occasion buckets, advanced (recurring rules) -->
       <section id="tab-budgets" class="tab-panel" hidden>
+        <header class="page-head">
+          <div>
+            <p class="page-kicker" id="money-kicker"></p>
+            <h1 class="page-title">Money</h1>
+          </div>
+          <span class="avatar" data-avatar aria-hidden="true"></span>
+        </header>
+        <div class="seg money-switch" role="tablist" aria-label="Money">
+          <button type="button" role="tab" data-money="budgets" aria-selected="true">Budgets</button>
+          <button type="button" role="tab" data-money="networth" aria-selected="false">Wealth</button>
+        </div>
         <div class="type-toggle">
           <button type="button" class="type-toggle-button active" id="categories-type-expense" data-type="expense">Expense</button>
           <button type="button" class="type-toggle-button" id="categories-type-income" data-type="income">Income</button>
@@ -256,6 +273,17 @@
 
       <!-- Net Worth: accounts/savings, live investments, emergency fund -->
       <section id="tab-networth" class="tab-panel" hidden>
+        <header class="page-head">
+          <div>
+            <p class="page-kicker">Net worth and investments</p>
+            <h1 class="page-title">Money</h1>
+          </div>
+          <span class="avatar" data-avatar aria-hidden="true"></span>
+        </header>
+        <div class="seg money-switch" role="tablist" aria-label="Money">
+          <button type="button" role="tab" data-money="budgets" aria-selected="false">Budgets</button>
+          <button type="button" role="tab" data-money="networth" aria-selected="true">Wealth</button>
+        </div>
         <div class="section-header-row">
           <h2 class="section-title">Savings goals</h2>
           <button type="button" id="add-goal-button" class="link-button">+ Add Goal</button>
@@ -415,6 +443,13 @@
       <!-- Settings: identity, theme, notifications, export, danger zone -->
       <!-- Tax: Thai personal income tax, years 2568/2569 (tax.js) -->
       <section id="tab-tax" class="tab-panel" hidden>
+        <header class="page-head">
+          <div>
+            <p class="page-kicker">Personal income tax estimate</p>
+            <h1 class="page-title">Tax</h1>
+          </div>
+          <span class="avatar" data-avatar aria-hidden="true"></span>
+        </header>
         <div class="tax-years-row">
           <div class="segmented tax-years" id="tax-years" role="tablist" aria-label="Tax year"></div>
         </div>
@@ -512,6 +547,10 @@
         <p class="group-hint tax-disclaimer">An estimate from what you entered, using the Revenue Department's rules for this year. It isn't tax advice: check your figures when you file at efiling.rd.go.th.</p>
       </section>
       <section id="tab-settings" class="tab-panel" hidden>
+        <header class="page-head page-head-back">
+          <button type="button" class="icon-button" id="settings-back" aria-label="Back to More"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+          <h1 class="page-title">Settings</h1>
+        </header>
         <nav class="settings-jump" aria-label="Settings sections">
           <a href="#settings-general">General</a><a href="#settings-notifications">Notifications</a><a href="#settings-groups">LINE groups</a><a href="#settings-connections">Connected services</a><a href="#settings-privacy">Privacy &amp; data</a>
         </nav>
@@ -633,6 +672,37 @@
         </div>
         <p class="legal-links"><a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a><a href="terms.html" target="_blank" rel="noopener">Terms of Service</a></p>
       </section>
+      <section id="tab-more" class="tab-panel" hidden>
+        <header class="page-head">
+          <div>
+            <h1 class="page-title">More</h1>
+          </div>
+        </header>
+        <div class="card card-flush">
+          <button type="button" class="row more-profile" id="more-profile"><span class="avatar" data-avatar aria-hidden="true"></span><span class="row-main"><span class="row-title" data-profile-name>You</span><span class="row-meta">Signed in with LINE · Settings</span></span><span class="row-chev" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></span></button>
+        </div>
+        <div class="section-head"><h2>Plan</h2></div>
+        <div class="card card-flush">
+            <button type="button" class="row" id="more-tax"><span class="cat-tile" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M14 8H8"/><path d="M16 12H8"/><path d="M13 16H8"/></svg></span><span class="row-main"><span class="row-title">Tax</span><span class="row-meta">Estimate, deductions, filing guide</span></span><span class="row-chev" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></span></button>
+            <button type="button" class="row" id="more-recurring"><span class="cat-tile" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg></span><span class="row-main"><span class="row-title">Recurring and subscriptions</span><span class="row-meta">Rules, bills and price rises</span></span><span class="row-chev" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></span></button>
+        </div>
+        <div class="section-head"><h2>Share</h2></div>
+        <div class="card card-flush">
+            <button type="button" class="row" id="more-groups"><span class="cat-tile" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span><span class="row-main"><span class="row-title">LINE groups</span><span class="row-meta">Bills you owe and are owed</span></span><span class="row-chev" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></span></button>
+            <button type="button" class="row" id="more-bills"><span class="cat-tile" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/></svg></span><span class="row-main"><span class="row-title">Shared bills</span><span class="row-meta">Split a bill with a link</span></span><span class="row-chev" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></span></button>
+        </div>
+        <div class="section-head"><h2>Your data</h2></div>
+        <div class="card card-flush">
+            <button type="button" class="row" id="more-export"><span class="cat-tile" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg></span><span class="row-main"><span class="row-title">Export</span><span class="row-meta">CSV download or email</span></span><span class="row-chev" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></span></button>
+            <button type="button" class="row" id="more-import"><span class="cat-tile" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg></span><span class="row-main"><span class="row-title">Import</span><span class="row-meta">Bank statement or CSV file</span></span><span class="row-chev" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></span></button>
+        </div>
+        <div class="section-head"><h2>App</h2></div>
+        <div class="card card-flush">
+            <button type="button" class="row" id="more-settings"><span class="cat-tile" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span><span class="row-main"><span class="row-title">Settings</span></span><span class="row-chev" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></span></button>
+            <button type="button" class="row" id="more-help"><span class="cat-tile" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span><span class="row-main"><span class="row-title">Help and LINE bot commands</span></span><span class="row-chev" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></span></button>
+        </div>
+        <p class="legal-links"><a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a><a href="terms.html" target="_blank" rel="noopener">Terms of Service</a></p>
+      </section>
     </main>
 
     <button type="button" id="fab-add" class="fab" aria-label="Add expense">
@@ -640,36 +710,49 @@
       <span>Add</span>
     </button>
 
-    <nav class="bottom-nav">
-      <button type="button" class="nav-tab active" data-tab="home">
-        <span class="icon"><svg class="lucide lucide-house" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8" /><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg></span>
+    <nav class="bottom-nav" aria-label="Main">
+      <button type="button" class="nav-tab active" data-tab="home" aria-current="page">
+        <span class="icon nav-pill"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span>
         <span class="nav-tab-label">Home</span>
       </button>
       <button type="button" class="nav-tab" data-tab="tasks">
-        <span class="icon"><svg class="lucide lucide-list-todo" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="6" height="6" rx="1" /><path d="m3 17 2 2 4-4" /><path d="M13 6h8" /><path d="M13 12h8" /><path d="M13 18h8" /></svg></span>
+        <span class="icon nav-pill"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="6" height="6" rx="1"/><path d="m3 17 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></svg></span>
         <span class="nav-tab-label">Tasks</span>
       </button>
       <button type="button" class="nav-tab" data-tab="transactions">
-        <span class="icon"><svg class="lucide lucide-list" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h.01" /><path d="M3 18h.01" /><path d="M3 6h.01" /><path d="M8 12h13" /><path d="M8 18h13" /><path d="M8 6h13" /></svg></span>
+        <span class="icon nav-pill"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h.01"/><path d="M3 18h.01"/><path d="M3 6h.01"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M8 6h13"/></svg></span>
         <span class="nav-tab-label">History</span>
       </button>
-      <button type="button" class="nav-tab" data-tab="budgets">
-        <span class="icon"><svg class="lucide lucide-chart-pie" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12c.552 0 1.005-.449.95-.998a10 10 0 0 0-8.953-8.951c-.55-.055-.998.398-.998.95v8a1 1 0 0 0 1 1z" /><path d="M21.21 15.89A10 10 0 1 1 8 2.83" /></svg></span>
-        <span class="nav-tab-label">Budgets</span>
+      <button type="button" class="nav-tab" data-tab="money">
+        <span class="icon nav-pill"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/></svg></span>
+        <span class="nav-tab-label">Money</span>
       </button>
-      <button type="button" class="nav-tab" data-tab="networth">
-        <span class="icon"><svg class="lucide lucide-trending-up" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17" /><polyline points="16 7 22 7 22 13" /></svg></span>
-        <span class="nav-tab-label">Wealth</span>
-      </button>
-      <button type="button" class="nav-tab" data-tab="tax">
-        <span class="icon"><svg class="lucide lucide-receipt-text" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" /><path d="M14 8H8" /><path d="M16 12H8" /><path d="M13 16H8" /></svg></span>
-        <span class="nav-tab-label">Tax</span>
-      </button>
-      <button type="button" class="nav-tab" data-tab="settings">
-        <span class="icon"><svg class="lucide lucide-settings" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" /></svg></span>
-        <span class="nav-tab-label">Settings</span>
+      <button type="button" class="nav-tab" data-tab="more">
+        <span class="icon nav-pill"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg></span>
+        <span class="nav-tab-label">More</span>
       </button>
     </nav>
+  </div>
+
+  <div id="help-modal" class="modal" hidden>
+    <div class="modal-content">
+      <h2 class="sheet-title">Help and LINE bot commands</h2>
+      <p class="group-hint">Send these to the bot in a 1:1 chat. In a group, start an expense with + or @mention the bot.</p>
+      <div class="card card-flush help-commands">
+        <div class="row"><span class="row-main"><span class="row-title">coffee 60</span><span class="row-meta">Log an expense (typed, spoken or a receipt photo)</span></span></div>
+        <div class="row"><span class="row-main"><span class="row-title">สรุป / summary</span><span class="row-meta">This cycle's totals</span></span></div>
+        <div class="row"><span class="row-main"><span class="row-title">report / รายงาน</span><span class="row-meta">Last billing period's report</span></span></div>
+        <div class="row"><span class="row-main"><span class="row-title">today / วันนี้</span><span class="row-meta">Today's reminders, events and to-dos</span></span></div>
+        <div class="row"><span class="row-main"><span class="row-title">note ... / จด ...</span><span class="row-meta">Save a note</span></span></div>
+        <div class="row"><span class="row-main"><span class="row-title">+ข้าว 600</span><span class="row-meta">In a group: start a bill split with everyone</span></span></div>
+        <div class="row"><span class="row-main"><span class="row-title">bills</span><span class="row-meta">In a group: who still owes</span></span></div>
+        <div class="row"><span class="row-main"><span class="row-title">rank</span><span class="row-meta">In a group: fastest payers this month</span></span></div>
+        <div class="row"><span class="row-main"><span class="row-title">undo</span><span class="row-meta">In a group: cancel your last open bill</span></span></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="help-close" class="primary-button">Done</button>
+      </div>
+    </div>
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
@@ -1533,10 +1616,10 @@
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script src="/liff-config.js"></script>
   <!-- Chart.js for the Net Worth performance chart; app.js renders everything else without it if this is blocked. -->
-  <script src="app.js?v=20261121e"></script>
-  <script src="tasks.js?v=20261121e"></script>
-  <script src="tax.js?v=20261121e"></script>
-  <script src="insights.js?v=20261121e"></script>
-  <script src="money.js?v=20261121e"></script>
+  <script src="app.js?v=20261121f"></script>
+  <script src="tasks.js?v=20261121f"></script>
+  <script src="tax.js?v=20261121f"></script>
+  <script src="insights.js?v=20261121f"></script>
+  <script src="money.js?v=20261121f"></script>
 </body>
 </html>

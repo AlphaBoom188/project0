@@ -2,7 +2,7 @@
 // scan endpoint is mocked here so this stays free; tests/openai/tax_50tawi
 // reads a real image), attachments on incomes and deductions (a PDF is
 // turned into an image on the phone), and the filing checklist ticks.
-const { BASE, FIXTURES, OUTPUT } = require('../lib');
+const { BASE, FIXTURES, OUTPUT, openTab } = require('../lib');
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright-core');
@@ -41,7 +41,7 @@ fs.writeFileSync(PDF_PATH, statementPdf([[{ x: 60, y: 780, s: 'INSURANCE CERTIFI
     });
     await page.goto(`${BASE}/liff/`);
     await page.waitForSelector('#app:not([hidden])', { timeout: 15000 });
-    await page.click('.nav-tab[data-tab="tax"]');
+    await openTab(page, 'tax');
     await page.waitForSelector('#tax-years .segment', { timeout: 15000 });
     if (!(await page.$('#tax-years .segment.active[data-year="2569"]'))) await page.click('#tax-years [data-year="2569"]');
     await page.waitForSelector('#tax-incomes-empty:not([hidden])', { timeout: 15000 });

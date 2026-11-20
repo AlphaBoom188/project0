@@ -1,7 +1,7 @@
 // Tax tab -> "Half-year return (PND 94)" (Phase 6): shown for 40(5)-(8)
 // income, Jan-Jun amounts (estimate by default), the PND 94 tax, and the
 // tax paid with it credited on the annual return. Also the endpoint's checks.
-const { BASE, OUTPUT } = require('../lib');
+const { BASE, OUTPUT, openTab } = require('../lib');
 const { chromium } = require('playwright-core');
 const { createClient } = require('@supabase/supabase-js');
 
@@ -31,7 +31,7 @@ const call = (method, p, body) => fetch(`${BASE}/api${p}`, { method, headers: { 
       getProfile: async () => ({ userId: '${U}', displayName: 'Tax Half UI', pictureUrl: '' }) };` }));
     await page.goto(`${BASE}/liff/`);
     await page.waitForSelector('#app:not([hidden])', { timeout: 15000 });
-    await page.click('.nav-tab[data-tab="tax"]');
+    await openTab(page, 'tax');
     await page.waitForSelector('#tax-years .segment', { timeout: 15000 });
     if (!(await page.$('#tax-years .segment.active[data-year="2569"]'))) await page.click('#tax-years [data-year="2569"]');
     await page.waitForSelector('#tax-half:not([hidden])', { timeout: 15000 });
@@ -56,7 +56,7 @@ const call = (method, p, body) => fetch(`${BASE}/api${p}`, { method, headers: { 
     await call('POST', `/tax/${U}/2569/incomes`, { kind: 'salary', amount: 500000 });
     await page.reload();
     await page.waitForSelector('#app:not([hidden])', { timeout: 15000 });
-    await page.click('.nav-tab[data-tab="tax"]');
+    await openTab(page, 'tax');
     await page.waitForSelector('#tax-incomes .tax-income-row', { timeout: 15000 });
     if (!(await page.$('#tax-years .segment.active[data-year="2569"]'))) { await page.click('#tax-years [data-year="2569"]'); await page.waitForTimeout(1500); }
     assert(await page.isHidden('#tax-half'), 'salary only: no PND 94 card');

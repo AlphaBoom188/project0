@@ -3,7 +3,7 @@
 // datasets, benchmark cards are filled, the theme change redraws with the dark
 // tokens, the Home "Investments" card opens Net Worth, and with the Chart.js
 // CDN blocked everything but the chart still renders ("Chart unavailable").
-const { BASE, OUTPUT } = require('../lib');
+const { BASE, OUTPUT, openTab } = require('../lib');
 const { chromium } = require('playwright-core');
 const { createClient } = require('@supabase/supabase-js');
 
@@ -57,7 +57,7 @@ const chartState = (page) => page.evaluate(() => {
   assert(homeText.includes('Investments') && homeText.includes('฿87,500.00') && homeText.includes('+฿100.00'), `Home investments card: total + today's gain (got "${homeText.trim()}")`);
   await page.click('#home-investments-card');
   await page.waitForSelector('#tab-networth:not([hidden])');
-  assert(await page.isVisible('.nav-tab[data-tab="networth"].active'), 'tapping it switches to Net Worth');
+  assert(await page.isVisible('#tab-networth:not([hidden])') && await page.isVisible('.nav-tab[data-tab="money"].active'), 'tapping it switches to Wealth (Money lit)');
 
   // --- Card + chart ---
   await page.waitForSelector('#perf-card:not([hidden])', { timeout: 20000 });
@@ -134,7 +134,7 @@ const chartState = (page) => page.evaluate(() => {
 
   // --- Chart.js blocked: everything but the chart ---
   const blocked = await openApp(browser, { blockChart: true });
-  await blocked.page.click('.nav-tab[data-tab="networth"]');
+  await openTab(blocked.page, 'networth');
   await blocked.page.waitForSelector('#perf-card:not([hidden])', { timeout: 20000 });
   await blocked.page.waitForFunction(() => document.getElementById('perf-note').textContent === 'Chart unavailable', null, { timeout: 10000 }).catch(() => {});
   assert((await blocked.page.textContent('#perf-note')) === 'Chart unavailable' && (await blocked.page.isHidden('#perf-chart-wrap')), 'CDN blocked -> "Chart unavailable", no canvas');

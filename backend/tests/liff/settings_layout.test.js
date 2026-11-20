@@ -1,6 +1,6 @@
 // LIFF Settings layout: five sections in order with explanations, jump
 // links that scroll to each, and every control in its section.
-const { BASE, OUTPUT } = require('../lib');
+const { BASE, OUTPUT, openTab } = require('../lib');
 const { chromium } = require('playwright-core');
 const { createClient } = require('@supabase/supabase-js');
 
@@ -21,7 +21,7 @@ const U = `test_setlay_${Date.now()}`;
       getProfile: async () => ({ userId: '${U}', displayName: 'Settings Layout', pictureUrl: '' }) };` }));
     await page.goto(`${BASE}/liff/`);
     await page.waitForSelector('#app:not([hidden])', { timeout: 15000 });
-    await page.click('.nav-tab[data-tab="settings"]');
+    await openTab(page, 'settings');
     await page.waitForSelector('#settings-general', { state: 'visible' });
     const sections = await page.$$eval('#tab-settings .settings-section', (hs) => hs.map((h) => h.textContent));
     assert(sections.join('|') === 'General|Notifications|LINE groups|Connected services|Privacy & data', `five sections in order (got ${sections.join('|')})`);
@@ -47,7 +47,7 @@ const U = `test_setlay_${Date.now()}`;
     await page.waitForTimeout(400);
     const top = await page.$eval('#settings-privacy', (h) => h.getBoundingClientRect().top);
     assert(top >= 0 && top < 200, `jump link scrolls to the section (top ${Math.round(top)})`);
-    await page.click('.nav-tab[data-tab="settings"]');
+    await openTab(page, 'settings');
     await page.screenshot({ path: `${OUTPUT}/settings_layout.png`, fullPage: true });
     // controls still work: toggle the briefing
     await Promise.all([page.waitForResponse((r) => r.url().includes('/preferences')), page.check('#setting-morning-briefing')]);

@@ -2,7 +2,7 @@
 // PromptPay QR / bank details, send a slip; owner confirms or cancels), plus
 // Settings -> Get Paid, on data seeded by tests/fixtures/groupSeed.js.
 // qrcode-generator (cdnjs) is stubbed so the QR check runs offline.
-const { BASE, FIXTURES, OUTPUT } = require('../lib');
+const { BASE, FIXTURES, OUTPUT, openTab } = require('../lib');
 const { chromium } = require('playwright-core');
 const { createClient } = require('@supabase/supabase-js');
 const { seedGroups } = require(`${FIXTURES}/groupSeed.js`);
@@ -113,7 +113,7 @@ let seed;
   assert(await page.isHidden('#group-bill-modal'), 'Close hides the bill sheet');
 
   // --- Settings: get paid ---
-  await page.click('[data-tab="settings"]');
+  await openTab(page, 'settings');
   await page.waitForFunction(() => document.getElementById('setting-promptpay').value === '0812345678', null, { timeout: 10000 }).catch(() => {});
   assert((await page.inputValue('#setting-promptpay')) === '0812345678' && (await page.inputValue('#setting-bank-no')) === '1234567890', 'Settings shows my saved payment details');
   await page.fill('#setting-promptpay', '12345');

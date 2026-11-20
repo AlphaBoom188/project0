@@ -4,7 +4,7 @@
 // toggle refetches and redraws, the holding detail sheet shows the Dividends
 // and next-dividend lines, the theme change redraws, and with the Chart.js
 // CDN blocked everything but the chart still renders ("Chart unavailable").
-const { BASE, OUTPUT } = require('../lib');
+const { BASE, OUTPUT, openTab } = require('../lib');
 const { chromium } = require('playwright-core');
 const { createClient } = require('@supabase/supabase-js');
 
@@ -31,7 +31,7 @@ async function openApp(browser, { blockChart = false } = {}) {
   if (blockChart) await page.route('https://cdnjs.cloudflare.com/**', (route) => route.abort());
   await page.goto(`${BASE}/liff/`);
   await page.waitForSelector('#app:not([hidden])', { timeout: 15000 });
-  await page.click('.nav-tab[data-tab="networth"]');
+  await openTab(page, 'networth');
   await page.waitForSelector('#div-card:not([hidden])', { timeout: 20000 });
   return { page, errors };
 }

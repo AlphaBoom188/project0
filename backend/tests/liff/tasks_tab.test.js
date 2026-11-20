@@ -2,7 +2,7 @@
 // to-dos, notes, the add/edit sheet (presets, repeat, category, importance),
 // the "Everything you've set" sheet, the month calendar and the Settings
 // Google Calendar card (not connected; events are mocked at the route).
-const { BASE, OUTPUT } = require('../lib');
+const { BASE, OUTPUT, openTab } = require('../lib');
 const { chromium } = require('playwright-core');
 const { createClient } = require('@supabase/supabase-js');
 
@@ -46,7 +46,7 @@ const tomorrow = bkkYmd(new Date(Date.now() + 86400000));
 
     // --- Nav: six tabs, Tasks second, labels on one line ---
     const nav = await page.$$eval('.nav-tab', (ts) => ts.map((x) => ({ tab: x.dataset.tab, label: x.textContent.trim(), over: x.scrollWidth > x.clientWidth + 1 })));
-    assert(nav.length === 7 && nav[1].tab === 'tasks' && nav[1].label === 'Tasks' && nav.every((n) => !n.over), `seven tabs, Tasks second, no overflow (got ${JSON.stringify(nav)})`);
+    assert(nav.length === 5 && nav[1].tab === 'tasks' && nav[1].label === 'Tasks' && nav.every((n) => !n.over), `five items, Tasks second, no overflow (got ${JSON.stringify(nav)})`);
 
     await page.click('.nav-tab[data-tab="tasks"]');
     await page.waitForSelector('#week-strip .week-day', { timeout: 15000 });
@@ -159,7 +159,7 @@ const tomorrow = bkkYmd(new Date(Date.now() + 86400000));
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'no horizontal scroll');
 
     // --- Settings: Google Calendar card ---
-    await page.click('.nav-tab[data-tab="settings"]');
+    await openTab(page, 'settings');
     await page.waitForFunction(() => document.getElementById('gcal-status-text').textContent.length > 20, null, { timeout: 10000 });
     const gtext = await page.textContent('#gcal-status-text');
     const configured = !(await page.isHidden('#gcal-connect'));

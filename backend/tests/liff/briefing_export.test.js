@@ -1,7 +1,7 @@
 // LIFF: Settings -> Morning briefing toggle, the ?tab=tasks deep link (the
 // briefing's "Open Tasks"), and Tax -> Filing -> Summary / CSV export, which
 // open a signed link in the phone's browser (liff.openWindow external).
-const { BASE } = require('../lib');
+const { BASE, openTab } = require('../lib');
 const { chromium } = require('playwright-core');
 const { createClient } = require('@supabase/supabase-js');
 
@@ -30,7 +30,7 @@ const U = `test_brexp_${Date.now()}`;
     assert(await page.isVisible('#week-strip .week-day') && (await page.getAttribute('.nav-tab[data-tab="tasks"]', 'class')).includes('active'), '?tab=tasks opens the Tasks tab');
 
     // --- Settings toggle ---
-    await page.click('.nav-tab[data-tab="settings"]');
+    await openTab(page, 'settings');
     await page.waitForSelector('#setting-morning-briefing', { state: 'visible' });
     assert(!(await page.isChecked('#setting-morning-briefing')), 'off by default');
     await Promise.all([page.waitForResponse((r) => r.url().includes('/preferences') && r.request().method() === 'PATCH'), page.check('#setting-morning-briefing')]);
@@ -38,7 +38,7 @@ const U = `test_brexp_${Date.now()}`;
     assert(row.morning_briefing === true, 'turned on and saved');
 
     // --- Tax export ---
-    await page.click('.nav-tab[data-tab="tax"]');
+    await openTab(page, 'tax');
     await page.waitForSelector('#tax-years .segment', { timeout: 15000 });
     if (!(await page.$('#tax-years .segment.active[data-year="2569"]'))) await page.click('#tax-years [data-year="2569"]');
     await page.waitForSelector('#tax-incomes .tax-income-row', { timeout: 15000 });

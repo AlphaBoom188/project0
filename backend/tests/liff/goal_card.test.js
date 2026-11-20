@@ -5,7 +5,7 @@
 // validation error shown inline, deleting through the confirm modal, the
 // theme redraw, and with the Chart.js CDN blocked everything but the chart
 // still renders ("Chart unavailable").
-const { BASE, OUTPUT } = require('../lib');
+const { BASE, OUTPUT, openTab } = require('../lib');
 const { chromium } = require('playwright-core');
 const { createClient } = require('@supabase/supabase-js');
 
@@ -36,7 +36,7 @@ async function openApp(browser, { blockChart = false, failPortfolio = false } = 
     route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ success: false, error: 'USD->THB rate unavailable' }) }));
   await page.goto(`${BASE}/liff/`);
   await page.waitForSelector('#app:not([hidden])', { timeout: 15000 });
-  await page.click('.nav-tab[data-tab="networth"]');
+  await openTab(page, 'networth');
   await page.waitForSelector('#goal-card:not([hidden])', { timeout: 20000 });
   return { page, errors };
 }

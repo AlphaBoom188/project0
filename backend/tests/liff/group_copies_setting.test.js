@@ -1,7 +1,7 @@
 // Settings -> "Add my share of LINE group expenses to my transactions"
 // (users.group_ledger_copies, migration 018): on for app users, saves when
 // toggled, and stays off after reopening the app.
-const { BASE } = require('../lib');
+const { BASE, openTab } = require('../lib');
 const { chromium } = require('playwright-core');
 const { createClient } = require('@supabase/supabase-js');
 
@@ -20,7 +20,7 @@ async function openSettings(browser) {
       getIDToken: () => 'stub', getProfile: async () => ({ userId: '${U}', displayName: 'Group Copies Test', pictureUrl: '' }) };` }));
   await page.goto(`${BASE}/liff/`);
   await page.waitForSelector('#app:not([hidden])', { timeout: 15000 });
-  await page.click('.nav-tab[data-tab="settings"]');
+  await openTab(page, 'settings');
   await page.waitForTimeout(500);
   return { page, errors };
 }

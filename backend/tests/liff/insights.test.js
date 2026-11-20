@@ -1,6 +1,6 @@
 // LIFF: Budgets -> "Repeat payments we found" (Remind / Log / Dismiss) and
 // Home -> last period's report card and the report sheet, plus ?report=last.
-const { BASE, OUTPUT } = require('../lib');
+const { BASE, OUTPUT, openTab } = require('../lib');
 const { chromium } = require('playwright-core');
 const { createClient } = require('@supabase/supabase-js');
 
@@ -53,7 +53,7 @@ const lastMonth = (day) => { const d = new Date(Date.now() + 7 * 3600000); retur
     await page.click('#close-report');
 
     // --- Budgets: repeat payments ---
-    await page.click('.nav-tab[data-tab="budgets"]');
+    await openTab(page, 'budgets');
     await page.waitForSelector('#repeat-list:not([hidden]) [data-repeat]', { timeout: 15000 });
     const cards = await page.$$eval('#repeat-list [data-repeat] .tax-sg-title', (ts) => ts.map((t) => t.textContent));
     assert(cards.includes('NETFLIX.COM') && cards.includes('TRUEMOVE H'), `repeat payments listed (got ${JSON.stringify(cards)})`);

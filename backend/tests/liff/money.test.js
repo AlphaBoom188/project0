@@ -1,6 +1,6 @@
 // LIFF: History -> Import CSV (preview, column change, import), Wealth ->
 // Savings goals (add, add money, reminder), Budgets -> Subscriptions & bills.
-const { BASE, OUTPUT } = require('../lib');
+const { BASE, OUTPUT, openTab } = require('../lib');
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright-core');
@@ -51,7 +51,7 @@ fs.writeFileSync(CSV, 'Date;Category;Amount;Note\n25/10/2026;Food;-120;Coffee\n2
     await page.click('#csv-close');
 
     // --- Savings goals ---
-    await page.click('.nav-tab[data-tab="networth"]');
+    await openTab(page, 'networth');
     await page.waitForSelector('#goals-empty:not([hidden])', { timeout: 10000 });
     await page.click('#add-goal-button');
     await page.waitForSelector('#sgoal-modal:not([hidden])');
@@ -74,7 +74,7 @@ fs.writeFileSync(CSV, 'Date;Category;Amount;Note\n25/10/2026;Food;-120;Coffee\n2
     await page.screenshot({ path: `${OUTPUT}/savings_goals.png` });
 
     // --- Subscriptions ---
-    await page.click('.nav-tab[data-tab="budgets"]');
+    await openTab(page, 'budgets');
     await page.waitForSelector('#subs-list:not([hidden]) .task-row', { timeout: 15000 });
     assert((await page.textContent('#subs-total')) === '฿419 a month · ฿5,028 a year' && (await page.innerText('#subs-list')).includes('Netflix'), 'subscriptions total and list');
     assert(errors.length === 0, `no page errors (got ${JSON.stringify(errors)})`);

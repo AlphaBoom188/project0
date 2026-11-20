@@ -1,5 +1,5 @@
 // Batch 2: search, floating Add, breakdown total + toggle, Share to LINE, tap-to-assign chips.
-const { BASE, BACKEND, FIXTURES, OUTPUT } = require('../lib');
+const { BASE, BACKEND, FIXTURES, OUTPUT, openTab } = require('../lib');
 const { chromium } = require('playwright-core');
 const { createClient } = require('@supabase/supabase-js');
 const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -63,11 +63,16 @@ const descs = (page) => page.$$eval('#txn-full-list .transaction-description', (
   const fabBox = await page.locator('#fab-add').boundingBox();
   const navBox = await page.locator('.bottom-nav').boundingBox();
   assert(fabBox.y + fabBox.height <= navBox.y, `FAB sits above the bottom nav (fab bottom ${fabBox.y + fabBox.height}, nav top ${navBox.y})`);
-  for (const tab of ['transactions', 'budgets', 'networth']) {
-    await page.click(`.nav-tab[data-tab="${tab}"]`);
+  // v5: Add shows on Home/History/Tasks/Tax, never on Money, More or Settings.
+  for (const tab of ['transactions', 'tasks', 'tax']) {
+    await openTab(page, tab);
     assert(await page.isVisible('#fab-add'), `FAB visible on ${tab}`);
   }
-  await page.click('.nav-tab[data-tab="settings"]');
+  for (const tab of ['budgets', 'networth', 'more']) {
+    await openTab(page, tab);
+    assert(!(await page.isVisible('#fab-add')), `FAB hidden on ${tab}`);
+  }
+  await openTab(page, 'settings');
   assert(await page.isHidden('#fab-add'), 'FAB hidden on Settings');
   await page.click('.nav-tab[data-tab="transactions"]');
   await page.click('#fab-add');
@@ -94,7 +99,7 @@ const descs = (page) => page.$$eval('#txn-full-list .transaction-description', (
   await page.screenshot({ path: `${SHOTS}/b2_search.png` });
 
   // --- Breakdown total follows the Expense/Income toggle ---
-  await page.click('.nav-tab[data-tab="budgets"]');
+  await openTab(page, 'budgets');
   await page.waitForFunction(() => document.querySelector('#breakdown-total-value').textContent !== '0.00', null, { timeout: 8000 }).catch(() => {});
   assert((await page.textContent('#breakdown-total-label')) === 'Spent this cycle' && (await page.textContent('#breakdown-total-value')) === '500.00',
     `expense breakdown total (got ${await page.textContent('#breakdown-total-label')} ${await page.textContent('#breakdown-total-value')})`);

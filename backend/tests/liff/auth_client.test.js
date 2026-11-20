@@ -2,7 +2,7 @@
 // expired token triggers one silent liff.login() (not a loop), and CSV
 // download goes through a signed export link. Uses a test_ user, so the
 // server's local test bypass accepts the stub token.
-const { BASE } = require('../lib');
+const { BASE, openTab } = require('../lib');
 const { chromium } = require('playwright-core');
 const { createClient } = require('@supabase/supabase-js');
 
@@ -53,12 +53,12 @@ async function openApp(browser, { expireOnce = false } = {}) {
 
   // Expired token: one silent re-login, not a loop.
   const exp = await openApp(browser, { expireOnce: true });
-  await exp.page.click('.nav-tab[data-tab="networth"]');
+  await openTab(exp.page, 'networth');
   await exp.page.waitForTimeout(1500);
   let logins = await exp.page.evaluate(() => window.__logins);
   assert(logins.length === 1 && String(logins[0].redirectUri || '').includes('/liff/'), `a 401 auth_invalid calls liff.login() once, back to this page (got ${JSON.stringify(logins)})`);
   await exp.page.click('.nav-tab[data-tab="home"]');
-  await exp.page.click('.nav-tab[data-tab="networth"]');
+  await openTab(exp.page, 'networth');
   await exp.page.evaluate(() => { getCache.clear(); return loadNetWorthTab().catch(() => {}); });
   await exp.page.waitForTimeout(800);
   logins = await exp.page.evaluate(() => window.__logins);
