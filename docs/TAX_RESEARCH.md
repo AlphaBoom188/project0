@@ -414,3 +414,28 @@ Booklet numbering is used in the UI; the decree number is stored for citation.
 - **LIFF:** a "Found in your data" section with a beautifului-style working state while it checks. Each card shows the amount, confidence ("From your portfolio", "Likely", "Check first"), the effect on your tax, the reason and note, and an expandable list of the items it's based on. Buttons: Add / Update to / Use / Dismiss, and "Show N added or dismissed".
 - **Tests:** `api/tax_suggest` (26), `api/tax_suggestions_api` (18), `liff/tax_suggestions` (11).
 - **Next (Phase 4):** planner ("put ฿X more into ThaiESG to save ฿Y") and the filing guide with LINE reminders.
+
+## 11. Phase 4 built (2026-11-20): planner and filing guide
+
+- **Planner** (`services/tax/taxPlan.js` `buildPlan`, pure). It covers the deductions a person can still pay into before 31 December: ThaiESG, RMF, pension, life and health insurance, NSF, the two kinds of donations, and social enterprise.
+  - **Room:** found by binary search on the calculator itself, so percentage limits, caps and shared caps (life + health 100k, retirement 500k, pension filling the life gap) all count.
+  - **Each option** shows the tax saved for its full room and per ฿1,000 (at the current top rate; donations counted twice show double). Options are ranked by saving per baht.
+  - **"All together"** is applied best first, with the rooms recomputed so shared caps count once.
+  - **No planner** when the year has ended, there's no income or no tax, or the 0.5% method applies.
+- **Filing guide** (`buildGuide`):
+  - the form and why;
+  - when filing opens (1 Jan) and the deadline (online, or paper when online isn't announced), with the status not open / open / late and the days left;
+  - five e-filing steps, the last matching pay / refund (PromptPay linked to the ID card) / nothing;
+  - a documents checklist for what you entered (50 ทวิ, insurance and fund certificates, interest certificate, e-Donation, ล.ย.03 …);
+  - the figures to enter.
+- **LINE reminders:** `POST /api/tax/:u/:year/reminders` creates real reminders (the minute job pushes them):
+  - 14 days before the deadline (important);
+  - on the day (must not miss);
+  - 15 December "last chance to lower your tax", for the current year when the planner has options.
+
+  Setting them again replaces the old ones, and DELETE removes them. The ids are kept in `profile._reminders`.
+- **LIFF:**
+  - A "Lower your tax" section (days left to 31 Dec, ranked options that open the deduction sheet, the all-together line).
+  - A "Filing" section (summary, Remind me on LINE / Update / Remove, documents checklist kept in the phone's browser storage, steps, figures to enter).
+- **Tests:** `api/tax_plan` (25), `api/tax_api` (now 50), `liff/tax_plan` (18).
+- **Next (Phase 5):** documents and 50 ทวิ OCR.

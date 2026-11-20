@@ -22,6 +22,9 @@ router.get('/:line_user_id/:year', c.get);
 router.get('/:line_user_id/:year/suggestions', c.suggestions);
 // POST /api/tax/:line_user_id/:year/suggestions/:suggestion_id/accept|dismiss|restore
 router.post('/:line_user_id/:year/suggestions/:suggestion_id/:action', c.suggestionAction);
+// POST|DELETE /api/tax/:line_user_id/:year/reminders - LINE reminders for filing (and buying funds by 31 Dec)
+router.post('/:line_user_id/:year/reminders', c.setReminders);
+router.delete('/:line_user_id/:year/reminders', c.clearReminders);
 // PUT /api/tax/:line_user_id/:year/profile - Marital status, spouse income, 65+/disabled, children
 router.put('/:line_user_id/:year/profile', c.updateProfile);
 // PUT /api/tax/:line_user_id/:year/claims - Deduction amounts (merged; null removes)

@@ -5,6 +5,8 @@ const { getRules, YEARS } = require('../services/tax/rules');
 const { computeTax } = require('../services/tax/taxMath');
 const store = require('../services/tax/taxStore');
 const { buildSuggestions } = require('../services/tax/taxSuggest');
+const { buildPlan, buildGuide } = require('../services/tax/taxPlan');
+const reminderStore = require('../services/reminderStore');
 const supabase = require('../config/supabase');
 const { bangkokMidnight, getBangkokYmd } = require('../services/bangkokDay');
 
@@ -31,7 +33,7 @@ function rulesForApp(rules) {
 
 // `_suggestions` (accepted / dismissed suggestion ids) lives in the profile
 // JSON but isn't part of the profile the app edits.
-const publicProfile = (p) => { const { _suggestions, ...rest } = p || {}; return rest; };
+const publicProfile = (p) => { const { _suggestions, _reminders, ...rest } = p || {}; return rest; };
 const suggestionMemo = (p) => ({ accepted: {}, dismissed: [], ...((p && p._suggestions) || {}) });
 
 // Everything the suggestion engine reads for one tax year.
@@ -93,8 +95,19 @@ async function suggestionsResponse(lineUserId, rules) {
   return { year: rules.year, suggestions, dividendsError: inputs.dividendsError };
 }
 
+// LINE reminders this tax year created (ids kept in profile._reminders).
+async function filingReminders(lineUserId, profile) {
+  const ids = (profile && profile._reminders) || [];
+  if (!ids.length) return [];
+  const rows = await Promise.all(ids.map((id) => reminderStore.getReminder(id)));
+  return rows.filter((r) => r && r.line_user_id === lineUserId).map((r) => ({ id: r.id, title: r.title, remind_at: r.remind_at, status: r.status }));
+}
+
 async function stateResponse(lineUserId, rules, { withRules = false } = {}) {
   const state = await store.loadState(lineUserId, rules.year);
+  const input = store.toCalcInput(state);
+  const result = computeTax(rules, input);
+  const today = getBangkokYmd();
   return {
     year: rules.year,
     years: YEARS,
@@ -102,7 +115,10 @@ async function stateResponse(lineUserId, rules, { withRules = false } = {}) {
     profile: publicProfile(state.profile),
     claims: state.claims,
     incomes: state.incomes,
-    result: computeTax(rules, store.toCalcInput(state)),
+    result,
+    plan: buildPlan(rules, input, { today }),
+    guide: buildGuide(rules, input, result, { today }),
+    reminders: await filingReminders(lineUserId, state.profile),
   };
 }
 
@@ -213,6 +229,57 @@ taxController.suggestionAction = handle('suggestionAction', async (req, res, rul
   await store.saveProfileRow(u, rules.year, { profile: { ...state.profile, _suggestions: memo }, claims });
   const [st, sgs] = await Promise.all([stateResponse(u, rules), suggestionsResponse(u, rules)]);
   res.json({ ...st, suggestions: sgs.suggestions, dividendsError: sgs.dividendsError });
+});
+
+// POST /api/tax/:u/:year/reminders -> LINE reminders for the filing deadline
+// (14 days before and on the day) and, for the current year, buying
+// deduction funds before 31 December. Replaces any set before.
+// DELETE removes them.
+const at9 = (ymdCE) => new Date(`${ymdCE}T09:00:00+07:00`);
+taxController.setReminders = handle('setReminders', async (req, res, rules) => {
+  const u = req.params.line_user_id;
+  const state = await store.loadState(u, rules.year);
+  const input = store.toCalcInput(state);
+  const result = computeTax(rules, input);
+  const today = getBangkokYmd();
+  const guide = buildGuide(rules, input, result, { today });
+  const plan = buildPlan(rules, input, { today });
+  const form = guide.form === 'PND91' ? 'PND 91' : 'PND 90';
+  const wanted = [];
+  if (guide.deadlineCE) {
+    const due = at9(guide.deadlineCE);
+    wanted.push({ title: `File your ${form} for tax year ${rules.year}`, details: `Due ${guide.deadline}${guide.onlineAnnounced ? ' (online)' : ' (paper; the online date is usually a week later)'}. Your figures are under Tax in the app.`, remind_at: new Date(due.getTime() - 14 * 86400000), importance: 1 });
+    wanted.push({ title: `Last day to file your ${form} (tax year ${rules.year})`, details: 'File at efiling.rd.go.th today.', remind_at: due, importance: 2 });
+  }
+  if (plan.applicable) {
+    const funds = plan.items.filter((i) => ['thai_esg', 'rmf'].includes(i.key)).map((i) => (i.key === 'rmf' ? 'RMF' : 'ThaiESG'));
+    wanted.push({ title: `Last chance to lower your ${rules.year} tax`, details: `${funds.length ? `Buy ${funds.join(' or ')} by 31 December. ` : ''}See the planner under Tax.`, remind_at: at9(`${rules.year - 543}-12-15`), importance: 1 });
+  }
+  const future = wanted.filter((w) => w.remind_at > new Date());
+  if (!future.length) return bad(res, guide.status === 'late' ? 'The filing deadline for this year has passed.' : 'Nothing to remind you about for this year.');
+  for (const id of (state.profile._reminders || [])) {
+    const r = await reminderStore.getReminder(id);
+    if (r && r.line_user_id === u) await reminderStore.deleteReminder(id);
+  }
+  const ids = [];
+  for (const w of future) {
+    const { reminder, error } = await reminderStore.createReminder(u, { ...w, remind_at: w.remind_at.toISOString(), category: 'finance' });
+    if (error) return bad(res, error);
+    ids.push(reminder.id);
+  }
+  await store.saveProfileRow(u, rules.year, { profile: { ...state.profile, _reminders: ids }, claims: state.claims });
+  res.json(await stateResponse(u, rules));
+});
+
+taxController.clearReminders = handle('clearReminders', async (req, res, rules) => {
+  const u = req.params.line_user_id;
+  const state = await store.loadState(u, rules.year);
+  for (const id of (state.profile._reminders || [])) {
+    const r = await reminderStore.getReminder(id);
+    if (r && r.line_user_id === u) await reminderStore.deleteReminder(id);
+  }
+  await store.saveProfileRow(u, rules.year, { profile: { ...state.profile, _reminders: [] }, claims: state.claims });
+  res.json(await stateResponse(u, rules));
 });
 
 module.exports = taxController;

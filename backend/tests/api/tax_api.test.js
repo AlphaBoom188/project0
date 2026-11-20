@@ -85,6 +85,27 @@ const OTHER = `test_tax_other_${crypto.randomBytes(4).toString('hex')}`;
     assert(r.status === 200 && r.body.claims.solar_rooftop === 150000, '2569-only deduction accepted in 2569');
     assert((await call('GET', `/tax/${OTHER}/2568`)).body.incomes.length === 0, "another user doesn't see it");
 
+    // --- Planner, filing guide, LINE reminders ---
+    r = await call('GET', `/tax/${U}/2568`);
+    assert(r.body.plan && r.body.plan.applicable === false && r.body.plan.reason.includes('has ended'), '2568 planner: the year has ended');
+    assert(r.body.guide.form === 'PND91' && r.body.guide.deadline === '2569-04-08' && r.body.guide.status === 'late' && r.body.guide.documents[0].key === 'salary', '2568 guide: late, documents');
+    assert((await call('POST', `/tax/${U}/2568/reminders`)).status === 400, 'no reminders after the deadline');
+    r = await call('POST', `/tax/${U}/2569/incomes`, { kind: 'salary', amount: 1200000 });
+    const plan = r.body.plan;
+    assert(plan.applicable && plan.items.length > 3 && plan.items[0].perThousand >= plan.items[plan.items.length - 1].perThousand && plan.daysLeft >= 0, '2569 planner ranks the options');
+    assert(r.body.guide.status === 'not_open' && r.body.guide.opens === '2027-01-01' && r.body.reminders.length === 0, '2569 guide: filing opens 1 Jan 2027; no reminders yet');
+    r = await call('POST', `/tax/${U}/2569/reminders`);
+    const rem = r.body.reminders || [];
+    assert(r.status === 200 && rem.length >= 2 && rem.some((x) => x.title.startsWith('Last day to file your PND 91')) && !('_reminders' in r.body.profile), `reminders created (got ${rem.length})`);
+    const due = rem.find((x) => x.title.startsWith('Last day'));
+    assert(new Date(due.remind_at).toISOString() === '2027-03-31T02:00:00.000Z', 'last-day reminder: 31 Mar 2027 09:00 Bangkok (paper deadline 2570)');
+    const rows = (await db.from('reminders').select('id, category, importance').eq('line_user_id', U)).data;
+    assert(rows.length === rem.length && rows.every((x) => x.category === 'finance'), 'saved as real reminders (finance)');
+    r = await call('POST', `/tax/${U}/2569/reminders`);
+    assert((await db.from('reminders').select('id').eq('line_user_id', U)).data.length === rem.length, 'setting again replaces, never duplicates');
+    r = await call('DELETE', `/tax/${U}/2569/reminders`);
+    assert(r.body.reminders.length === 0 && (await db.from('reminders').select('id').eq('line_user_id', U)).data.length === 0, 'clear removes them');
+
     // --- Account deletion ---
     assert((await call('DELETE', `/users/${U}`, { confirm: 'DELETE' })).status === 200, 'delete the account');
     const left = await db.from('tax_incomes').select('id').eq('line_user_id', U);

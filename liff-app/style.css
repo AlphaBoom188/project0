@@ -3170,3 +3170,126 @@ body {
   font-weight: 600;
   color: var(--primary);
 }
+
+/* ---- Tax planner and filing guide ---- */
+
+.tax-saves {
+  color: var(--primary);
+  font-size: 14px;
+}
+
+.tax-plan-combined {
+  margin: calc(-1 * var(--space-4)) var(--space-page) var(--space-6);
+}
+
+.tax-filing {
+  margin: 0 var(--space-page) var(--space-6);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--card);
+}
+
+.tax-filing-summary {
+  margin: 0 0 var(--space-4);
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.tax-remind {
+  width: 100%;
+  min-height: var(--tap-min);
+}
+
+.tax-remind-list {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+}
+
+.tax-remind-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--tap-min);
+  font-size: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tax-remind-list li span:nth-child(2) {
+  flex: 1;
+}
+
+.tax-filing-sub {
+  margin: var(--space-6) 0 var(--space-2);
+}
+
+.tax-docs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tax-doc {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--tap-min);
+  font-size: 14px;
+}
+
+.tax-doc input {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+
+.tax-steps {
+  margin: 0;
+  padding-left: var(--space-6);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.tax-steps li {
+  margin-bottom: var(--space-2);
+}
+
+.tax-steps strong {
+  display: block;
+}
+
+.tax-steps span {
+  color: var(--muted-foreground);
+}
+
+.tax-enter {
+  margin-top: var(--space-4);
+}
+
+.tax-enter summary {
+  display: flex;
+  align-items: center;
+  min-height: var(--tap-min);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.tax-enter-head {
+  margin: var(--space-4) 0 var(--space-1);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+}
+
+.tax-plan-row .task-title,
+.tax-plan-row .task-meta {
+  white-space: normal;
+  overflow: visible;
+  line-height: 1.3;
+}
+
+.tax-plan-row .task-main {
+  padding: var(--space-2) 0;
+}

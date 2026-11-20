@@ -46,6 +46,20 @@ const x = {
   deductionsTotal: document.getElementById('tax-deductions-total'),
   breakdown: document.getElementById('tax-breakdown'),
   warnings: document.getElementById('tax-warnings'),
+  planDays: document.getElementById('tax-plan-days'),
+  planReason: document.getElementById('tax-plan-reason'),
+  plan: document.getElementById('tax-plan'),
+  planCombined: document.getElementById('tax-plan-combined'),
+  filingWhen: document.getElementById('tax-filing-when'),
+  filingSummary: document.getElementById('tax-filing-summary'),
+  remind: document.getElementById('tax-remind'),
+  remindList: document.getElementById('tax-remind-list'),
+  remindClear: document.getElementById('tax-remind-clear'),
+  remindStatus: document.getElementById('tax-remind-status'),
+  docsTitle: document.getElementById('tax-docs-title'),
+  docs: document.getElementById('tax-docs'),
+  steps: document.getElementById('tax-steps'),
+  enter: document.getElementById('tax-enter'),
   sgHeader: document.getElementById('tax-sg-header'),
   sgToggle: document.getElementById('tax-sg-toggle'),
   sgStatus: document.getElementById('tax-sg-status'),
@@ -256,6 +270,8 @@ function renderTax() {
   renderIncomes(d);
   renderDeductions(d, rules);
   renderBreakdown(d.result);
+  renderPlan(d.plan);
+  renderFiling(d);
   const warnings = d.result.warnings;
   x.warnings.hidden = warnings.length === 0;
   x.warnings.innerHTML = warnings.map((w) => `<li>${escapeHtml(w)}</li>`).join('');
@@ -371,6 +387,81 @@ function renderBreakdown(r) {
   lines.push(row(r.result === 'refund' ? 'Refund' : 'To pay', taxBaht(Math.abs(r.balance)), 'is-total'));
   const rates = r.totals.gross ? `Effective rate ${(r.effectiveRate * 100).toFixed(2)}%${r.marginalRate != null ? ` · top rate ${Math.round(r.marginalRate * 100)}%` : ''}` : '';
   x.breakdown.innerHTML = lines.join('') + (rates ? `<p class="tax-rates">${rates}</p>` : '');
+}
+
+// ---- Planner (Phase 4) ----
+function renderPlan(plan) {
+  if (!plan) return;
+  x.planDays.textContent = plan.daysLeft != null && plan.daysLeft >= 0 ? `${plan.daysLeft} day${plan.daysLeft === 1 ? '' : 's'} left to 31 Dec` : '';
+  x.planReason.hidden = plan.applicable;
+  x.planReason.textContent = plan.reason || '';
+  x.plan.hidden = !plan.applicable;
+  x.plan.innerHTML = plan.items.map((it) => `<li class="task-row tax-plan-row">
+    <button type="button" class="task-main" data-deduction="${it.key}">
+      <span class="task-title">${escapeHtml(it.label)}${it.verified ? '' : ' <span class="tax-unverified">Unverified</span>'}</span>
+      <span class="task-meta"><span>Put in up to ${taxBaht(it.room)} · ${taxBaht(it.perThousand)} back per ฿1,000</span></span>
+    </button>
+    <span class="tax-amount tax-saves">Save ${taxBaht(it.saves)}</span>
+  </li>`).join('');
+  x.planCombined.hidden = !(plan.applicable && plan.combined && plan.items.length > 1);
+  if (plan.combined) x.planCombined.textContent = `Doing all of these together: put in ${taxBaht(plan.combined.pay)} and save ${taxBaht(plan.combined.saves)} (shared limits counted once). Tap an option to see its rules.`;
+}
+
+// ---- Filing guide (Phase 4) ----
+const docsKey = () => `taxDocs:${lineUserId}:${taxState.year}`;
+function loadDocTicks() {
+  try { return JSON.parse(localStorage.getItem(docsKey()) || '{}'); } catch { return {}; }
+}
+function saveDocTicks(ticks) {
+  try { localStorage.setItem(docsKey(), JSON.stringify(ticks)); } catch { /* private mode: ticks last for this visit */ }
+}
+
+function renderFiling(d) {
+  const g = d.guide;
+  if (!g) return;
+  const form = g.form === 'PND91' ? 'PND 91' : 'PND 90';
+  const due = `${thaiDate(g.deadline)}${g.onlineAnnounced ? ' online' : ' on paper'}`;
+  x.filingWhen.textContent = g.status === 'late' ? 'Deadline passed' : g.daysLeft != null ? `${g.daysLeft} days to the deadline` : '';
+  const need = d.incomes.length === 0 ? 'Add your income to see what to file.'
+    : !g.mustFile ? `You don't have to file for ${d.year}${d.result.result === 'refund' ? ', but filing gets your refund back' : ''}. If you do: ${form}, by ${due}.`
+      : g.status === 'not_open' ? `File ${form} between ${thaiDate(`${Number(g.opens.slice(0, 4)) + 543}${g.opens.slice(4)}`)} and ${due}.${g.onlineAnnounced ? '' : ' The online deadline is announced later, usually a week after paper.'}`
+        : g.status === 'late' ? `The ${form} deadline was ${thaiDate(g.deadline)}. File as soon as you can: unpaid tax gets a 1.5% monthly surcharge and late filing a fine up to 2,000.`
+          : `File ${form} by ${due}.`;
+  x.filingSummary.textContent = need;
+  const rem = d.reminders || [];
+  x.remind.hidden = g.status === 'late' || d.incomes.length === 0;
+  x.remind.textContent = rem.length ? 'Update LINE reminders' : 'Remind me on LINE';
+  x.remindList.hidden = rem.length === 0;
+  x.remindList.innerHTML = rem.map((r) => `<li>${SVG(ICONS.bell, 16)}<span>${escapeHtml(r.title)}</span><span class="transaction-date">${thaiDate(`${Number(bkkYmdOf(r.remind_at).slice(0, 4)) + 543}${bkkYmdOf(r.remind_at).slice(4)}`)}</span></li>`).join('');
+  x.remindClear.hidden = rem.length === 0;
+  const ticks = loadDocTicks();
+  x.docsTitle.hidden = g.documents.length === 0;
+  x.docs.innerHTML = g.documents.map((doc) => `<li><label class="tax-doc"><input type="checkbox" data-doc="${doc.key}"${ticks[doc.key] ? ' checked' : ''} /><span>${escapeHtml(doc.label)}</span></label></li>`).join('');
+  x.steps.innerHTML = g.steps.map((st) => `<li><strong>${escapeHtml(st.title)}</strong><span>${escapeHtml(st.body)}</span></li>`).join('');
+  const line = (label, value) => `<div class="tax-line"><span>${escapeHtml(label)}</span><span>${value}</span></div>`;
+  x.enter.innerHTML = [
+    '<h4 class="tax-enter-head">Income</h4>',
+    ...g.enter.incomes.map((i) => line(`${i.type} ${i.label}`, `${taxBaht(i.amount)}${i.withheld ? ` (withheld ${taxBaht(i.withheld)})` : ''}`)),
+    '<h4 class="tax-enter-head">Deductions</h4>',
+    ...g.enter.deductions.map((a) => line(a.label, taxBaht(a.amount))),
+    '<h4 class="tax-enter-head">Result</h4>',
+    line('Tax', taxBaht(g.enter.taxDue)),
+    line('Tax withheld', taxBaht(g.enter.withheld)),
+    line(g.enter.balance < 0 ? 'Refund' : 'To pay', taxBaht(Math.abs(g.enter.balance))),
+  ].join('');
+}
+
+async function handleTaxReminders(clear = false) {
+  x.remind.disabled = true;
+  setAiStatus(x.remindStatus, 'working', clear ? 'Removing…' : 'Setting reminders…');
+  try {
+    applyTaxState(await apiRequest(`${taxBase()}/reminders`, { method: clear ? 'DELETE' : 'POST' }));
+    setAiStatus(x.remindStatus, 'done', clear ? 'Reminders removed.' : 'Done. The bot will remind you on LINE, and they show under Tasks.');
+  } catch (error) {
+    setAiStatus(x.remindStatus, 'error', plainError(error));
+  } finally {
+    x.remind.disabled = false;
+  }
 }
 
 // ---- Profile sheet ----
@@ -568,6 +659,16 @@ x.deductions.addEventListener('click', (e) => {
   if (b && !b.disabled) openTaxDeduction(b.dataset.deduction);
 });
 x.marital.addEventListener('change', syncSpouseRow);
+x.plan.addEventListener('click', (e) => { const b = e.target.closest('[data-deduction]'); if (b) openTaxDeduction(b.dataset.deduction); });
+x.remind.addEventListener('click', () => handleTaxReminders(false));
+x.remindClear.addEventListener('click', () => handleTaxReminders(true));
+x.docs.addEventListener('change', (e) => {
+  const box = e.target.closest('[data-doc]');
+  if (!box) return;
+  const ticks = loadDocTicks();
+  ticks[box.dataset.doc] = box.checked;
+  saveDocTicks(ticks);
+});
 x.addChild.addEventListener('click', () => x.children.insertAdjacentHTML('beforeend', childRow()));
 x.children.addEventListener('click', (e) => { const b = e.target.closest('.tax-child-remove'); if (b) b.closest('.tax-child').remove(); });
 x.profileForm.addEventListener('submit', saveTaxProfile);
