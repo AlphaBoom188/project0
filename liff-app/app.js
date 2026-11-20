@@ -68,6 +68,7 @@ const el = {
   navTabs: Array.from(document.querySelectorAll('.nav-tab')),
   tabPanels: {
     home: document.getElementById('tab-home'),
+    tasks: document.getElementById('tab-tasks'),
     transactions: document.getElementById('tab-transactions'),
     budgets: document.getElementById('tab-budgets'),
     networth: document.getElementById('tab-networth'),
@@ -740,12 +741,14 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () 
 // visit this session resolves immediately instead of re-fetching.
 const TAB_LOADERS = {
   home: loadHomeTab,
+  tasks: () => loadTasksTab(), // tasks.js
   transactions: loadTransactionsTab,
   budgets: loadBudgetsTab,
   networth: loadNetWorthTab,
   settings: loadSettingsTab,
 };
 
+let currentTab = 'home';
 function switchTab(tabName) {
   for (const [name, panel] of Object.entries(el.tabPanels)) {
     panel.hidden = name !== tabName;
@@ -754,8 +757,10 @@ function switchTab(tabName) {
     button.classList.toggle('active', button.dataset.tab === tabName);
   }
   el.tabContent.scrollTop = 0;
+  currentTab = tabName;
   TAB_LOADERS[tabName]().catch((error) => showError(error.message));
   el.fabAdd.hidden = tabName === 'settings';
+  el.fabAdd.setAttribute('aria-label', tabName === 'tasks' ? 'Add reminder or note' : 'Add expense');
 }
 
 // ---- Dashboard tab ----
@@ -3918,6 +3923,7 @@ async function loadSettingsTab() {
   el.settingEmail.value = currentUser.email || '';
   renderPaymentDetails();
   renderGoogleConnectState();
+  renderCalendarSettings(); // tasks.js
 }
 
 // LINE Login is still the only identity/auth model (Phase 2A) -- this is NOT
@@ -4297,7 +4303,7 @@ for (const button of el.navTabs) {
   button.addEventListener('click', () => switchTab(button.dataset.tab));
 }
 
-el.fabAdd.addEventListener('click', openAddExpenseModal);
+el.fabAdd.addEventListener('click', () => (currentTab === 'tasks' ? openTaskModal() : openAddExpenseModal()));
 el.cancelAddExpense.addEventListener('click', closeAddExpenseModal);
 el.addExpenseForm.addEventListener('submit', handleAddExpenseSubmit);
 el.fieldReceiptImage.addEventListener('change', handleReceiptFileChange);

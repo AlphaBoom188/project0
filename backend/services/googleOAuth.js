@@ -74,4 +74,4 @@ async function exchangeCodeForVerifiedEmail(code) {
   return userInfo.email;
 }
 
-module.exports = { buildAuthUrl, exchangeCodeForVerifiedEmail };
+module.exports = { buildAuthUrl, exchangeCodeForVerifiedEmail, requireConfig };

@@ -11,6 +11,7 @@ const { toCents, fromCents, distributeCents } = require('./billSplit');
 // Anything else is ignored silently: "see you at 7" never becomes an expense.
 const COMMANDS = {
   remind: ['remind', 'bills', 'balance', 'balances', 'summary', 'ทวง', 'ทวงเงิน', 'บิล', 'ยอด', 'ยอดค้าง', 'สรุป'],
+  reminders: ['reminders', 'รายการเตือน', 'เตือนอะไรบ้าง'],
   leaderboard: ['rank', 'ranking', 'leaderboard', 'อันดับ', 'ตารางคะแนน'],
   paid: ['paid', 'settle', 'จ่ายแล้ว', 'เคลียร์', 'คืนเงิน'],
   undo: ['undo', 'cancel', 'ยกเลิก'],

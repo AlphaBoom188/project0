@@ -110,7 +110,7 @@ async function cleanup() {
 
   // 16px controls (iOS focus-zoom)
   const sizes = await page.$$eval('input:not([type=file]):not([type=checkbox]), select', (els) => [...new Set(els.map((e) => getComputedStyle(e).fontSize))]);
-  assert(sizes.length === 1 && sizes[0] === '16px', `every input/select is 16px (got ${JSON.stringify(sizes)})`);
+  assert(sizes.length > 0 && sizes.every((x) => parseFloat(x) >= 16), `every input/select is at least 16px (iOS zoom) (got ${JSON.stringify(sizes)})`);
 
   // Budgets tab: warn vs over
   await page.click('.nav-tab[data-tab="budgets"]');

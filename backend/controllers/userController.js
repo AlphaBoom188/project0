@@ -229,6 +229,12 @@ const userController = {
         }
         return removed;
       };
+      // Revoke Google Calendar access on Google's side before the token goes.
+      try {
+        await require('../services/googleCalendar').unlinkCalendar(line_user_id);
+      } catch (calendarError) {
+        console.warn(`[gcal] unlink on delete failed (${calendarError.message})`);
+      }
       const thumbnails = await removeFolder(BUCKET);
       await removeFolder(SLIP_BUCKET);
       // Slips other members sent for bills this user collected: those bills

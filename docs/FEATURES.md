@@ -636,6 +636,31 @@ Edge cases:
 - `openai/voice_message`: now 7, adding the endpoint with the real Thai m4a.
 - `liff/voice_entry` (19). `getUserMedia` hangs in headless Chrome on macOS even with `--use-fake-device-for-media-stream`, so the page gets a WebAudio-tone MediaStream through an init script. The real `MediaRecorder` records it, and the voice endpoint is stubbed.
 
+### Reminders, To-dos, Notes and Google Calendar (2026-11-20, migration 020)
+
+Modelled on the owner's Abdul screenshots. Owner decisions (2026-11-20): build before Tax Phase 1; follow-ups only for important reminders; chat creation, a Tasks tab, repeats and no-time to-dos, group reminders, notes and read-only Google Calendar all in scope.
+
+- **Model** (`reminders`): `remind_at` is the current occurrence (NULL = a to-do with no time); `anchor_at` is the first occurrence of a repeating one (time of day, weekday, day of month); `next_fire_at` is the next push (the occurrence, a follow-up or a snooze); `fire_count` counts pushes for this occurrence. Status is only `open`/`done`: Stop just silences the current occurrence.
+- **Scheduling** (`services/reminderMath.js`, pure, Bangkok wall clock):
+  - Repeats: daily, weekdays, weekly, monthly. Monthly clamps to short months without drifting (31 Jan -> 28 Feb -> 31 Mar), because every occurrence is computed from the anchor.
+  - Follow-ups, minutes after the occurrence: Normal none, Important 30 and 90 (09:00 -> 09:30 -> 10:30, as in the screenshots), Must not miss 15, 45, 90 and 180. They're time-based, so a late job run or a snooze skips follow-ups already in the past.
+  - Done on a repeating reminder moves it to the next occurrence (done early = skip this one). Reopen re-arms a future one-off.
+  - A one-off more than a minute in the past is refused on create.
+- **Dispatch** (`jobs/reminderDispatch.js`): every minute. Each due row is advanced with an optimistic update on `next_fire_at` before the push, so two server instances can't push the same reminder twice and a failing push isn't retried in a loop. Reminders ignore the notifications toggle (the user asked for them). Pushes carry Done / Snooze 15 min / Stop reminding quick replies (Stop only for important or repeating ones).
+- **Chat** (`controllers/lineReminderHandler.js`):
+  - 1:1: a message matching a keyword gate (เตือน, อย่าลืม, นัด, ต้องทำ, remind, todo...) goes to `services/reminderParser.js` (gpt-4o-mini extracts title/date/time/repeat/importance/category; reminderMath turns them into an instant). A Confirm/Cancel card follows. If the model says it isn't a reminder, the text carries on to the expense parser, so "นัดกินข้าว 300" still logs an expense. Voice uses the same path. The gate means "กาแฟ 120" never costs a reminder parse.
+  - "note ..." / "จด ..." saves a note for today without AI. "reminders" / "todo" / "เตือน" lists what's coming.
+  - Groups: "เตือน ..." / "remind ..." (prefix plus more text; "remind" alone is still the bills digest) creates the reminder at once, @mentioning whoever the message mentions, with a Cancel quick reply for its creator. "reminders" lists the group's. The creator and the mentioned people can tap Done / Snooze / Stop; only the creator cancels.
+  - Rate limit: the shared bot text budget (60 per 10 minutes).
+- **API:** `/api/reminders/:u` (window of at most 62 days; returns open reminders, ones done in the window, and every occurrence in the window with repeats expanded), edit/delete (creator only; mentioned people get 404 on edit and 403 on delete), and `/done|snooze|stop|reopen`. `/api/notes/:u`.
+- **Tasks tab** (`liff-app/tasks.js`, second tab; "Transactions" became "History" in the nav so six labels fit at 360px):
+  - Header date, a Mon-Sun week strip with dots, a "Set: Repeating N, Upcoming N" row that opens the Everything-you've-set sheet (Upcoming / Repeating / No time, plus Done recently).
+  - A day timeline of occurrences and calendar events with a Now line on today, to-dos, and notes (pinned notes show on every day). A month sheet has dots for reminders, notes and events.
+  - The Add button on this tab opens the reminder/note sheet: presets (In 1 hour, This evening 18:00 until 17:30, Tomorrow 09:00), Once/Repeat, date and time, "No time (to-do)", category chips (Work, Finance, Health, Client, Order, Other) and the three importance cards with what each does.
+  - Edits only send the time when it changed (re-sending a past time is refused). Repeating reminders show a checkbox only on their current occurrence.
+- **Google Calendar** (`services/googleCalendar.js`): its own consent with scope `calendar.events.readonly`, offline access, same OAuth client and redirect URI as the export email; the callback tells them apart by the signed state `gcal:<id>`. The refresh token is AES-256-GCM encrypted (key from `GCAL_TOKEN_KEY`, else derived from the service role key). Events (title and times only) are read on demand and never stored. `invalid_grant` clears the link. Disconnect and account deletion revoke the token with Google. Until the Google OAuth consent screen is verified for this scope, only the project's test users can connect.
+- **Verified:** `api/reminder_math` (42), `api/reminders_api` (43, including the dispatch race), `api/line_reminders` (30, 1:1 and group with stubs), `liff/tasks_tab` (36), and `openai/reminder_parser` (7, paid) on six Thai and English phrasings.
+
 ### LINE Group Bills (2026-11-19, migration 019)
 
 Replaces the running tab below (owner: "per-bill only"), modelled on the owner's KhunThong screenshots.

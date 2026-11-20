@@ -17,7 +17,7 @@ npm start              # port 3000; also serves the LIFF app at /liff and runs t
 - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`: the backend is trusted and bypasses RLS, so **every query must scope by `line_user_id`** itself. Never ship this key to a client.
 - `OPENAI_API_KEY` (with billing): receipt OCR, text/voice expense parsing, auto-categorization, statement categories, voice fallback.
 - `LINE_MESSAGING_CHANNEL_SECRET` + `LINE_MESSAGING_CHANNEL_ACCESS_TOKEN` (bot), `LINE_LOGIN_*` (iOS login), `LIFF_ID`.
-- Optional: `TYPHOON_API_KEY` (Thai speech-to-text, else OpenAI); `GOOGLE_OAUTH_*` (verified export email, else 501); `APPS_SCRIPT_EMAIL_WEBHOOK_URL` + `APPS_SCRIPT_SHARED_SECRET` (CSV email relay, see `docs/APPS_SCRIPT_EMAIL_RELAY.md`, else 501).
+- Optional: `TYPHOON_API_KEY` (Thai speech-to-text, else OpenAI); `GOOGLE_OAUTH_*` (verified export email and read-only Google Calendar, else 501; `GCAL_TOKEN_KEY` optionally keys the calendar-token encryption); `APPS_SCRIPT_EMAIL_WEBHOOK_URL` + `APPS_SCRIPT_SHARED_SECRET` (CSV email relay, see `docs/APPS_SCRIPT_EMAIL_RELAY.md`, else 501).
 - `DISABLE_CRON=1` for any extra server instance (below). It also skips the ops agent there.
 - `OWNER_LINE_USER_ID` (who gets production alerts on LINE); optional `ANTHROPIC_API_KEY` (adds a Claude diagnosis to alerts; needs `@anthropic-ai/sdk`); `OPS_AGENT=off`; `CORS_ORIGINS`.
 - `AUTH_TEST_BYPASS=false` removes the local `test_` bypass, e.g. behind a proxy that doesn't add `X-Forwarded-For`.
@@ -64,7 +64,7 @@ npm run test:openai       # tests/openai/: real OpenAI calls (a few cents)
   - The iOS app stores the LINE access token from `/line/callback` in the Keychain (`KeychainStore.swift`) and sends it on every request. On a 401 it logs out to the login screen.
 - **Ops agent** (`services/opsAgent.js`, migration 017): `console.error` is wrapped, so every logged error is recorded in `error_events` without changes at call sites. A 5-minute watchdog alerts the owner on LINE about big problems (6-hour cooldown per problem) and quietly handles small ones. Run scheduled jobs through `opsAgent.runOnce(job, slot, fn)` (the `job_runs` primary key makes each slot run once). Log failures with `console.error` so they're captured, and prefix a job's errors with `job:` to mark them critical.
 - **Startup and shutdown:** required settings are checked at boot (exit with a clear message). SIGTERM/SIGINT stops cron, finishes in-flight requests and flushes the error buffer. Security headers are on, and CORS is off unless `CORS_ORIGINS` is set.
-- **Rate limits** (`services/rateLimit.js`, in memory, per user, per 10 minutes) on everything that spends money: receipt OCR and bill item scans plus bot photos (30), voice parse plus bot voice (30), bot free text (60), statement preview (30). Over the limit, REST returns 429 `rate_limited` with `Retry-After`, and the bot replies asking the user to wait. Add a limit to any new paid endpoint.
+- **Rate limits** (`services/rateLimit.js`, in memory, per user, per 10 minutes) on everything that spends money: receipt OCR and bill item scans plus bot photos (30), voice parse plus bot voice (30), bot free text including reminder parsing in 1:1 and groups (60), statement preview (30). Over the limit, REST returns 429 `rate_limited` with `Retry-After`, and the bot replies asking the user to wait. Add a limit to any new paid endpoint.
 - **CSV exports** prefix text starting with `= + - @` (or a tab/CR) with `'`, which stops formula injection from statement merchant names or group members' descriptions.
 - **OAuth `state`** that round-trips a user id must be signed (`lineAuth.signState`/`verifyState`, 10 min), as the Google export-email link is. A bare id lets someone attach their Google email to another account.
 - **IDs and errors.** Every router with an id param registers `router.param(name, requireUuidParam(label))` (`services/uuid.js`), so a malformed id gets `400 "Invalid <label> id"`. Update handlers map PostgREST `PGRST116` to `404 "<X> not found"`. Deletes of an unknown id succeed silently.
@@ -96,15 +96,17 @@ backend/
   routes/               one file per resource (+ router.param id checks)
   controllers/          user, category, transaction, line (login), lineWebhook, lineGroupHandler,
                         ocr, recurring, account, bill, portfolio, budgetEvent, google,
-                        statement, group, voice
+                        statement, group, voice, reminder (+ notes), calendar, lineReminderHandler
   services/             shared logic; pure modules have no DB and have their own tests:
                         billSplit, lotMath, performanceMath, dividendMath, goalMath,
-                        groupSplitMath, groupBillMath, groupBillFlex, promptpay, statementParser, payWindow, bangkokDay
+                        groupSplitMath, groupBillMath, groupBillFlex, promptpay, statementParser, payWindow, bangkokDay,
+                        reminderMath
   jobs/                 dailyDigest (21:00), recurringTransactions (00:05),
-                        activityReminders (12:00, 20:00), payWindowReminders (09:00), groupBillReminders (19:00), all Bangkok time
-  supabase/migrations/  001-019 (run in order in the Supabase SQL Editor)
+                        activityReminders (12:00, 20:00), payWindowReminders (09:00), groupBillReminders (19:00), all Bangkok time;
+                        reminderDispatch (every minute)
+  supabase/migrations/  001-020 (run in order in the Supabase SQL Editor)
   tests/                see Tests
-liff-app/               index.html, app.js, style.css; bill.html/bill.js = public shared-bill page;
+liff-app/               index.html, app.js, style.css, tasks.js (Tasks tab); bill.html/bill.js = public shared-bill page;
                         privacy(-th).html, terms(-th).html + legal.css = public legal pages (drafts)
 ios-app/                SwiftUI app (LINE Login, dashboard, receipt scan), largely untouched since Phase 2
 docs/                   FEATURES.md (detailed notes), PRODUCTION.md (ops), PRD, specs, Apps Script relay
@@ -129,6 +131,9 @@ deploy/macos/           LaunchAgents for self-hosting (backend, ngrok tunnel, ke
 - **Event budgets:** `GET|POST /budget-events/:u?month=YYYY-MM-01`, `PUT|DELETE /budget-events/:u/:event_id`.
 - **Statements:** `POST /statements/:u/parse` (writes nothing), `POST /statements/:u/import`, `POST /statements/:u/undo`.
 - **Groups:** `GET /groups/:u`, `GET /groups/:u/:group_id`, `GET /groups/:u/bills/:bill_id`, `POST /groups/:u/bills/:bill_id/slip`, `POST /groups/:u/bills/:bill_id/shares/:member_id/confirm|reject`, `POST /groups/:u/bills/:bill_id/cancel` (bills are created in the chat). Payment details: `PUT /users/:u/payment-details`.
+- **Reminders:** `GET|POST /reminders/:u` (GET `from`/`to`, at most 62 days: open reminders, ones done in the window, occurrences with repeats expanded), `PUT|DELETE /reminders/:u/:reminder_id` (creator only), `POST /reminders/:u/:reminder_id/done|snooze|stop|reopen`.
+- **Notes:** `GET|POST /notes/:u` (GET `from`/`to` as YYYY-MM-DD), `PUT|DELETE /notes/:u/:note_id`.
+- **Calendar:** `GET /calendar/:u/status`, `GET /calendar/:u/login-url`, `GET /calendar/:u/events?from&to`, `DELETE /calendar/:u` (callback shares `/google/callback`).
 - **Voice:** `POST /voice/:u/parse` (writes nothing).
 - **OCR:** `POST /ocr/scan/:u`.
 - **Google:** `GET /google/login-url/:u`, `GET /google/callback` (verifies the export email only; not a login).
@@ -155,6 +160,7 @@ deploy/macos/           LaunchAgents for self-hosting (backend, ngrok tunnel, ke
 | 017 | Ops: `error_events`, `job_runs`, `ops_alerts`; index `transactions(line_user_id, transaction_date DESC)` |
 | 018 | `users.group_ledger_copies` (consent for group shares in personal ledgers) |
 | 019 | Group bills: `group_expenses.status/closed_at`, share `paid_at/paid_method/slip_*`, `users.promptpay_id/bank_*`, private `payment-slips` bucket |
+| 020 | `reminders`, `notes`, `users.gcal_*` (encrypted Google Calendar token) |
 
 ## Features (details in `docs/FEATURES.md`)
 
@@ -168,9 +174,10 @@ deploy/macos/           LaunchAgents for self-hosting (backend, ngrok tunnel, ke
   - "summary"/"สรุป" replies with the current cycle's totals.
   - Voice is transcribed by Typhoon ASR when `TYPHOON_API_KEY` is set, else OpenAI `gpt-4o-mini-transcribe`, then parsed like text. The card's first row shows what was heard.
 - **LINE group bills** (KhunThong-style, per bill; owner decision 2026-11-19): `+ข้าว 600` starts a bill split equally among joined members (or `+taxi 300 @Ann`), posted as a Flex card plus a textV2 @mention of those who owe. Pay/See who paid open the LIFF app (`?groupbill=<id>`, `?group=<id>`): PromptPay QR (`services/promptpay.js`) or bank details, then a slip the owner confirms or rejects (or marks paid / cancels). The group gets "X paid" lines, a fully-paid card, a cancelled card, `bills` (reminder digest, also pushed 19:00 daily for bills 20h+ old; `GROUP_REMINDERS=off`), `rank` (fastest payers this month) and `undo` (cancel your last open bill). Pushes count against the OA message quota. Opening the app from a bill link (`via: 'group_bill'`) doesn't count as using the app. A share is copied into a member's personal ledger only if they use the app themselves and haven't turned it off (`users.group_ledger_copies` TRUE: set by `upsertUser` from the LIFF/iOS/1:1-bot paths, never from a group, and never overriding an explicit FALSE; Settings toggle). Group-only members are tracked on the group's bills only. The LIFF Groups card on Home shows what you owe / are owed.
+- **Reminders, to-dos, notes** (Abdul-style; owner decision 2026-11-20): set by chat ("พรุ่งนี้ 9 โมง เตือนประชุม", typed or spoken -> Confirm card; "note ..." / "จด ..." saves a note), in the LIFF Tasks tab, or in a group ("เตือน ... @Ann"). Repeats daily/weekdays/weekly/monthly; to-dos have no time. Pushes come from a minute job with Done / Snooze 15 min / Stop quick replies; Important and Must-not-miss reminders follow up (+30/+90 min; +15/+45/+90/+180) until Done. Optional read-only Google Calendar events on the timeline. Reminder pushes ignore the notifications toggle and count against the OA quota.
 - **Notifications:** budget-crossing alerts, event-budget alerts at 80% and 100%, a 21:00 daily digest, 12:00/20:00 activity nudges, and pay-window due/overdue reminders. All respect `notifications_enabled`.
 - **LIFF app:**
-  - Tabs: Home / Transactions / Budgets / Net Worth / Settings.
+  - Tabs: Home / Tasks / History (transactions) / Budgets / Net Worth / Settings. The floating Add button adds a reminder or note on Tasks.
   - Floating Add button: receipt scan and a Speak (mic) button, both of which fill the form for review.
   - Day-grouped timeline, search, account filter, logging streak.
   - Dark/light themes; English labels.

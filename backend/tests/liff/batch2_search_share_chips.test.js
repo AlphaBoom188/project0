@@ -151,7 +151,7 @@ const descs = (page) => page.$$eval('#txn-full-list .transaction-description', (
   assert(items[0].participant_index === null, `collectItems sends null for Shared (got ${JSON.stringify(items)})`);
 
   const sizes = await page.$$eval('input:not([type=file]):not([type=checkbox]), select', (els) => [...new Set(els.map((e) => getComputedStyle(e).fontSize))]);
-  assert(sizes.length === 1 && sizes[0] === '16px', `all inputs still 16px incl. search (got ${JSON.stringify(sizes)})`);
+  assert(sizes.length > 0 && sizes.every((x) => parseFloat(x) >= 16), `all inputs at least 16px incl. search (iOS zoom) (got ${JSON.stringify(sizes)})`);
   assert(errors.length === 0, `no page JS errors (got ${JSON.stringify(errors)})`);
 
   await page.emulateMedia({ colorScheme: 'dark' });

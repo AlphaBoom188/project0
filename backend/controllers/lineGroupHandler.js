@@ -12,7 +12,9 @@
 const { replyText, replyMessages } = require('../services/lineMessagingClient');
 const ledger = require('../services/groupLedger');
 const notify = require('../services/groupBillNotify');
-const { parseGroupMessage } = require('../services/groupSplitMath');
+const { parseGroupMessage, stripMentions } = require('../services/groupSplitMath');
+const reminders = require('./lineReminderHandler');
+const { allow, LIMITS } = require('../services/rateLimit');
 const { cancelledCard } = require('../services/groupBillFlex');
 
 const baht = (n) => `฿${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -20,7 +22,8 @@ const baht = (n) => `฿${Number(n).toLocaleString('en-US', { minimumFractionDig
 const HELP = [
   'I collect shared bills in this group.',
   'Paid for everyone? Send "+ข้าว 600" (split with everyone here) or "+taxi 300 @Ann @Bo" (only those mentioned). I post a bill card; each person taps Pay, transfers by PromptPay or bank, and sends the slip. You confirm it in the app.',
-  'Commands: "bills" (who still owes), "rank" (fastest payers this month), "undo" (cancel your last open bill), "members", "join".',
+  'Reminders: "เตือน พรุ่งนี้ 9 โมง ประชุม @Ann" (or "remind ...") and I\'ll remind the people you mention here.',
+  'Commands: "bills" (who still owes), "reminders" (what\'s set here), "rank" (fastest payers this month), "undo" (cancel your last open bill), "members", "join".',
   'Everyone who sends a message here is included in new bills.',
 ].join('\n');
 
@@ -102,6 +105,14 @@ async function handleGroupMessage(event) {
   if (event.message.type !== 'text') return;
 
   const mentionees = (event.message.mention && event.message.mention.mentionees) || [];
+  const plain = stripMentions(event.message.text || '', mentionees);
+  if (reminders.isGroupReminder(plain)) {
+    const { ids } = await resolveMentions(event, group, sourceType);
+    return reminders.handleGroupReminder(event, {
+      groupId, userId, plain, mentionIds: ids,
+      overLimit: () => !allow('text', userId, LIMITS.text.max, LIMITS.text.windowMs),
+    });
+  }
   const parsed = parseGroupMessage(event.message.text, mentionees);
   if (!parsed) return;
   if (parsed.kind === 'invalid') {
@@ -111,6 +122,7 @@ async function handleGroupMessage(event) {
 
   switch (parsed.command) {
     case 'remind': return handleRemind(event, group);
+    case 'reminders': return reminders.handleGroupList(event, groupId);
     case 'leaderboard': return replyMessages(event.replyToken, [await notify.leaderboardMessage(group.group_id)]);
     case 'paid': return replyText(event.replyToken, 'To pay a bill, tap Pay on its card (or send "bills"), transfer, then send your slip in the app. The person who paid confirms it, and I post it here.');
     case 'undo': return handleUndo(event, group, userId);

@@ -1,6 +1,7 @@
 const { verifyState } = require('../services/lineAuth');
 const supabase = require('../config/supabase');
 const { buildAuthUrl, exchangeCodeForVerifiedEmail } = require('../services/googleOAuth');
+const gcal = require('../services/googleCalendar');
 
 const escapeHtml = (str) => String(str).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
@@ -37,10 +38,16 @@ const googleController = {
       if (!code || !state) {
         return res.status(400).send(htmlPage('Something went wrong', 'Missing code or state. You can close this tab and try again.'));
       }
-      const lineUserId = verifyState(state);
-      if (!lineUserId) {
+      const stateValue = verifyState(state);
+      if (!stateValue) {
         return res.status(400).send(htmlPage('Link expired', 'This sign-in link is invalid or has expired. Go back to the app and tap Connect Google again.'));
       }
+      // Calendar consent (services/googleCalendar.js) shares this redirect URI.
+      if (stateValue.startsWith('gcal:')) {
+        const email = await gcal.linkCalendar(stateValue.slice(5), code);
+        return res.send(htmlPage('Google Calendar connected', `${email ? `${email}: your` : 'Your'} events now show under Tasks in the app (read-only). You can close this tab.`));
+      }
+      const lineUserId = stateValue;
 
       const email = await exchangeCodeForVerifiedEmail(code);
 

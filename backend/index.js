@@ -39,11 +39,15 @@ const statementRoutes = require('./routes/statementRoutes');
 const groupRoutes = require('./routes/groupRoutes');
 const voiceRoutes = require('./routes/voiceRoutes');
 const googleRoutes = require('./routes/googleRoutes');
+const reminderRoutes = require('./routes/reminderRoutes');
+const noteRoutes = require('./routes/noteRoutes');
+const calendarRoutes = require('./routes/calendarRoutes');
 const { startDailyDigestJob } = require('./jobs/dailyDigest');
 const { startRecurringTransactionsJob } = require('./jobs/recurringTransactions');
 const { startActivityReminderJob } = require('./jobs/activityReminders');
 const { startPayWindowReminderJob } = require('./jobs/payWindowReminders');
 const { startGroupBillReminderJob } = require('./jobs/groupBillReminders');
+const { startReminderDispatchJob } = require('./jobs/reminderDispatch');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -106,6 +110,9 @@ app.use('/api/statements', statementRoutes);
 app.use('/api/groups', groupRoutes);
 app.use('/api/voice', voiceRoutes);
 app.use('/api/google', googleRoutes);
+app.use('/api/reminders', reminderRoutes);
+app.use('/api/notes', noteRoutes);
+app.use('/api/calendar', calendarRoutes);
 
 // LIFF (LINE MINI App) -- static files, plus a tiny dynamic script so the LIFF ID
 // lives in .env like every other credential rather than being hardcoded into a
@@ -128,6 +135,7 @@ const server = app.listen(PORT, () => {
   startActivityReminderJob();
   startPayWindowReminderJob();
   startGroupBillReminderJob();
+  startReminderDispatchJob();
   if (process.env.OPS_AGENT !== 'off') {
     // Watchdog: every 5 minutes, one run per slot.
     cron.schedule('*/5 * * * *', () => {

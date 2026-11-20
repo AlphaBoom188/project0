@@ -6,6 +6,7 @@ const { findDuplicateBySlipHash, extractReceiptFromImage } = require('../service
 const { parseExpenseText } = require('../services/textExpenseParser');
 const { transcribeVoice } = require('../services/voiceTranscription');
 const { handleGroupEvent } = require('./lineGroupHandler');
+const reminders = require('./lineReminderHandler');
 const { allow, LIMITS } = require('../services/rateLimit');
 
 const RATE_LIMITED_REPLY = "You're sending a lot right now. Please wait a few minutes and try again.";
@@ -74,7 +75,7 @@ async function handleFollow(event) {
 
   await replyText(
     event.replyToken,
-    "Thanks for adding me! Send a photo of a receipt, or just text me something like \"coffee 120\", and I'll log it as an expense. Text \"summary\" anytime for your current period's totals."
+    "Thanks for adding me! Send a photo of a receipt, or just text me something like \"coffee 120\", and I'll log it as an expense. I can remind you too: \"พรุ่งนี้ 9 โมง เตือนประชุม\". Text \"summary\" anytime for your current period's totals, or \"reminders\" for what's coming up."
   );
   log('follow: reply sent', lineUserId);
 }
@@ -174,6 +175,9 @@ async function handleExpenseText(event, lineUserId, text, { heard = null } = {})
     await replyText(event.replyToken, RATE_LIMITED_REPLY);
     return;
   }
+  // Reminders, to-dos and notes first (controllers/lineReminderHandler.js);
+  // anything that isn't one carries on as an expense.
+  if (await reminders.handlePersonalText(event, lineUserId, text, { heard })) return;
   const parsed = await parseExpenseText(lineUserId, text);
   log('text: parsed', lineUserId, parsed.isExpense ? 'expense' : 'not an expense');
 
@@ -285,6 +289,7 @@ async function handleImageMessage(event) {
 
 async function handlePostback(event) {
   const params = new URLSearchParams(event.postback.data);
+  if (params.get('rem')) return reminders.handlePostback(event, params);
   const action = params.get('action');
   const token = params.get('token');
   log('postback: start', action, token);
@@ -304,6 +309,7 @@ async function handlePostback(event) {
     await replyText(event.replyToken, 'This confirmation has expired. Please send it again.');
     return;
   }
+  if (data.kind === 'reminder') return reminders.confirmPending(event, token, data);
 
   try {
     await createTransaction({
@@ -337,6 +343,10 @@ async function handleEvent(event) {
   // Group and room chats are the split tracker's; never the 1:1 flows below,
   // which would try to parse (and answer) every message in the chat.
   const sourceType = event.source && event.source.type;
+  // Reminder buttons (Done / Snooze / Stop / Cancel) work in any chat.
+  if (event.type === 'postback' && /(^|&)rem=/.test(event.postback.data || '')) {
+    return reminders.handlePostback(event, new URLSearchParams(event.postback.data));
+  }
   if (sourceType === 'group' || sourceType === 'room') return handleGroupEvent(event);
   switch (event.type) {
     case 'follow':

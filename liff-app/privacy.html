@@ -33,10 +33,12 @@
       <tr><td><strong>Receipt photos</strong> you scan</td><td>To read the amount, date and shop. A small thumbnail is kept with the transaction only if "Save receipt thumbnails" is on (Settings); the full photo is not stored.</td></tr>
       <tr><td><strong>Voice messages and recordings</strong></td><td>Converted to text to fill in an expense. The audio is not stored.</td></tr>
       <tr><td><strong>Bank statements</strong> you import</td><td>The PDF and its password are opened on your phone and never sent to us. Only the text of the transaction lines is sent, to create the transactions you choose to import.</td></tr>
-      <tr><td><strong>Messages to the bot</strong> (one-to-one)</td><td>To understand expenses like "coffee 120" and commands like "summary".</td></tr>
+      <tr><td><strong>Messages to the bot</strong> (one-to-one)</td><td>To understand expenses like "coffee 120", reminders like "remind me at 9 tomorrow", notes, and commands like "summary".</td></tr>
       <tr><td><strong>LINE group activity</strong> (only in groups where the bot was added)</td><td>Group members' LINE user IDs and display names, the group's name, and the bills and commands addressed to the bot, to track who has paid each shared bill. Ordinary group conversation is not stored.</td></tr>
       <tr><td><strong>Payment details</strong> (optional): your PromptPay ID, bank name, account number and account name</td><td>So members of your LINE groups who owe you on a bill can pay you. Shown only on bills you collect, only to members who still owe on them.</td></tr>
       <tr><td><strong>Payment slips</strong> you send for a group bill</td><td>So the person you paid can check and confirm the payment. Stored privately and shown only to you and that person.</td></tr>
+      <tr><td><strong>Reminders, to-dos and notes</strong> you set in the app or by messaging the bot (title, details, time, repeat, category, importance; note text)</td><td>To remind you at the time you choose and show them under Tasks. A reminder you set in a LINE group, and who it mentions, is visible to that group.</td></tr>
+      <tr><td><strong>Google Calendar</strong> (optional, read-only)</td><td>If you connect it, we keep an encrypted access token and your Google email, and read event titles and times from your primary calendar only when you open Tasks, to show them there. Events are not stored and we never change your calendar.</td></tr>
       <tr><td><strong>Email address</strong> (optional), including one verified with Google</td><td>Only to send CSV exports you request.</td></tr>
       <tr><td><strong>Technical data:</strong> error reports and request logs</td><td>To keep the service working and secure. Logs record events and errors, not the content of your messages or receipts.</td></tr>
       <tr><td><strong>Settings on your phone</strong> (theme, recent statement imports)</td><td>Stored only in your phone's browser storage for convenience.</td></tr>
@@ -48,20 +50,21 @@
     <ul>
       <li><strong>LY Corporation (LINE)</strong>: sign-in, the bot, and notifications.</li>
       <li><strong>Supabase</strong>: database and file storage ([REGION]).</li>
-      <li><strong>OpenAI</strong>: reading receipts, converting voice to text, understanding typed expenses, and suggesting categories for imported statement lines. Under OpenAI's API terms, data sent this way is not used to train their models by default.</li>
-      <li><strong>Google</strong>: verifying your email address (only if you connect Google) and delivering CSV exports by email.</li>
+      <li><strong>OpenAI</strong>: reading receipts, converting voice to text, understanding typed expenses and reminders, and suggesting categories for imported statement lines. Under OpenAI's API terms, data sent this way is not used to train their models by default.</li>
+      <li><strong>Google</strong>: verifying your email address (only if you connect Google), delivering CSV exports by email, and reading your calendar events (only if you connect Google Calendar).</li>
       <li><strong>Anthropic</strong>: if enabled by the operator, technical error details are sent for automated diagnosis; these are error messages with identifiers removed, not your financial records.</li>
       <li><strong>ngrok</strong>: secure tunnelling of connections to our server.</li>
       <li><strong>Market data (Yahoo Finance, CoinGecko)</strong>: only ticker symbols are sent to fetch prices; no personal data.</li>
     </ul>
-    <p>In a LINE group, other members can see the bills, amounts, names and who has paid, as shown by the bot in that group. Members who owe you on a bill see the payment details you saved, and the person you paid sees the slip you sent them. A shared-bill link can be opened by anyone you send it to; it shows that bill's title, amounts and participant names. We may also disclose data where required by Thai law.</p>
+    <p>In a LINE group, other members can see the bills, amounts, names and who has paid, as shown by the bot in that group. Members who owe you on a bill see the payment details you saved, and the person you paid sees the slip you sent them. Reminders set in a group are posted in that group and mention the people named in them. A shared-bill link can be opened by anyone you send it to; it shows that bill's title, amounts and participant names. We may also disclose data where required by Thai law.</p>
 
     <h2>4. Transfers outside Thailand</h2>
     <p>Some providers above process data outside Thailand (for example, in the United States or Singapore). We use providers that apply appropriate safeguards as required by the PDPA.</p>
 
     <h2>5. How long we keep it</h2>
     <ul>
-      <li>Your account data is kept until you delete it. <strong>Settings &rarr; Delete My Account</strong> permanently erases your transactions, categories, accounts, budgets, investments, shared bills, group memberships, payment details, payment slips and receipt thumbnails. Group bills you paid for are removed from those groups.</li>
+      <li>Your account data is kept until you delete it. <strong>Settings &rarr; Delete My Account</strong> permanently erases your transactions, categories, accounts, budgets, investments, shared bills, group memberships, payment details, payment slips, reminders, notes and receipt thumbnails, and disconnects Google Calendar (we revoke our access with Google). Group bills you paid for, and group reminders you set, are removed from those groups.</li>
+      <li>Disconnecting Google Calendar in Settings revokes our access and deletes the stored token straight away.</li>
       <li>A payment slip is deleted when the person you paid rejects it or cancels the bill; otherwise it is kept with the bill until either of you deletes your account.</li>
       <li>Error reports are kept for up to 90 days, alert history for 180 days, scheduled-job records for 30 days, and server logs for up to 30 days.</li>
       <li>Database backups, if enabled, are kept for up to [7] days and then overwritten.</li>
@@ -69,7 +72,7 @@
     </ul>
 
     <h2>6. Security</h2>
-    <p>Connections are encrypted (HTTPS). Every request for your data must carry your verified LINE sign-in. Receipt thumbnails and payment slips are stored privately and shown through short-lived links. We limit how often costly features can be used to prevent abuse. No system is perfectly secure; if a breach affects your data, we will notify you and the authorities as the PDPA requires.</p>
+    <p>Connections are encrypted (HTTPS). Every request for your data must carry your verified LINE sign-in. Receipt thumbnails and payment slips are stored privately and shown through short-lived links. The Google Calendar token is stored encrypted. We limit how often costly features can be used to prevent abuse. No system is perfectly secure; if a breach affects your data, we will notify you and the authorities as the PDPA requires.</p>
 
     <h2>7. Your rights</h2>
     <p>Under the PDPA you can ask to access or get a copy of your data, correct it, delete it, restrict or object to its use, receive it in a portable format, and withdraw consent at any time (this does not affect processing before withdrawal). You can export your transactions as CSV in the app and delete your account in Settings. For anything else, email [CONTACT EMAIL]; we will reply within 30 days. You may also complain to Thailand's Personal Data Protection Committee (PDPC).</p>

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#06c755" />
   <title>Expense Tracker</title>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=20261120" />
   <script>
     // Set data-theme before first paint to avoid a flash of the wrong theme.
     (function () {
@@ -101,6 +101,42 @@
       </section>
 
       <!-- Transactions: search, filters, OCR ingest, export -->
+      <!-- Tasks: reminders, to-dos, notes, Google Calendar (tasks.js) -->
+      <section id="tab-tasks" class="tab-panel" hidden>
+        <div class="tasks-head">
+          <div class="tasks-head-text">
+            <p class="tasks-kicker" id="tasks-kicker">Today</p>
+            <h2 class="tasks-date" id="tasks-date"></h2>
+          </div>
+          <button type="button" id="tasks-month-button" class="icon-button" aria-label="Open calendar"><span class="icon"><svg class="lucide lucide-calendar-days" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v4" /><path d="M16 2v4" /><rect width="18" height="18" x="3" y="4" rx="2" /><path d="M3 10h18" /><path d="M8 14h.01" /><path d="M12 14h.01" /><path d="M16 14h.01" /><path d="M8 18h.01" /><path d="M12 18h.01" /><path d="M16 18h.01" /></svg></span></button>
+        </div>
+        <div class="week-strip" id="week-strip"></div>
+        <button type="button" id="tasks-summary" class="tasks-summary">
+          <span class="tasks-summary-label">Set</span>
+          <span class="tasks-chip" id="tasks-summary-repeat"></span>
+          <span class="tasks-chip" id="tasks-summary-next"></span>
+          <span class="tasks-summary-chevron"><span class="icon"><svg class="lucide lucide-chevron-right" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg></span></span>
+        </button>
+        <div class="section-header-row">
+          <h2 class="section-title" id="tasks-day-title">Today</h2>
+          <span class="transaction-date" id="tasks-day-count"></span>
+        </div>
+        <p id="tasks-status" class="scan-status tasks-status" hidden></p>
+        <ul id="tasks-timeline" class="task-list"></ul>
+        <p id="tasks-empty" class="empty-state" hidden>Nothing set for this day. Tap Add, or tell the bot "พรุ่งนี้ 9 โมง เตือนประชุม".</p>
+        <div class="section-header-row" id="tasks-todo-header" hidden>
+          <h2 class="section-title">To-do</h2>
+          <span class="transaction-date" id="tasks-todo-count"></span>
+        </div>
+        <ul id="tasks-todos" class="task-list" hidden></ul>
+        <div class="section-header-row">
+          <h2 class="section-title">Notes</h2>
+          <button type="button" id="tasks-add-note" class="link-button">Add note</button>
+        </div>
+        <ul id="tasks-notes" class="task-list"></ul>
+        <p id="tasks-notes-empty" class="group-hint">No notes for this day. In LINE chat, start a message with "note" or "จด" to save one.</p>
+        <p id="tasks-calendar-hint" class="group-hint" hidden>See your Google Calendar here too: connect it in Settings.</p>
+      </section>
       <section id="tab-transactions" class="tab-panel" hidden>
         <div class="quick-actions-row">
           <button type="button" id="txn-scan-button" class="quick-action-button">
@@ -412,6 +448,14 @@
           <p id="payment-details-status" class="scan-status" hidden></p>
         </div>
 
+        <h2 class="section-title">Google Calendar</h2>
+        <div class="settings-card">
+          <p class="danger-text" id="gcal-status-text">Show your Google Calendar events under Tasks. Read-only: the app never changes your calendar or stores your events.</p>
+          <button type="button" id="gcal-connect" class="secondary-button">Connect Google Calendar</button>
+          <button type="button" id="gcal-disconnect" class="secondary-button danger-button" hidden>Disconnect</button>
+          <p id="gcal-status" class="scan-status" hidden></p>
+        </div>
+
         <h2 class="section-title">Budget Cycle</h2>
         <div class="settings-card">
           <label class="field">
@@ -444,7 +488,7 @@
           <button id="clear-history-button" class="danger-button">Clear Transaction History</button>
         </div>
         <div class="settings-card">
-          <p class="danger-text">Deletes your account and everything in it: transactions, categories, accounts, budgets, investments, shared bills, group history, payment details, payment slips and receipt images. This cannot be undone.</p>
+          <p class="danger-text">Deletes your account and everything in it: transactions, categories, accounts, budgets, investments, shared bills, group history, payment details, payment slips, reminders, notes and receipt images, and disconnects Google Calendar. This cannot be undone.</p>
           <button id="delete-account-button" class="danger-button">Delete My Account</button>
         </div>
         <p class="legal-links"><a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a><a href="terms.html" target="_blank" rel="noopener">Terms of Service</a></p>
@@ -461,9 +505,13 @@
         <span class="icon"><svg class="lucide lucide-house" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8" /><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg></span>
         <span class="nav-tab-label">Home</span>
       </button>
+      <button type="button" class="nav-tab" data-tab="tasks">
+        <span class="icon"><svg class="lucide lucide-list-todo" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="6" height="6" rx="1" /><path d="m3 17 2 2 4-4" /><path d="M13 6h8" /><path d="M13 12h8" /><path d="M13 18h8" /></svg></span>
+        <span class="nav-tab-label">Tasks</span>
+      </button>
       <button type="button" class="nav-tab" data-tab="transactions">
         <span class="icon"><svg class="lucide lucide-list" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h.01" /><path d="M3 18h.01" /><path d="M3 6h.01" /><path d="M8 12h13" /><path d="M8 18h13" /><path d="M8 6h13" /></svg></span>
-        <span class="nav-tab-label">Transactions</span>
+        <span class="nav-tab-label">History</span>
       </button>
       <button type="button" class="nav-tab" data-tab="budgets">
         <span class="icon"><svg class="lucide lucide-chart-pie" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12c.552 0 1.005-.449.95-.998a10 10 0 0 0-8.953-8.951c-.55-.055-.998.398-.998.95v8a1 1 0 0 0 1 1z" /><path d="M21.21 15.89A10 10 0 1 1 8 2.83" /></svg></span>
@@ -755,6 +803,103 @@
           <button type="submit" class="primary-button">Save</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <div id="task-modal" class="modal" hidden>
+    <div class="modal-content sheet-scroll">
+      <div class="task-kind" id="task-kind" role="tablist">
+        <button type="button" class="segment active" data-kind="reminder">Reminder</button>
+        <button type="button" class="segment" data-kind="note">Note</button>
+      </div>
+      <form id="task-form" novalidate>
+        <input type="text" id="task-title" class="task-title-input" maxlength="200" placeholder="What should I remind you about?" autocomplete="off" />
+        <textarea id="task-details" class="task-details-input" maxlength="2000" rows="2" placeholder="Details (optional)"></textarea>
+        <div class="task-when">
+          <div class="segmented" id="task-repeat-mode">
+            <button type="button" class="segment active" data-mode="once">Once</button>
+            <button type="button" class="segment" data-mode="repeat">Repeat</button>
+          </div>
+          <div class="task-presets" id="task-presets">
+            <button type="button" class="preset" data-preset="hour">In 1 hour</button>
+            <button type="button" class="preset" data-preset="evening">This evening 18:00</button>
+            <button type="button" class="preset" data-preset="tomorrow">Tomorrow 09:00</button>
+          </div>
+          <label class="field" id="task-repeat-field" hidden>
+            Repeats
+            <select id="task-repeat">
+              <option value="daily">Every day</option>
+              <option value="weekdays">Every weekday (Mon-Fri)</option>
+              <option value="weekly">Every week</option>
+              <option value="monthly">Every month</option>
+            </select>
+          </label>
+          <div class="task-when-row">
+            <label class="field"><span id="task-date-label">Date</span><input type="date" id="task-date" /></label>
+            <label class="field">Time<input type="time" id="task-time" /></label>
+          </div>
+          <button type="button" id="task-clear-time" class="link-button task-clear-time">No time (to-do)</button>
+        </div>
+        <div class="category-chips" id="task-categories" aria-label="Category"></div>
+        <div class="importance-group" id="task-importance" aria-label="How important">
+              <button type="button" class="importance-option" data-importance="0" aria-pressed="false"><span class="icon"><svg class="lucide lucide-bell" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.268 21a2 2 0 0 0 3.464 0" /><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" /></svg></span><span>Normal</span><span class="importance-dots" aria-hidden="true"><i class="on"></i><i></i><i></i><i></i></span></button>
+              <button type="button" class="importance-option" data-importance="1" aria-pressed="false"><span class="icon"><svg class="lucide lucide-bell-ring" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.268 21a2 2 0 0 0 3.464 0" /><path d="M22 8c0-2.3-.8-4.3-2-6" /><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" /><path d="M4 2C2.8 3.7 2 5.7 2 8" /></svg></span><span>Important</span><span class="importance-dots" aria-hidden="true"><i class="on"></i><i class="on"></i><i></i><i></i></span></button>
+              <button type="button" class="importance-option" data-importance="2" aria-pressed="false"><span class="icon"><svg class="lucide lucide-bell-ring" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.268 21a2 2 0 0 0 3.464 0" /><path d="M22 8c0-2.3-.8-4.3-2-6" /><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" /><path d="M4 2C2.8 3.7 2 5.7 2 8" /></svg></span><span>Must not miss</span><span class="importance-dots" aria-hidden="true"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span></button>
+        </div>
+        <p id="task-importance-help" class="group-hint"></p>
+        <p id="task-modal-error" class="modal-error" hidden></p>
+        <div class="modal-actions">
+          <button type="button" id="task-cancel" class="secondary-button">Cancel</button>
+          <button type="submit" id="task-save" class="primary-button">Save</button>
+        </div>
+        <button type="button" id="task-delete" class="secondary-button danger-button recurring-add-button" hidden>Delete reminder</button>
+      </form>
+      <form id="note-form" novalidate hidden>
+        <textarea id="note-body" class="task-details-input note-body-input" maxlength="5000" rows="6" placeholder="Write anything. Notes can be as long as you like."></textarea>
+        <div class="task-when-row">
+          <label class="field">Day<input type="date" id="note-date" /></label>
+          <label class="toggle-row note-pin-row"><span>Pin to top</span><input type="checkbox" id="note-pinned" /></label>
+        </div>
+        <p id="note-modal-error" class="modal-error" hidden></p>
+        <div class="modal-actions">
+          <button type="button" id="note-cancel" class="secondary-button">Cancel</button>
+          <button type="submit" id="note-save" class="primary-button">Save</button>
+        </div>
+        <button type="button" id="note-delete" class="secondary-button danger-button recurring-add-button" hidden>Delete note</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="tasks-list-modal" class="modal" hidden>
+    <div class="modal-content sheet-scroll">
+      <h2 class="section-title tasks-sheet-title">Everything you've set</h2>
+      <div class="segmented" id="tasks-list-tabs">
+        <button type="button" class="segment active" data-list="next">Upcoming <span data-count="next"></span></button>
+        <button type="button" class="segment" data-list="repeat">Repeating <span data-count="repeat"></span></button>
+        <button type="button" class="segment" data-list="todo">No time <span data-count="todo"></span></button>
+      </div>
+      <ul id="tasks-list" class="task-list"></ul>
+      <p id="tasks-list-empty" class="empty-state" hidden></p>
+      <button type="button" id="tasks-done-toggle" class="tasks-done-toggle" aria-expanded="false" hidden></button>
+      <ul id="tasks-done-list" class="task-list" hidden></ul>
+      <button type="button" id="close-tasks-list" class="secondary-button recurring-add-button">Close</button>
+    </div>
+  </div>
+
+  <div id="tasks-month-modal" class="modal" hidden>
+    <div class="modal-content">
+      <div class="month-head">
+        <button type="button" id="month-prev" class="icon-button" aria-label="Previous month"><span class="icon"><svg class="lucide lucide-chevron-left" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg></span></button>
+        <h2 id="month-title" class="month-title"></h2>
+        <button type="button" id="month-next" class="icon-button" aria-label="Next month"><span class="icon"><svg class="lucide lucide-chevron-right" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg></span></button>
+      </div>
+      <div class="month-grid" id="month-grid"></div>
+      <div class="month-legend">
+        <span><i class="dot dot-reminder"></i>Reminder</span>
+        <span><i class="dot dot-note"></i>Note</span>
+        <span><i class="dot dot-event"></i>Calendar</span>
+        <button type="button" id="month-today" class="link-button">Today</button>
+      </div>
     </div>
   </div>
 
@@ -1065,6 +1210,7 @@
   <script src="/liff-config.js"></script>
   <!-- Chart.js for the Net Worth performance chart; app.js renders everything else without it if this is blocked. -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=20261120"></script>
+  <script src="tasks.js?v=20261120"></script>
 </body>
 </html>
