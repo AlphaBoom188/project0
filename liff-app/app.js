@@ -1282,11 +1282,12 @@ function readDeepLink() {
   let params = new URLSearchParams(window.location.search);
   const state = params.get('liff.state');
   if (state) params = new URLSearchParams(state.replace(/^[^?]*\?/, ''));
-  deepLink = { bill: params.get('groupbill'), group: params.get('group'), tab: params.get('tab') };
+  deepLink = { bill: params.get('groupbill'), group: params.get('group'), tab: params.get('tab'), report: params.get('report') };
 }
 
 function openDeepLink() {
   if (deepLink.tab && el.tabPanels[deepLink.tab]) switchTab(deepLink.tab); // e.g. the morning briefing's "Open Tasks"
+  if (deepLink.report) openReport(-1); // the monthly report push's "Open report" (insights.js)
 
   if (deepLink.bill && /^[0-9a-f-]{36}$/i.test(deepLink.bill)) openGroupBill(deepLink.bill);
   else if (deepLink.group && /^[CR][0-9a-f]{32}$/.test(deepLink.group)) openGroupDetail(deepLink.group);
@@ -4293,6 +4294,7 @@ async function init() {
 
     renderProfile(profile);
     await loadHomeTab();
+    renderHomeReportCard(); // insights.js; never blocks Home
 
     el.loading.hidden = true;
     el.app.hidden = false;

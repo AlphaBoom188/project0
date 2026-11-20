@@ -3399,3 +3399,42 @@ body {
   font-size: 14px;
   font-weight: 600;
 }
+
+/* ---- Monthly report and repeat payments (insights.js) ---- */
+
+.report-card {
+  margin-top: 0;
+}
+
+.report-card-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.report-card-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.repeat-hint {
+  margin: 0 var(--space-page) var(--space-2);
+}
+
+.report-totals {
+  margin: 0 0 var(--space-4);
+}
+
+.report-sub {
+  margin: var(--space-4) 0 var(--space-2);
+}
+
+.report-cats .task-main {
+  padding: var(--space-2) 0;
+}
+
+.tax-bar.is-over span {
+  background: var(--destructive);
+}

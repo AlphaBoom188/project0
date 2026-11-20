@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#06c755" />
   <title>Expense Tracker</title>
-  <link rel="stylesheet" href="style.css?v=20261120g" />
+  <link rel="stylesheet" href="style.css?v=20261121a" />
   <script>
     // Set data-theme before first paint to avoid a flash of the wrong theme.
     (function () {
@@ -70,6 +70,14 @@
             <span class="summary-label">Today</span>
             <span class="summary-value" id="home-investments-today">—</span>
           </div>
+        </button>
+
+        <button type="button" class="tasks-summary report-card" id="home-report-card" hidden>
+          <span class="report-card-text">
+            <span class="report-card-title" id="home-report-title">Last month</span>
+            <span class="task-meta" id="home-report-meta"></span>
+          </span>
+          <span class="tasks-summary-chevron"><span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg></span></span>
         </button>
 
         <section id="home-groups" hidden>
@@ -220,6 +228,13 @@
         <p id="events-empty-state" class="empty-state" hidden>No event budgets this month.</p>
 
         <p id="budgets-status" class="settings-status" hidden></p>
+
+        <div class="section-header-row" id="repeat-header" hidden>
+          <h2 class="section-title">Repeat payments we found</h2>
+        </div>
+        <p class="group-hint repeat-hint" id="repeat-hint" hidden>These show up every month in your transactions. Log them automatically, or just get a monthly reminder (better for bills that also come in through statement imports).</p>
+        <ul id="repeat-list" class="tax-suggestions" hidden></ul>
+        <p id="repeat-status" class="scan-status tasks-status" hidden></p>
 
         <button type="button" id="advanced-toggle" class="advanced-toggle" aria-expanded="false">
           <span>Advanced: Recurring Rules</span>
@@ -1025,6 +1040,19 @@
     </div>
   </div>
 
+  <div id="report-modal" class="modal" hidden>
+    <div class="modal-content sheet-scroll">
+      <div class="month-head">
+        <button type="button" id="report-prev" class="icon-button" aria-label="Previous period"><span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg></span></button>
+        <h2 id="report-title" class="month-title"></h2>
+        <button type="button" id="report-next" class="icon-button" aria-label="Next period"><span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg></span></button>
+      </div>
+      <p id="report-status" class="scan-status" hidden></p>
+      <div id="report-body"></div>
+      <button type="button" id="close-report" class="secondary-button recurring-add-button">Close</button>
+    </div>
+  </div>
+
   <div id="task-modal" class="modal" hidden>
     <div class="modal-content sheet-scroll">
       <div class="task-kind" id="task-kind" role="tablist">
@@ -1429,8 +1457,9 @@
   <script src="/liff-config.js"></script>
   <!-- Chart.js for the Net Worth performance chart; app.js renders everything else without it if this is blocked. -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-  <script src="app.js?v=20261120g"></script>
-  <script src="tasks.js?v=20261120g"></script>
-  <script src="tax.js?v=20261120g"></script>
+  <script src="app.js?v=20261121a"></script>
+  <script src="tasks.js?v=20261121a"></script>
+  <script src="tax.js?v=20261121a"></script>
+  <script src="insights.js?v=20261121a"></script>
 </body>
 </html>

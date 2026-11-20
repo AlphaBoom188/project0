@@ -40,6 +40,11 @@ function listText(reminders, now = new Date(), { heading = 'Coming up' } = {}) {
 // 1:1 text (typed, or a voice transcript). -> true when handled here.
 async function handlePersonalText(event, lineUserId, text, { heard = null, overLimit = () => false } = {}) {
   const trimmed = text.trim();
+  if (['report', 'รายงาน', 'รายงานเดือน', 'monthly report'].includes(trimmed.toLowerCase())) {
+    const { loadReport, reportText } = require('../services/monthlyReport');
+    await replyText(event.replyToken, reportText(await loadReport(lineUserId)));
+    return true;
+  }
   if (TODAY_COMMANDS.has(trimmed.toLowerCase())) {
     const { loadBriefing } = require('../services/briefing');
     const { text } = await loadBriefing(lineUserId);
