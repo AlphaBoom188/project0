@@ -44,7 +44,7 @@ const tomorrow = bkkYmd(new Date(Date.now() + 86400000));
 
     // --- Nav: six tabs, Tasks second, labels on one line ---
     const nav = await page.$$eval('.nav-tab', (ts) => ts.map((x) => ({ tab: x.dataset.tab, label: x.textContent.trim(), over: x.scrollWidth > x.clientWidth + 1 })));
-    assert(nav.length === 6 && nav[1].tab === 'tasks' && nav[1].label === 'Tasks' && nav.every((n) => !n.over), `six tabs, Tasks second, no overflow (got ${JSON.stringify(nav)})`);
+    assert(nav.length === 7 && nav[1].tab === 'tasks' && nav[1].label === 'Tasks' && nav.every((n) => !n.over), `seven tabs, Tasks second, no overflow (got ${JSON.stringify(nav)})`);
 
     await page.click('.nav-tab[data-tab="tasks"]');
     await page.waitForSelector('#week-strip .week-day', { timeout: 15000 });

@@ -380,3 +380,17 @@ Booklet numbering is used in the UI; the decree number is stored for citation.
   - Shared caps trim later items first, in rule order.
 - **Tests:** `tests/api/tax_math.test.js`, 66 checks. They include the iTAX example (pay 12,500), the 0.5% method winning and being ignored, the dividend credit refund, every expense rule, every shared cap, year-only measures, donations, filing thresholds and a full end-to-end case.
 - **Next (Phase 2):** tables and endpoints, then the Tax tab UI: profile, incomes, the deduction checklist and a live result.
+
+## 9. Phase 2 built (2026-11-20)
+
+- **Storage (migration 021):** `tax_profiles` holds one row per user per year, with `profile` and `claims` as JSON validated against that year's rules. `tax_incomes` holds one row per income line. Everything is deleted with the account.
+- **API:** `/api/tax/:u/:year`. GET returns the rules for the app (income catalogue, shortcuts, deductions with caps and `verified` flags, filing dates), the profile, the claims, the incomes and the result. Every write returns the same state with a fresh result. The calculator now also returns `limits` (the most each deduction can give this user on its own) and `sharedCaps`.
+- **Tax tab** (`liff-app/tax.js`, sixth tab; "Net Worth" became "Wealth" so seven labels fit at 360px):
+  - A year switch defaults to last year in Jan-Apr (filing season) and the current year otherwise.
+  - The hero shows pay or refund with the tax, withholding and credit, plus the form and deadline. A passed deadline gets a late-filing note; if filing isn't required it says so, and mentions when filing still gets a refund back.
+  - "You" profile sheet: marital status, spouse income, 65+, disability, children's birth years.
+  - Income: six shortcuts (salary, freelance, online selling, food and drinks, deposit interest, dividends) plus the full catalogue grouped by type. Each line has flat or actual expenses where the law allows, and a dividend credit with the "10% final instead" note.
+  - The deduction checklist is grouped like iTAX's, but claimed by default where the profile allows. Each row shows what it gives, "Up to ฿X" for this user, a progress bar, and "capped" or "over the shared limit". Unverified rules carry a badge.
+  - "How it's worked out" walks from income through each step and tax band to pay or refund, with the effective and top rate.
+- **Tests:** `api/tax_math` (70), `api/tax_api` (40), `liff/tax_tab` (35).
+- **Next (Phase 3, auto-fill):** suggest incomes and deductions from transactions, recurring salary, the portfolio's dividends and RMF/ThaiESG lots.

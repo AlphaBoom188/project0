@@ -162,4 +162,11 @@ assert(r.totals.afterExpenses === 1300000 && r.totals.allowances === 449000 && r
 assert(r.taxDue === 83200 && r.withheld === 66000 && r.balance === 17200 && r.marginalRate === 0.20, `full case: pay 17,200 (got ${r.balance})`);
 assert(r.brackets.length === 5 && r.brackets[4].taxable === 91000 && r.brackets[4].tax === 18200, 'bracket breakdown');
 
+// --- Limits for the checklist ---
+r = tax({ incomes: [salary(1000000)] });
+assert(r.limits.personal === 60000 && r.limits.rmf === 300000 && r.limits.thai_esg === 300000 && r.limits.provident_fund === 150000 && r.limits.health_insurance === 25000, 'limits: fixed, % of income, % of wages, caps');
+assert(r.limits.social_security === null && r.limits.gpf === null && r.limits.spouse === 0 && r.limits.parents === 120000, 'limits: none of their own; not for this profile; counts');
+assert(r.limits.donation_double === 42000 && r.limits.donation === 84000, 'donation limits in baht paid (2x halves it)');
+assert(r.sharedCaps.find((c) => c.key === 'retirement').members.join() === 'pension_insurance,provident_fund,gpf,teachers_fund,rmf,nsf', 'shared caps list their members');
+
 process.exit(failures ? 1 : 0);

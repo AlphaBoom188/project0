@@ -280,6 +280,30 @@ function computeTax(rules, input = {}) {
   const withheld = incomes.reduce((s, l) => s + l.withheld, 0);
   const balance = taxDue - withheld - dividendCredit; // + pay, - refund
 
+  // The most each deduction can give on its own (before shared caps), for
+  // the checklist's "X of Y"; null = no limit of its own.
+  const limits = {};
+  for (const d of rules.deductions) {
+    let lim = null;
+    if (!profileAllows(d.when, profile)) lim = 0;
+    else if (d.fixed != null) lim = toS(d.fixed);
+    else if (d.key === 'children') lim = (allowanceRows.find((r) => r.key === 'children') || {}).allowed || 0;
+    else if (d.input === 'count') lim = toS(d.perUnit * (d.maxUnits || 0));
+    else if (d.group === 'donation') lim = Math.round((d.key === 'donation' ? afterAllowances - ((donationRows[0] && donationRows[0].key === 'donation_double') ? donationRows[0].allowed : 0) : afterAllowances) * d.capPct / (d.multiplier || 1));
+    else {
+      const byRate = d.rateOf ? Math.round((d.rateOf === 'wages' ? wages : assessable) * d.rate) : Infinity;
+      const byCap = d.cap != null ? toS(d.cap) : Infinity;
+      lim = Math.min(byRate, byCap);
+      if (lim === Infinity) lim = null;
+    }
+    limits[d.key] = lim == null ? null : toB(lim);
+  }
+  const combinedAll = { ...rules.combinedCaps, ...(rules.extraCombinedCaps || {}) };
+  const sharedCaps = Object.entries(combinedAll).map(([key, c]) => {
+    const members = rules.deductions.filter((d) => (d.combined || []).includes(key) || (key === 'retirement' && d.fillsLifeGap)).map((d) => d.key);
+    return { key, label: c.label, cap: c.cap, members };
+  });
+
   const unverified = [...allowanceRows, ...donationRows].filter((r) => !r.verified && r.allowed > 0).map((r) => r.label);
   if (unverified.length) warnings.push(`Not yet checked against a Revenue Department source: ${unverified.join('; ')}`);
   if (rules.carriedOver) warnings.push(`Tax year ${rules.year} uses the ${rules.year - 1} rules until the Revenue Department publishes ${rules.year}'s.`);
@@ -302,6 +326,8 @@ function computeTax(rules, input = {}) {
       netIncome: toB(net),
     },
     allowances: allowanceRows.map((r) => ({ ...r, claimed: toB(r.claimed), allowed: toB(r.allowed) })),
+    limits,
+    sharedCaps,
     donations: donationRows.map((r) => ({ ...r, claimed: toB(r.claimed), allowed: toB(r.allowed) })),
     brackets: prog.rows,
     progressiveTax: toB(prog.tax),

@@ -96,7 +96,7 @@ backend/
   routes/               one file per resource (+ router.param id checks)
   controllers/          user, category, transaction, line (login), lineWebhook, lineGroupHandler,
                         ocr, recurring, account, bill, portfolio, budgetEvent, google,
-                        statement, group, voice, reminder (+ notes), calendar, lineReminderHandler
+                        statement, group, voice, reminder (+ notes), calendar, lineReminderHandler, tax
   services/             shared logic; pure modules have no DB and have their own tests:
                         billSplit, lotMath, performanceMath, dividendMath, goalMath,
                         groupSplitMath, groupBillMath, groupBillFlex, promptpay, statementParser, payWindow, bangkokDay,
@@ -104,9 +104,9 @@ backend/
   jobs/                 dailyDigest (21:00), recurringTransactions (00:05),
                         activityReminders (12:00, 20:00), payWindowReminders (09:00), groupBillReminders (19:00), all Bangkok time;
                         reminderDispatch (every minute)
-  supabase/migrations/  001-020 (run in order in the Supabase SQL Editor)
+  supabase/migrations/  001-021 (run in order in the Supabase SQL Editor)
   tests/                see Tests
-liff-app/               index.html, app.js, style.css, tasks.js (Tasks tab); bill.html/bill.js = public shared-bill page;
+liff-app/               index.html, app.js, style.css, tasks.js (Tasks tab), tax.js (Tax tab); bill.html/bill.js = public shared-bill page;
                         privacy(-th).html, terms(-th).html + legal.css = public legal pages (drafts)
 ios-app/                SwiftUI app (LINE Login, dashboard, receipt scan), largely untouched since Phase 2
 docs/                   FEATURES.md (detailed notes), PRODUCTION.md (ops), PRD, specs, Apps Script relay
@@ -134,6 +134,7 @@ deploy/macos/           LaunchAgents for self-hosting (backend, ngrok tunnel, ke
 - **Reminders:** `GET|POST /reminders/:u` (GET `from`/`to`, at most 62 days: open reminders, ones done in the window, occurrences with repeats expanded), `PUT|DELETE /reminders/:u/:reminder_id` (creator only), `POST /reminders/:u/:reminder_id/done|snooze|stop|reopen`.
 - **Notes:** `GET|POST /notes/:u` (GET `from`/`to` as YYYY-MM-DD), `PUT|DELETE /notes/:u/:note_id`.
 - **Calendar:** `GET /calendar/:u/status`, `GET /calendar/:u/login-url`, `GET /calendar/:u/events?from&to`, `DELETE /calendar/:u` (callback shares `/google/callback`).
+- **Tax:** `GET /tax/:u/:year` (the year's rules for the app, profile, claims, incomes and the computed result; years 2568, 2569), `PUT /tax/:u/:year/profile`, `PUT /tax/:u/:year/claims` (merged; null removes), `POST /tax/:u/:year/incomes`, `PUT|DELETE /tax/:u/:year/incomes/:income_id`. Every write returns the whole state with a fresh result.
 - **Voice:** `POST /voice/:u/parse` (writes nothing).
 - **OCR:** `POST /ocr/scan/:u`.
 - **Google:** `GET /google/login-url/:u`, `GET /google/callback` (verifies the export email only; not a login).
@@ -161,6 +162,7 @@ deploy/macos/           LaunchAgents for self-hosting (backend, ngrok tunnel, ke
 | 018 | `users.group_ledger_copies` (consent for group shares in personal ledgers) |
 | 019 | Group bills: `group_expenses.status/closed_at`, share `paid_at/paid_method/slip_*`, `users.promptpay_id/bank_*`, private `payment-slips` bucket |
 | 020 | `reminders`, `notes`, `users.gcal_*` (encrypted Google Calendar token) |
+| 021 | `tax_profiles` (profile + claims JSON per user per year), `tax_incomes` |
 
 ## Features (details in `docs/FEATURES.md`)
 
@@ -175,9 +177,10 @@ deploy/macos/           LaunchAgents for self-hosting (backend, ngrok tunnel, ke
   - Voice is transcribed by Typhoon ASR when `TYPHOON_API_KEY` is set, else OpenAI `gpt-4o-mini-transcribe`, then parsed like text. The card's first row shows what was heard.
 - **LINE group bills** (KhunThong-style, per bill; owner decision 2026-11-19): `+ข้าว 600` starts a bill split equally among joined members (or `+taxi 300 @Ann`), posted as a Flex card plus a textV2 @mention of those who owe. Pay/See who paid open the LIFF app (`?groupbill=<id>`, `?group=<id>`): PromptPay QR (`services/promptpay.js`) or bank details, then a slip the owner confirms or rejects (or marks paid / cancels). The group gets "X paid" lines, a fully-paid card, a cancelled card, `bills` (reminder digest, also pushed 19:00 daily for bills 20h+ old; `GROUP_REMINDERS=off`), `rank` (fastest payers this month) and `undo` (cancel your last open bill). Pushes count against the OA message quota. Opening the app from a bill link (`via: 'group_bill'`) doesn't count as using the app. A share is copied into a member's personal ledger only if they use the app themselves and haven't turned it off (`users.group_ledger_copies` TRUE: set by `upsertUser` from the LIFF/iOS/1:1-bot paths, never from a group, and never overriding an explicit FALSE; Settings toggle). Group-only members are tracked on the group's bills only. The LIFF Groups card on Home shows what you owe / are owed.
 - **Reminders, to-dos, notes** (Abdul-style; owner decision 2026-11-20): set by chat ("พรุ่งนี้ 9 โมง เตือนประชุม", typed or spoken -> Confirm card; "note ..." / "จด ..." saves a note), in the LIFF Tasks tab, or in a group ("เตือน ... @Ann"). Repeats daily/weekdays/weekly/monthly; to-dos have no time. Pushes come from a minute job with Done / Snooze 15 min / Stop quick replies; Important and Must-not-miss reminders follow up (+30/+90 min; +15/+45/+90/+180) until Done. Optional read-only Google Calendar events on the timeline. Reminder pushes ignore the notifications toggle and count against the OA quota.
+- **Tax** (Thai personal income tax, years 2568 and 2569; see `docs/TAX_RESEARCH.md` section 8+): rules as data in `services/tax/rules/` (each with `verified`/`source`), a pure calculator `services/tax/taxMath.js`, and the LIFF Tax tab (year switch, pay/refund hero with the filing deadline, profile, income lines with flat or actual expenses and dividend credit, a deduction checklist with each item's limit, the step-by-step breakdown, warnings for unverified rules). An estimate, not filing: nothing is sent to the RD.
 - **Notifications:** budget-crossing alerts, event-budget alerts at 80% and 100%, a 21:00 daily digest, 12:00/20:00 activity nudges, and pay-window due/overdue reminders. All respect `notifications_enabled`.
 - **LIFF app:**
-  - Tabs: Home / Tasks / History (transactions) / Budgets / Net Worth / Settings. The floating Add button adds a reminder or note on Tasks.
+  - Tabs: Home / Tasks / History (transactions) / Budgets / Wealth (net worth) / Tax / Settings. The floating Add button adds a reminder or note on Tasks and an income on Tax.
   - Floating Add button: receipt scan and a Speak (mic) button, both of which fill the form for review.
   - Day-grouped timeline, search, account filter, logging streak.
   - Dark/light themes; English labels.

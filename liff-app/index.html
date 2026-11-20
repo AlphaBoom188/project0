@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#06c755" />
   <title>Expense Tracker</title>
-  <link rel="stylesheet" href="style.css?v=20261120" />
+  <link rel="stylesheet" href="style.css?v=20261120b" />
   <script>
     // Set data-theme before first paint to avoid a flash of the wrong theme.
     (function () {
@@ -384,6 +384,47 @@
       </section>
 
       <!-- Settings: identity, theme, notifications, export, danger zone -->
+      <!-- Tax: Thai personal income tax, years 2568/2569 (tax.js) -->
+      <section id="tab-tax" class="tab-panel" hidden>
+        <div class="tax-years-row">
+          <div class="segmented tax-years" id="tax-years" role="tablist" aria-label="Tax year"></div>
+        </div>
+        <section class="tax-hero" id="tax-hero" aria-live="polite">
+          <p class="tax-hero-label" id="tax-hero-label">Tax to pay</p>
+          <p class="tax-hero-amount" id="tax-hero-amount">฿0</p>
+          <p class="tax-hero-sub" id="tax-hero-sub"></p>
+          <p class="tax-hero-filing" id="tax-hero-filing"></p>
+        </section>
+        <p id="tax-status" class="scan-status tasks-status" hidden></p>
+
+        <div class="section-header-row">
+          <h2 class="section-title">You</h2>
+        </div>
+        <button type="button" id="tax-profile-summary" class="tasks-summary tax-profile-summary">
+          <span class="tax-profile-text" id="tax-profile-text"></span>
+          <span class="tasks-summary-chevron"><span class="icon"><svg class="lucide lucide-chevron-right" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg></span></span>
+        </button>
+
+        <div class="section-header-row">
+          <h2 class="section-title">Income</h2>
+          <button type="button" id="tax-add-income" class="link-button">Add income</button>
+        </div>
+        <ul id="tax-incomes" class="task-list" hidden></ul>
+        <p id="tax-incomes-empty" class="empty-state tax-empty">Start with your first income: salary, freelance work, rent, dividends or a business.</p>
+
+        <div class="section-header-row">
+          <h2 class="section-title">Deductions</h2>
+          <span class="transaction-date" id="tax-deductions-total"></span>
+        </div>
+        <div id="tax-deductions"></div>
+
+        <div class="section-header-row">
+          <h2 class="section-title">How it's worked out</h2>
+        </div>
+        <div class="tax-breakdown" id="tax-breakdown"></div>
+        <ul id="tax-warnings" class="tax-warnings" hidden></ul>
+        <p class="group-hint tax-disclaimer">An estimate from what you entered, using the Revenue Department's rules for this year. It isn't tax advice: check your figures when you file at efiling.rd.go.th.</p>
+      </section>
       <section id="tab-settings" class="tab-panel" hidden>
         <h2 class="section-title">Appearance</h2>
         <div class="settings-card">
@@ -488,7 +529,7 @@
           <button id="clear-history-button" class="danger-button">Clear Transaction History</button>
         </div>
         <div class="settings-card">
-          <p class="danger-text">Deletes your account and everything in it: transactions, categories, accounts, budgets, investments, shared bills, group history, payment details, payment slips, reminders, notes and receipt images, and disconnects Google Calendar. This cannot be undone.</p>
+          <p class="danger-text">Deletes your account and everything in it: transactions, categories, accounts, budgets, investments, shared bills, group history, payment details, payment slips, reminders, notes, tax records and receipt images, and disconnects Google Calendar. This cannot be undone.</p>
           <button id="delete-account-button" class="danger-button">Delete My Account</button>
         </div>
         <p class="legal-links"><a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a><a href="terms.html" target="_blank" rel="noopener">Terms of Service</a></p>
@@ -519,7 +560,11 @@
       </button>
       <button type="button" class="nav-tab" data-tab="networth">
         <span class="icon"><svg class="lucide lucide-trending-up" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17" /><polyline points="16 7 22 7 22 13" /></svg></span>
-        <span class="nav-tab-label">Net Worth</span>
+        <span class="nav-tab-label">Wealth</span>
+      </button>
+      <button type="button" class="nav-tab" data-tab="tax">
+        <span class="icon"><svg class="lucide lucide-receipt-text" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" /><path d="M14 8H8" /><path d="M16 12H8" /><path d="M13 16H8" /></svg></span>
+        <span class="nav-tab-label">Tax</span>
       </button>
       <button type="button" class="nav-tab" data-tab="settings">
         <span class="icon"><svg class="lucide lucide-settings" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" /></svg></span>
@@ -802,6 +847,102 @@
           <button type="button" id="cancel-bill" class="secondary-button">Cancel</button>
           <button type="submit" class="primary-button">Save</button>
         </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="tax-profile-modal" class="modal" hidden>
+    <div class="modal-content sheet-scroll">
+      <h2 class="section-title tasks-sheet-title">About you</h2>
+      <form id="tax-profile-form" novalidate>
+        <label class="field">Marital status
+          <select id="tax-marital">
+            <option value="single">Single</option>
+            <option value="married">Married</option>
+            <option value="divorced">Divorced</option>
+            <option value="widowed">Widowed</option>
+          </select>
+        </label>
+        <label class="toggle-row" id="tax-spouse-row"><span>My spouse has income</span><input type="checkbox" id="tax-spouse-income" /></label>
+        <label class="toggle-row"><span>I was 65 or older this tax year</span><input type="checkbox" id="tax-age65" /></label>
+        <label class="toggle-row"><span>I have a disability card</span><input type="checkbox" id="tax-disabled" /></label>
+        <h3 class="group-subtitle">Children</h3>
+        <p class="group-hint">Birth year in the Buddhist era (e.g. 2562). The second and later child born 2561 or later counts 60,000.</p>
+        <ul id="tax-children" class="tax-children"></ul>
+        <button type="button" id="tax-add-child" class="link-button">Add a child</button>
+        <p id="tax-profile-error" class="modal-error" hidden></p>
+        <div class="modal-actions">
+          <button type="button" id="tax-profile-cancel" class="secondary-button">Cancel</button>
+          <button type="submit" id="tax-profile-save" class="primary-button">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="tax-income-modal" class="modal" hidden>
+    <div class="modal-content sheet-scroll">
+      <h2 class="section-title tasks-sheet-title" id="tax-income-title">Add income</h2>
+      <div class="tax-shortcuts" id="tax-shortcuts"></div>
+      <form id="tax-income-form" novalidate>
+        <label class="field">Income type
+          <select id="tax-income-kind"></select>
+        </label>
+        <p class="group-hint" id="tax-income-kind-help"></p>
+        <label class="field">Income for the year, before tax (THB)
+          <input type="text" id="tax-income-amount" inputmode="decimal" autocomplete="off" />
+        </label>
+        <label class="field">Tax withheld (THB)
+          <input type="text" id="tax-income-withheld" inputmode="decimal" autocomplete="off" placeholder="0" />
+        </label>
+        <label class="field">Paid by (optional)
+          <input type="text" id="tax-income-payer" maxlength="200" autocomplete="off" />
+        </label>
+        <div id="tax-expense-block" hidden>
+          <h3 class="group-subtitle">Expenses</h3>
+          <div class="segmented" id="tax-expense-method">
+            <button type="button" class="segment active" data-method="flat" id="tax-expense-flat">Flat rate</button>
+            <button type="button" class="segment" data-method="actual">Actual expenses</button>
+          </div>
+          <label class="field" id="tax-actual-field" hidden>Actual expenses you can prove (THB)
+            <input type="text" id="tax-income-actual" inputmode="decimal" autocomplete="off" />
+          </label>
+        </div>
+        <label class="field" id="tax-credit-field" hidden>Dividend tax credit
+          <select id="tax-income-credit">
+            <option value="">No credit</option>
+            <option value="0.2">20% (most listed companies)</option>
+            <option value="0.25">25%</option>
+            <option value="0.23">23%</option>
+            <option value="0.3">30%</option>
+            <option value="0.15">15%</option>
+            <option value="0.1">10%</option>
+          </select>
+        </label>
+        <p class="group-hint" id="tax-credit-help" hidden>Only add dividends here if you want them taxed with your other income. Otherwise the 10% withheld is final and you leave them out.</p>
+        <p id="tax-income-error" class="modal-error" hidden></p>
+        <div class="modal-actions">
+          <button type="button" id="tax-income-cancel" class="secondary-button">Cancel</button>
+          <button type="submit" id="tax-income-save" class="primary-button">Save</button>
+        </div>
+        <button type="button" id="tax-income-delete" class="secondary-button danger-button recurring-add-button" hidden>Delete income</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="tax-deduction-modal" class="modal" hidden>
+    <div class="modal-content">
+      <h2 class="section-title tasks-sheet-title" id="tax-deduction-title"></h2>
+      <p class="group-hint" id="tax-deduction-help"></p>
+      <form id="tax-deduction-form" novalidate>
+        <label class="field" id="tax-deduction-amount-field"><span id="tax-deduction-amount-label">Amount paid this year (THB)</span>
+          <input type="text" id="tax-deduction-amount" inputmode="decimal" autocomplete="off" />
+        </label>
+        <p id="tax-deduction-error" class="modal-error" hidden></p>
+        <div class="modal-actions">
+          <button type="button" id="tax-deduction-cancel" class="secondary-button">Cancel</button>
+          <button type="submit" id="tax-deduction-save" class="primary-button">Save</button>
+        </div>
+        <button type="button" id="tax-deduction-remove" class="secondary-button danger-button recurring-add-button" hidden>Remove</button>
       </form>
     </div>
   </div>
@@ -1210,7 +1351,8 @@
   <script src="/liff-config.js"></script>
   <!-- Chart.js for the Net Worth performance chart; app.js renders everything else without it if this is blocked. -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-  <script src="app.js?v=20261120"></script>
-  <script src="tasks.js?v=20261120"></script>
+  <script src="app.js?v=20261120b"></script>
+  <script src="tasks.js?v=20261120b"></script>
+  <script src="tax.js?v=20261120b"></script>
 </body>
 </html>

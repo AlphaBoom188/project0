@@ -69,6 +69,7 @@ const el = {
   tabPanels: {
     home: document.getElementById('tab-home'),
     tasks: document.getElementById('tab-tasks'),
+    tax: document.getElementById('tab-tax'),
     transactions: document.getElementById('tab-transactions'),
     budgets: document.getElementById('tab-budgets'),
     networth: document.getElementById('tab-networth'),
@@ -742,6 +743,7 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () 
 const TAB_LOADERS = {
   home: loadHomeTab,
   tasks: () => loadTasksTab(), // tasks.js
+  tax: () => loadTaxTab(), // tax.js
   transactions: loadTransactionsTab,
   budgets: loadBudgetsTab,
   networth: loadNetWorthTab,
@@ -760,7 +762,7 @@ function switchTab(tabName) {
   currentTab = tabName;
   TAB_LOADERS[tabName]().catch((error) => showError(error.message));
   el.fabAdd.hidden = tabName === 'settings';
-  el.fabAdd.setAttribute('aria-label', tabName === 'tasks' ? 'Add reminder or note' : 'Add expense');
+  el.fabAdd.setAttribute('aria-label', tabName === 'tasks' ? 'Add reminder or note' : tabName === 'tax' ? 'Add income for tax' : 'Add expense');
 }
 
 // ---- Dashboard tab ----
@@ -4303,7 +4305,11 @@ for (const button of el.navTabs) {
   button.addEventListener('click', () => switchTab(button.dataset.tab));
 }
 
-el.fabAdd.addEventListener('click', () => (currentTab === 'tasks' ? openTaskModal() : openAddExpenseModal()));
+el.fabAdd.addEventListener('click', () => {
+  if (currentTab === 'tasks') openTaskModal();
+  else if (currentTab === 'tax') openTaxIncomeModal();
+  else openAddExpenseModal();
+});
 el.cancelAddExpense.addEventListener('click', closeAddExpenseModal);
 el.addExpenseForm.addEventListener('submit', handleAddExpenseSubmit);
 el.fieldReceiptImage.addEventListener('change', handleReceiptFileChange);
