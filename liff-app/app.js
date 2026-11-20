@@ -3659,8 +3659,8 @@ async function handleRecentUndoClick(event) {
 }
 
 async function openStatementModal() {
-  el.stmtPick.hidden = false;
-  el.stmtReview.hidden = true;
+  stmtRun += 1;
+  showStmtStep('pick');
   el.stmtProgress.hidden = true;
   el.stmtFile.value = '';
   clearModalError(el.stmtPickError);
@@ -3677,9 +3677,47 @@ async function openStatementModal() {
 }
 
 function closeStatementModal() {
+  stmtRun += 1;
+  clearInterval(stmtTaskTimer);
   el.stmtModal.hidden = true;
   stmtPreview = null;
   el.stmtRows.innerHTML = '';
+}
+
+// ---- Statement flow (spec 6.3): working task rows -> approvals -> done ----
+let stmtRun = 0; // bumps on every read and on Cancel, so a stale result is dropped
+let stmtTasks = [];
+let stmtTaskTimer = null;
+
+function renderStmtTasks() {
+  const now = Date.now();
+  document.getElementById('stmt-tasks').innerHTML = stmtTasks.map((t) => {
+    const icon = t.state === 'done' ? '<span class="task-dot is-done"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>'
+      : t.state === 'run' ? `<span class="pixel-loader">${'<i></i>'.repeat(9)}</span>`
+      : t.state === 'fail' ? '<span class="task-dot is-fail"></span>' : '<span class="task-dot"></span>';
+    const secs = t.started ? Math.max(0, Math.round(((t.ended || now) - t.started) / 1000)) : null;
+    return `<li class="row stmt-task" data-state="${t.state === 'run' ? 'running' : t.state}">
+      <span class="task-icon" aria-hidden="true">${icon}</span>
+      <span class="row-main"><span class="row-title">${escapeHtml(t.title)}</span><span class="row-meta${t.state === 'fail' ? ' amount-over' : ''}">${escapeHtml(t.detail)}</span></span>
+      <span class="row-sub task-secs">${secs === null ? '' : `${secs}s`}</span>
+    </li>`;
+  }).join('');
+}
+
+function setStmtTask(i, state, detail) {
+  const t = stmtTasks[i];
+  if (state === 'run' && !t.started) t.started = Date.now();
+  if (state === 'done' || state === 'fail') { t.started = t.started || Date.now(); t.ended = Date.now(); }
+  t.state = state;
+  if (detail !== undefined) t.detail = detail;
+  renderStmtTasks();
+}
+
+function showStmtStep(step) {
+  el.stmtPick.hidden = step !== 'pick';
+  document.getElementById('stmt-working').hidden = step !== 'working';
+  el.stmtReview.hidden = step !== 'review';
+  if (step !== 'working') clearInterval(stmtTaskTimer);
 }
 
 async function handleStatementRead(event) {
@@ -3688,29 +3726,149 @@ async function handleStatementRead(event) {
   if (!file) return;
   clearModalError(el.stmtPickError);
   el.stmtRead.disabled = true;
-  setAiStatus(el.stmtProgress, 'working', 'Opening PDF…');
+  const run = ++stmtRun;
+  stmtTasks = [
+    { title: 'Opening the PDF', detail: 'Password checked on your phone', state: 'wait' },
+    { title: 'Finding transactions', detail: 'Reading the rows and totals', state: 'wait' },
+    { title: 'Matching transfers', detail: 'Looking for your own accounts', state: 'wait' },
+    { title: 'Sorting categories', detail: 'From your past imports first', state: 'wait' },
+  ];
+  showStmtStep('working');
+  setAiStatus(document.getElementById('stmt-working-status'), 'working', `${file.name} · reading on your phone`);
+  setStmtTask(0, 'run');
+  stmtTaskTimer = setInterval(renderStmtTasks, 500);
   try {
     const pages = await extractPdfPages(file, el.stmtPassword.value.trim(), (i, n) => {
-      el.stmtProgress.textContent = `Reading page ${i} of ${n}…`;
+      if (run === stmtRun) setStmtTask(0, 'run', `Reading page ${i} of ${n}`);
     });
-    setAiStatus(el.stmtProgress, 'working', 'Matching rows and categories…');
+    if (run !== stmtRun) return;
+    setStmtTask(0, 'done', `${pages.length} page${pages.length === 1 ? '' : 's'} · read on your phone`);
+    // One server call finds the rows, matches transfers and sorts categories.
+    setStmtTask(1, 'run'); setStmtTask(2, 'run'); setStmtTask(3, 'run');
     const [preview, cats] = await Promise.all([
       apiRequest(`/statements/${lineUserId}/parse`, { method: 'POST', body: JSON.stringify({ pages }) }),
       cachedGet(`/categories/${lineUserId}`),
     ]);
+    if (run !== stmtRun) return;
     stmtCategories = {
       expense: cats.categories.filter((c) => c.type === 'expense'),
       income: cats.categories.filter((c) => c.type === 'income'),
     };
+    const c = preview.counts;
+    setStmtTask(1, 'done', `${c.total} rows · ${preview.verified ? 'totals match the statement' : 'check the totals'}`);
+    const transfers = (c.own_transfer || 0) + (c.transfer_match || 0) + (c.bank_transfer || 0);
+    setStmtTask(2, 'done', transfers ? `${transfers} transfer${transfers === 1 ? '' : 's'} found` : 'No transfers');
+    const need = stmtNeedsCall(preview.rows).length;
+    const sorted = preview.rows.filter((r) => r.category_id).length;
+    setStmtTask(3, 'done', `${sorted} sorted${need ? ` · ${need} need you` : ''}`);
     stmtPreview = preview;
     el.stmtPassword.value = '';
     renderStatementReview();
   } catch (error) {
+    if (run !== stmtRun) return;
+    const running = stmtTasks.findIndex((t) => t.state === 'run');
+    if (running >= 0) setStmtTask(running, 'fail', stripStatus(error.message));
+    showStmtStep('pick');
     showModalError(el.stmtPickError, stripStatus(error.message));
   } finally {
-    el.stmtRead.disabled = false;
-    hideAiStatus(el.stmtProgress);
+    if (run === stmtRun) el.stmtRead.disabled = false;
+    hideAiStatus(document.getElementById('stmt-working-status'));
+    clearInterval(stmtTaskTimer);
   }
+}
+
+// Rows the parser can't place confidently: possible duplicates, transfers
+// to an unknown bank account, and new rows with no category.
+function stmtNeedsCall(rows) {
+  return rows.map((r, i) => ({ r, i })).filter(({ r }) => r.status === 'possible_duplicate' || r.status === 'bank_transfer' || (r.status === 'new' && !r.category_id))
+    .map(({ r, i }) => ({ i, kind: r.status === 'new' ? 'category' : r.status }));
+}
+let stmtApprovals = [];
+let stmtApprovalPos = 0;
+const stmtOthers = (type) => stmtCategories[type].find((cat) => /^others?$/i.test(cat.name)) || stmtCategories[type][0];
+
+function stmtApprovalOptions(r, kind) {
+  if (kind === 'possible_duplicate') return [
+    { v: 'skip', label: 'Leave it out, I already logged it' },
+    { v: 'import', label: 'Import it anyway' },
+    { v: 'transfer', label: 'A transfer between my accounts' },
+  ];
+  if (kind === 'bank_transfer') return [
+    { v: 'transfer', label: 'A transfer between my accounts' },
+    { v: 'import', label: `An ${r.type === 'expense' ? 'expense' : 'income'}${r.category_id ? '' : ' (Others)'}` },
+    { v: 'skip', label: 'Leave it out' },
+  ];
+  const counts = new Map();
+  for (const t of homeTxns) if (t.category_id) counts.set(t.category_id, (counts.get(t.category_id) || 0) + 1);
+  const others = stmtOthers(r.type);
+  const picks = stmtCategories[r.type].filter((cat) => cat.id !== others?.id).sort((a, b) => (counts.get(b.id) || 0) - (counts.get(a.id) || 0)).slice(0, 2);
+  return [...picks, others].filter(Boolean).map((cat) => ({ v: `cat:${cat.id}`, label: cat.name }));
+}
+
+function showStmtApproval() {
+  const { i, kind } = stmtApprovals[stmtApprovalPos];
+  const r = stmtPreview.rows[i];
+  const total = stmtApprovals.length;
+  const sorted = stmtPreview.rows.length - total;
+  document.getElementById('stmt-approval-lead').textContent = `${sorted} sorted. ${total} need${total === 1 ? 's' : ''} your call.`;
+  document.getElementById('stmt-approval-badge').textContent = `${stmtApprovalPos + 1} of ${total}`;
+  document.getElementById('stmt-approval-desc').innerHTML = `<span class="approval-raw">${escapeHtml(r.description)}</span><span class="approval-amount ${r.type}">${r.type === 'expense' ? '\u2212' : '+'}${formatBaht(r.amount)}</span>`;
+  const fmt = new Date(`${r.date}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  document.getElementById('stmt-approval-meta').textContent = [fmt + (r.time ? ` ${r.time}` : ''), r.note].filter(Boolean).join(' · ');
+  document.getElementById('stmt-approval-q').textContent = kind === 'possible_duplicate' ? 'This looks like an entry you already logged. What should we do?'
+    : kind === 'bank_transfer' ? 'Money moved to or from another bank account. What was it?' : 'Which category is this?';
+  document.getElementById('stmt-approval-options').innerHTML = stmtApprovalOptions(r, kind)
+    .map((o, k) => `<label class="rec-option"><input type="radio" name="stmt-approval" value="${o.v}"${k === 0 ? ' checked' : ''} /><span class="rec-radio" aria-hidden="true"></span><span>${escapeHtml(o.label)}</span></label>`).join('');
+}
+
+// Applies a choice to the row's tick box and category in the full list.
+function applyStmtChoice(i, choice) {
+  const cb = el.stmtRows.querySelector(`input[type="checkbox"][data-i="${i}"]`);
+  const sel = el.stmtRows.querySelector(`select.stmt-cat[data-i="${i}"]`);
+  const r = stmtPreview.rows[i];
+  if (choice === 'skip') cb.checked = false;
+  else if (choice === 'transfer') { cb.checked = true; sel.value = STMT_TRANSFER; }
+  else if (choice === 'import') { cb.checked = true; sel.value = r.category_id || stmtOthers(r.type)?.id || ''; }
+  else if (choice.startsWith('cat:')) { cb.checked = true; sel.value = choice.slice(4); }
+  cb.closest('.stmt-row').classList.toggle('muted', !cb.checked);
+}
+
+function nextStmtApproval(apply) {
+  const { i, kind } = stmtApprovals[stmtApprovalPos];
+  if (apply) applyStmtChoice(i, document.querySelector('#stmt-approval-options input:checked')?.value || 'skip');
+  else if (kind === 'category') applyStmtChoice(i, `cat:${stmtOthers(stmtPreview.rows[i].type)?.id}`); // skipped rows import as Others
+  stmtApprovalPos += 1;
+  if (stmtApprovalPos < stmtApprovals.length) showStmtApproval();
+  else showStmtDone();
+}
+
+function showStmtDone() {
+  document.getElementById('stmt-approval').hidden = true;
+  document.getElementById('stmt-done').hidden = false;
+  updateStatementImportButton();
+}
+
+function renderStmtDoneSummary() {
+  const picked = stmtCheckedIndexes();
+  const catFor = new Map([...el.stmtRows.querySelectorAll('select.stmt-cat')].map((sel) => [Number(sel.dataset.i), sel.value]));
+  let exp = 0; let inc = 0; let tr = 0;
+  const byCat = new Map();
+  for (const i of picked) {
+    const r = stmtPreview.rows[i];
+    if (catFor.get(i) === STMT_TRANSFER) { tr += 1; continue; }
+    if (r.type === 'expense') exp += 1; else inc += 1;
+    const name = stmtCategories[r.type].find((cat) => cat.id === catFor.get(i))?.name || 'Others';
+    const e = byCat.get(name) || { name, n: 0, total: 0 };
+    e.n += 1; e.total += r.amount; byCat.set(name, e);
+  }
+  const skipped = stmtPreview.rows.filter((r, i) => r.status !== 'imported' && !picked.includes(i)).length;
+  const n = picked.length;
+  document.getElementById('stmt-done-title').textContent = `${n} entr${n === 1 ? 'y' : 'ies'} ready`;
+  document.getElementById('stmt-done-breakdown').textContent = [`${exp} expense${exp === 1 ? '' : 's'}`, `${inc} income`, `${tr} transfer${tr === 1 ? '' : 's'}`, `${skipped} skipped`].join(' · ');
+  const top = [...byCat.values()].sort((a, b) => b.total - a.total).slice(0, 3);
+  document.getElementById('stmt-top').innerHTML = top.map((c) => `<li class="row">${categoryTile(c.name)}<span class="row-main"><span class="row-title">${escapeHtml(c.name)}</span><span class="row-meta">${c.n} entr${c.n === 1 ? 'y' : 'ies'}</span></span><span class="row-value">${formatBaht(c.total)}</span></li>`).join('')
+    + (tr ? `<li class="row">${categoryTile('Transfer')}<span class="row-main"><span class="row-title">Transfers</span><span class="row-meta">Between your accounts</span></span><span class="row-value">${tr}</span></li>` : '');
+  document.getElementById('stmt-top').hidden = !top.length && !tr;
 }
 
 const STMT_STATUS_LABEL = { imported: 'Already imported', own_transfer: 'Own transfer', bank_transfer: 'Bank transfer', transfer_match: 'Matched transfer', possible_duplicate: 'Possible duplicate' };
@@ -3720,8 +3878,6 @@ const STMT_BANK_NAME = { kbank: 'KBank', bbl: 'Bangkok Bank' };
 
 function renderStatementReview() {
   const p = stmtPreview;
-  el.stmtPick.hidden = true;
-  el.stmtReview.hidden = false;
   clearModalError(el.stmtReviewError);
   const fmt = (ymd) => new Date(`${ymd}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
   el.stmtSummary.textContent = `${STMT_BANK_NAME[p.bank] || 'Bank'} •••${p.account_last4 || '----'} · ${p.period_start ? `${fmt(p.period_start)} – ${fmt(p.period_end)}` : `${p.counts.total} rows`}`;
@@ -3743,7 +3899,7 @@ function renderStatementReview() {
       <label class="stmt-check"><input type="checkbox" data-i="${i}"${ticked ? ' checked' : ''}${r.status === 'imported' ? ' disabled' : ''} aria-label="Import this row" /></label>
       <div class="stmt-main">
         <div class="stmt-line"><span class="stmt-desc">${escapeHtml(r.description)}</span>
-          <span class="stmt-amount ${r.type}">${r.type === 'expense' ? '-' : '+'}${formatMoney(r.amount, 'THB')}</span></div>
+          <span class="stmt-amount ${r.type}">${formatBaht(r.type === 'expense' ? -r.amount : r.amount, { sign: true })}</span></div>
         <div class="stmt-meta">${escapeHtml(fmt(r.date))}${r.time ? ` ${r.time}` : ''}${status ? ` · <span class="stmt-status">${status}</span>` : ''}</div>
         ${r.note && r.status !== 'new' ? `<div class="stmt-meta">${escapeHtml(r.note)}</div>` : ''}
         <select class="stmt-cat" data-i="${i}" aria-label="Category">${options}</select>
@@ -3751,6 +3907,17 @@ function renderStatementReview() {
     </li>`;
   }).join('');
   updateStatementImportButton();
+  stmtApprovals = stmtNeedsCall(p.rows);
+  stmtApprovalPos = 0;
+  document.getElementById('stmt-all').open = false;
+  showStmtStep('review');
+  if (stmtApprovals.length) {
+    document.getElementById('stmt-approval').hidden = false;
+    document.getElementById('stmt-done').hidden = true;
+    showStmtApproval();
+  } else {
+    showStmtDone();
+  }
 }
 
 function stmtCheckedIndexes() {
@@ -3759,8 +3926,9 @@ function stmtCheckedIndexes() {
 
 function updateStatementImportButton() {
   const n = stmtCheckedIndexes().length;
-  el.stmtImport.textContent = n ? `Import ${n} transaction${n === 1 ? '' : 's'}` : 'Import';
+  el.stmtImport.textContent = n ? `Import ${n} entr${n === 1 ? 'y' : 'ies'}` : 'Import';
   el.stmtImport.disabled = n === 0;
+  if (stmtPreview) renderStmtDoneSummary();
 }
 
 function selectStatementRows(mode) {
@@ -3801,9 +3969,17 @@ async function handleStatementImport() {
     };
     rememberImport(record);
     closeStatementModal();
-    showImportStatus(`Imported ${result.imported} transaction${result.imported === 1 ? '' : 's'}` +
-      (result.merged ? `, ${result.merged} joined with transfer${result.merged === 1 ? '' : 's'} from your other statement` : '') +
-      (result.skipped ? ` (${result.skipped} already imported)` : '') + '.', result.imported ? record : null);
+    const extra = [result.merged && `${result.merged} joined with transfers from your other statement`, result.skipped && `${result.skipped} already imported`].filter(Boolean);
+    showToast({
+      title: `Imported ${result.imported} entr${result.imported === 1 ? 'y' : 'ies'}`,
+      description: ['Balances and budget alerts unchanged', ...extra].join(' · '),
+      undo: result.imported ? async () => {
+        const undone = await undoImport(record);
+        if (!undone) return;
+        showToast({ title: `Import undone: ${undone.deleted} removed${undone.reverted ? `, ${undone.reverted} transfer${undone.reverted === 1 ? '' : 's'} separated again` : ''}.` });
+        loadTransactionsTab().catch((error) => showError(error.message));
+      } : null,
+    });
     loadTransactionsTab().catch((error) => showError(error.message));
   } catch (error) {
     showModalError(el.stmtReviewError, stripStatus(error.message));
@@ -4716,6 +4892,10 @@ for (const b of document.querySelectorAll('[data-entry-type]')) {
     setEntryType(b.dataset.entryType).catch((error) => showModalError(el.modalError, error.message));
   });
 }
+document.getElementById('stmt-abort').addEventListener('click', () => { stmtRun += 1; el.stmtRead.disabled = false; showStmtStep('pick'); });
+document.getElementById('stmt-skip').addEventListener('click', () => nextStmtApproval(false));
+document.getElementById('stmt-continue').addEventListener('click', () => nextStmtApproval(true));
+el.stmtRows.addEventListener('change', () => updateStatementImportButton());
 document.getElementById('category-chips').addEventListener('click', (event) => {
   const b = event.target.closest('.chip');
   if (!b) return;
@@ -4818,7 +4998,6 @@ el.stmtCancel.addEventListener('click', closeStatementModal);
 el.stmtBack.addEventListener('click', () => { el.stmtReview.hidden = true; el.stmtPick.hidden = false; });
 el.stmtSelectNew.addEventListener('click', () => selectStatementRows('new'));
 el.stmtSelectNone.addEventListener('click', () => selectStatementRows('none'));
-el.stmtRows.addEventListener('change', (event) => { if (event.target.type === 'checkbox') updateStatementImportButton(); });
 el.stmtImport.addEventListener('click', handleStatementImport);
 el.stmtRecentList.addEventListener('click', handleRecentUndoClick);
 el.exportEmailButton.addEventListener('click', handleExportEmail);

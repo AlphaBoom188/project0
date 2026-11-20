@@ -43,6 +43,12 @@ async function openApp(browser, { blockPdfJs = false } = {}) {
   return { page, errors };
 }
 
+// v5 flow: rows needing a call come one at a time; Skip keeps the default.
+async function skipApprovals(page) {
+  for (let k = 0; k < 50 && await page.isVisible('#stmt-approval'); k += 1) await page.click('#stmt-skip');
+}
+const openAllRows = async (page) => { await skipApprovals(page); if (!(await page.$eval('#stmt-all', (d) => d.open))) await page.click('#stmt-all summary'); };
+
 async function readStatement(page, buffer, name = 'statement.pdf') {
   await page.setInputFiles('#stmt-file', { name, mimeType: 'application/pdf', buffer });
   await page.click('#stmt-read');
@@ -63,12 +69,16 @@ async function readStatement(page, buffer, name = 'statement.pdf') {
   assert((await page.textContent('#stmt-summary')).startsWith('KBank •••7890 · Jun 1, 2026 – Jun 30, 2026'), `summary line (got "${await page.textContent('#stmt-summary')}")`);
   assert((await page.textContent('#stmt-verify')) === `All ${ascii.length} rows match the statement's totals.`, 'pdf.js text verified against the statement totals');
   assert((await page.textContent('#stmt-counts')) === '7 new · 2 own transfers', `counts line (got "${await page.textContent('#stmt-counts')}")`);
+  assert((await page.$$('#stmt-tasks .stmt-task[data-state="done"]')).length === 4, 'all four task rows finished');
+  await skipApprovals(page);
+  assert(await page.isVisible('#stmt-done') && (await page.textContent('#stmt-done-title')) === '9 entries ready', `done step: 9 entries ready (got ${await page.textContent('#stmt-done-title')})`);
+  await openAllRows(page);
   const rowCount = await page.$$eval('#stmt-rows .stmt-row', (r) => r.length);
   const checked = await page.$$eval('#stmt-rows input:checked', (r) => r.length);
   assert(rowCount === ascii.length && checked === 9, `${ascii.length} rows listed, 9 ticked: 7 new + 2 own transfers (got ${rowCount}, ${checked})`);
   const ownUnticked = await page.$$eval('#stmt-rows .stmt-row', (rows) => rows.filter((r) => r.textContent.includes('Own transfer')).every((r) => r.querySelector('input').checked && r.querySelector('select').value === '__transfer__' && r.textContent.includes('Imported as a Transfer')));
   assert(ownUnticked, 'own transfers start ticked as a Transfer and say so');
-  assert((await page.textContent('#stmt-import')) === 'Import 9 transactions', 'Import button shows the ticked count');
+  assert((await page.textContent('#stmt-import')) === 'Import 9 entries', 'Import button shows the ticked count');
   const fontSize = await page.$eval('.stmt-cat', (s) => getComputedStyle(s).fontSize);
   const box = await page.$eval('.stmt-check', (c) => c.getBoundingClientRect().width);
   assert(fontSize === '16px' && box >= 44, `category selects are 16px and checkboxes have a 44px target (got ${fontSize}, ${box})`);
@@ -85,14 +95,15 @@ async function readStatement(page, buffer, name = 'statement.pdf') {
   const { body: cats } = await api(`/categories/${U}`);
   const shopping = cats.categories.find((c) => c.name === 'Shopping');
   await page.locator('#stmt-rows .stmt-row').nth(lineManIndex).locator('select').selectOption(shopping.id);
-  assert((await page.textContent('#stmt-import')) === 'Import 8 transactions', 'unticking a row updates the count');
+  assert((await page.textContent('#stmt-import')) === 'Import 8 entries', 'unticking a row updates the count');
   await page.screenshot({ path: `${OUTPUT}/statement_review.png` });
   // The tab shows the current billing cycle, so June rows needn't appear in it; check it re-fetches.
   const relist = page.waitForRequest((r) => r.url().includes(`/api/transactions/${U}?`) && r.method() === 'GET', { timeout: 20000 }).then(() => true).catch(() => false);
   await Promise.all([page.waitForResponse((r) => r.url().includes('/import') && r.request().method() === 'POST', { timeout: 20000 }), page.click('#stmt-import')]);
   await page.waitForSelector('#statement-modal', { state: 'hidden', timeout: 10000 }).catch(() => {});
   assert(await page.isHidden('#statement-modal'), 'the sheet closes after importing');
-  assert((await page.textContent('#export-status')).startsWith('Imported 8 transactions.'), `status message (got "${await page.textContent('#export-status')}")`);
+  await page.waitForSelector('#toast:not([hidden])', { timeout: 10000 }).catch(() => {});
+  assert((await page.textContent('#toast .toast-title')) === 'Imported 8 entries' && (await page.textContent('#toast .toast-desc')).startsWith('Balances and budget alerts unchanged'), `import toast (got "${await page.textContent('#toast')}")`);
   const { data: stored } = await db.from('transactions').select('description, category_id, from_account_id, to_account_id, type').eq('line_user_id', U);
   assert(stored.length === 8 && !stored.some((t) => t.description === 'BTS TIM TVM'), 'exactly the 8 ticked rows were saved');
   assert(stored.filter((t) => t.type === 'transfer').map((t) => t.description).sort().join('|') === 'KBank •••7890 → another account|another account → KBank •••7890', 'own transfers were saved as Transfers labelled with the account');
@@ -130,15 +141,16 @@ async function readStatement(page, buffer, name = 'statement.pdf') {
   assert(recentText.includes('KBank •••7890 · Jun 1 – Jun 30') && recentText.includes('8 added'), `recent import row (got "${recentText.trim()}")`);
   await readStatement(page, PDF);
   await page.waitForSelector('#stmt-review:not([hidden])', { timeout: 30000 }).catch(() => {});
+  await skipApprovals(page);
   await Promise.all([page.waitForResponse((r) => r.url().includes('/import'), { timeout: 20000 }), page.click('#stmt-import')]);
-  await page.waitForSelector('#export-status .stmt-undo-last', { timeout: 10000 }).catch(() => {});
-  assert((await page.textContent('#export-status')).startsWith('Imported 1 transaction.') && (await page.isVisible('#export-status .stmt-undo-last')), 'the status line offers Undo');
-  await page.click('#export-status .stmt-undo-last');
+  await page.waitForSelector('#toast .toast-undo', { timeout: 10000 }).catch(() => {});
+  assert((await page.textContent('#toast .toast-title')) === 'Imported 1 entry' && (await page.isVisible('#toast .toast-undo')), 'the import toast offers Undo');
+  await page.click('#toast .toast-undo');
   await page.waitForSelector('#confirm-modal:not([hidden])');
   assert((await page.textContent('#confirm-message')).includes('Remove the 1 transaction added by this import') && (await page.textContent('#confirm-ok')) === 'Remove', 'Undo asks first');
   await Promise.all([page.waitForResponse((r) => r.url().includes('/undo'), { timeout: 20000 }), page.click('#confirm-ok')]);
-  await page.waitForFunction(() => document.getElementById('export-status').textContent.startsWith('Import undone'), null, { timeout: 10000 }).catch(() => {});
-  assert((await page.textContent('#export-status')) === 'Import undone: 1 removed.', `undo status (got "${await page.textContent('#export-status')}")`);
+  await page.waitForFunction(() => document.getElementById('toast').textContent.includes('Import undone'), null, { timeout: 10000 }).catch(() => {});
+  assert((await page.textContent('#toast .toast-title')) === 'Import undone: 1 removed.', `undo toast (got "${await page.textContent('#toast')}")`);
   assert(!(await db.from('transactions').select('description').eq('line_user_id', U)).data.some((t) => t.description === 'BTS TIM TVM'), 'the undone row is gone');
 
   // --- Undo from Recent imports ---

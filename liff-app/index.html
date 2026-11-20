@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#06c755" />
   <title>Expense Tracker</title>
-  <link rel="stylesheet" href="style.css?v=20261121l" />
+  <link rel="stylesheet" href="style.css?v=20261121m" />
   <script>
     // Set data-theme before first paint to avoid a flash of the wrong theme.
     (function () {
@@ -1554,7 +1554,7 @@
 
   <div id="statement-modal" class="modal" hidden>
     <div class="modal-content sheet-scroll">
-      <h2 class="section-title">Import Bank Statement</h2>
+      <h2 class="sheet-title">Import bank statement</h2>
 
       <form id="stmt-pick">
         <p class="stmt-hint">KBank savings/current (K PLUS) or Bangkok Bank savings (Bualuang mBanking) statement PDFs. The PDF is read on this phone; only the transaction lines are sent to the server.</p>
@@ -1572,7 +1572,7 @@
         </label>
         <p id="stmt-progress" class="settings-status" hidden></p>
         <p id="stmt-pick-error" class="modal-error" hidden></p>
-        <button type="submit" id="stmt-read" class="primary-button lot-submit-button">Read Statement</button>
+        <button type="submit" id="stmt-read" class="btn btn-lg">Read statement</button>
         <div class="modal-actions">
           <button type="button" id="stmt-cancel" class="secondary-button">Cancel</button>
         </div>
@@ -1582,7 +1582,36 @@
         </div>
       </form>
 
+      <div id="stmt-working" hidden>
+        <p id="stmt-working-status" class="scan-status"></p>
+        <ul class="card card-flush row-list stmt-tasks" id="stmt-tasks"></ul>
+        <button type="button" id="stmt-abort" class="btn btn-outline btn-block">Cancel import</button>
+      </div>
+
       <div id="stmt-review" hidden>
+        <section id="stmt-approval" hidden>
+          <div class="approval-head"><p class="approval-lead" id="stmt-approval-lead"></p><span class="badge" id="stmt-approval-badge"></span></div>
+          <div class="card approval-card">
+            <p class="approval-desc" id="stmt-approval-desc"></p>
+            <p class="row-meta" id="stmt-approval-meta"></p>
+            <p class="rec-q" id="stmt-approval-q"></p>
+            <div class="rec-options" role="radiogroup" id="stmt-approval-options"></div>
+          </div>
+          <div class="rec-actions">
+            <button type="button" class="btn btn-outline" id="stmt-skip">Skip</button>
+            <button type="button" class="btn" id="stmt-continue">Continue</button>
+          </div>
+        </section>
+
+        <section id="stmt-done">
+          <div class="done-head">
+            <span class="done-circle" aria-hidden="true"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+            <h3 class="done-title" id="stmt-done-title"></h3>
+            <p class="row-meta done-breakdown" id="stmt-done-breakdown"></p>
+          </div>
+          <ul class="card card-flush row-list" id="stmt-top"></ul>
+          <details class="stmt-all" id="stmt-all">
+            <summary>All rows</summary>
         <p id="stmt-summary" class="stmt-summary"></p>
         <p id="stmt-verify" class="stmt-verify"></p>
         <p id="stmt-counts" class="stmt-hint"></p>
@@ -1591,8 +1620,10 @@
           <button type="button" id="stmt-select-none" class="link-button">Select none</button>
         </div>
         <ul id="stmt-rows" class="stmt-rows"></ul>
+          </details>
         <p id="stmt-review-error" class="modal-error" hidden></p>
-        <button type="button" id="stmt-import" class="primary-button lot-submit-button">Import</button>
+        <button type="button" id="stmt-import" class="btn btn-lg">Import</button>
+        </section>
         <div class="modal-actions">
           <button type="button" id="stmt-back" class="secondary-button">Back</button>
         </div>
@@ -1645,10 +1676,10 @@
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script src="/liff-config.js"></script>
   <!-- Chart.js for the Net Worth performance chart; app.js renders everything else without it if this is blocked. -->
-  <script src="app.js?v=20261121l"></script>
-  <script src="tasks.js?v=20261121l"></script>
-  <script src="tax.js?v=20261121l"></script>
-  <script src="insights.js?v=20261121l"></script>
-  <script src="money.js?v=20261121l"></script>
+  <script src="app.js?v=20261121m"></script>
+  <script src="tasks.js?v=20261121m"></script>
+  <script src="tax.js?v=20261121m"></script>
+  <script src="insights.js?v=20261121m"></script>
+  <script src="money.js?v=20261121m"></script>
 </body>
 </html>
