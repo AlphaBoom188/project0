@@ -103,10 +103,10 @@ async function saveGoal(page) {
   assert((await page.textContent('#goal-status')) === 'On track', `starting today at the current value -> "On track" (got "${await page.textContent('#goal-status')}")`);
   await page.waitForFunction(() => window.Chart && window.Chart.getChart(document.getElementById('goal-chart')), null, { timeout: 15000 });
   let chart = await chartState(page);
-  const accent = await token(page, '--primary');
+  const accent = await token(page, '--brand');
   const secondary = await token(page, '--muted-foreground');
   assert(chart.type === 'line' && chart.datasets.map((d) => d.label).join() === 'Projected,Contributed,Today', `line chart: Projected, Contributed, Today (got ${chart.datasets.map((d) => d.label)})`);
-  assert(chart.datasets[0].color === accent && chart.datasets[1].color === secondary && chart.datasets[1].dash && chart.datasets[1].dash.length === 2, 'projected = --primary, contributed dashed --muted-foreground');
+  assert(chart.datasets[0].color === accent && chart.datasets[1].color === secondary && chart.datasets[1].dash && chart.datasets[1].dash.length === 2, 'projected = --brand (Clay), contributed dashed --muted-foreground');
   const todayPoints = chart.datasets.find((d) => d.label === 'Today').data.map((v, i) => [v, i]).filter(([v]) => v !== null);
   assert(todayPoints.length === 1 && todayPoints[0][0] === 42000 && todayPoints[0][1] === 0 && chart.datasets.find((d) => d.label === 'Today').showLine === false, `today's value is one highlighted point (got ${JSON.stringify(todayPoints)})`);
   assert(chart.labels.length === expected.points.length && chart.labels[0] === today.slice(0, 7), 'labels are the Bangkok months of the points');

@@ -69,8 +69,8 @@ const chartState = (page) => page.evaluate(() => {
   let chart = await chartState(page);
   assert(chart.datasets.map((d) => d.label).join() === 'Portfolio,Invested' && chart.datasets[1].dash, `Value view: portfolio vs dashed invested (got ${JSON.stringify(chart.datasets)})`);
   assert(chart.labels.length === expected.points.length && chart.labels[0] === expected.start_date, `1Y chart has the endpoint's points (got ${chart.labels.length})`);
-  const accentLight = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--primary').trim());
-  assert(chart.datasets[0].color === accentLight, 'portfolio line uses --primary');
+  const accentLight = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--brand').trim());
+  assert(chart.datasets[0].color === accentLight, 'portfolio line uses --brand (Clay)');
 
   const bench = async (id) => (await page.textContent(`#perf-benchmark-${id}`)).replace(/\s+/g, ' ').trim();
   assert(/S&P 500 [\d,]+\.\d\d [+-][\d.]+% today · [+-][\d.]+% 1Y/.test(await bench('sp500')), `S&P 500 card: level, day %, range % (got "${await bench('sp500')}")`);
@@ -120,10 +120,10 @@ const chartState = (page) => page.evaluate(() => {
   await page.screenshot({ path: `${OUTPUT}/performance_light.png` });
 
   // --- Theme change redraws with the dark tokens ---
-  const lightText = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--foreground').trim());
+  const lightText = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--muted-foreground').trim());
   await page.evaluate(() => setTheme('dark'));
   const darkChart = await chartState(page);
-  const darkText = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--foreground').trim());
+  const darkText = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--muted-foreground').trim());
   assert(darkChart.id !== chart.id && darkChart.datasets[2].color === darkText && darkText !== lightText, `theme change re-creates the chart with dark token colors (SET line ${darkChart.datasets[2].color})`);
   await page.$eval('#perf-card', (c) => c.scrollIntoView());
   await page.screenshot({ path: `${OUTPUT}/performance_dark.png` });

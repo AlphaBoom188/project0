@@ -684,6 +684,92 @@ function currentMonthFirstDay() {
   return `${bangkokYmd().slice(0, 7)}-01`;
 }
 
+// ---- v5 refresh helpers (LIFF_UXUI_REFRESH_SPEC.md 1.3, 1.4, 2) ----
+
+// ฿15,973 (no decimals when whole, 2 otherwise), U+2212 minus for negatives,
+// sign: true adds a leading +. CSV exports don't use this.
+function formatBaht(value, { sign = false } = {}) {
+  const v = Number(value) || 0;
+  const cents = Math.round(Math.abs(v) * 100);
+  const digits = cents % 100 === 0 ? 0 : 2;
+  const body = (cents / 100).toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  return `${v < 0 ? '\u2212' : sign && v > 0 ? '+' : ''}฿${body}`;
+}
+
+// Signed amount for an entry: expenses "−฿120" (foreground), income "+฿500"
+// (--income), transfers "฿300" (muted). Red is only for over budget / errors.
+function entryAmount(t) {
+  const n = Math.abs(parseFloat(t.amount) || 0);
+  if (t.type === 'income') return formatBaht(n, { sign: true });
+  if (t.type === 'expense') return formatBaht(-n);
+  return formatBaht(n);
+}
+
+// Lucide 0.469 paths for category tiles.
+const LUCIDE_PATHS = {
+  utensils: '<path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>',
+  car: '<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>',
+  'shopping-bag': '<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>',
+  zap: '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
+  film: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18"/><path d="M3 7.5h4"/><path d="M3 12h18"/><path d="M3 16.5h4"/><path d="M17 3v18"/><path d="M17 7.5h4"/><path d="M17 16.5h4"/>',
+  'heart-pulse': '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/><path d="M3.22 12H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27"/>',
+  coffee: '<path d="M10 2v2"/><path d="M14 2v2"/><path d="M16 8a1 1 0 0 1 1 1v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1h14a4 4 0 1 1 0 8h-1"/><path d="M6 2v2"/>',
+  briefcase: '<path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><rect width="20" height="14" x="2" y="6" rx="2"/>',
+  'arrow-left-right': '<path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/>',
+  house: '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  tag: '<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/>',
+};
+const lucide = (name, size = 18) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${LUCIDE_PATHS[name] || LUCIDE_PATHS.tag}</svg>`;
+
+// Category name -> icon and tint (spec 1.3). Matched on the name, so the
+// presets, their Thai or English variants and similar user names all get a
+// tile; anything else (user categories, accounts) is the neutral tile.
+const CATEGORY_ICONS = [
+  { match: /food|drink|อาหาร|ข้าว|meal|restaurant|grocer/i, icon: 'utensils', tint: 'food' },
+  { match: /coffee|cafe|café|กาแฟ/i, icon: 'coffee', tint: 'coffee' },
+  { match: /transport|taxi|grab|travel|เดินทาง|fuel|car/i, icon: 'car', tint: 'trans' },
+  { match: /shop|ช้อป|clothes/i, icon: 'shopping-bag', tint: 'shop' },
+  { match: /utilit|bill|telecom|phone|internet|electric|water|ค่าน้ำ|ค่าไฟ/i, icon: 'zap', tint: 'bill' },
+  { match: /entertain|movie|fun|game|บันเทิง/i, icon: 'film', tint: 'ent' },
+  { match: /health|medic|pharm|hospital|สุขภาพ/i, icon: 'heart-pulse', tint: 'health' },
+  { match: /income|salary|freelance|bonus|wage|รายได้|เงินเดือน/i, icon: 'briefcase', tint: 'inc' },
+  { match: /^transfer$|โอน/i, icon: 'arrow-left-right', tint: 'xfer' },
+  { match: /accommodation|rent|home|house|ที่พัก/i, icon: 'house', tint: null },
+];
+function categoryVisual(name) {
+  const hit = CATEGORY_ICONS.find((c) => c.match.test(String(name || '')));
+  return hit || { icon: 'tag', tint: null };
+}
+// A 36px tinted tile for a category (or 'Transfer').
+function categoryTile(name, { size = 36 } = {}) {
+  const v = categoryVisual(name);
+  const style = v.tint ? ` style="--tile-bg: var(--c-${v.tint}-bg); --tile-fg: var(--c-${v.tint});"` : '';
+  return `<span class="cat-tile${size !== 36 ? ' cat-tile-sm' : ''}"${style} aria-hidden="true">${lucide(v.icon, 18)}</span>`;
+}
+
+// Sonner-style toast (spec 2): showToast({ title, description, kind: 'ok'|'warn'|'bad', undo: async () => {} })
+let toastTimer = null;
+function showToast({ title, description = '', kind = 'ok', undo = null }) {
+  const node = document.getElementById('toast');
+  if (!node) return;
+  clearTimeout(toastTimer);
+  node.className = `toast toast-${kind}`;
+  node.innerHTML = `<span class="toast-icon" aria-hidden="true">${kind === 'ok'
+    ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>'
+    : '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>'}</span>
+    <span class="toast-text"><span class="toast-title">${escapeHtml(title)}</span>${description ? `<span class="toast-desc">${escapeHtml(description)}</span>` : ''}</span>
+    ${undo ? '<button type="button" class="btn btn-sm toast-undo">Undo</button>' : ''}`;
+  node.hidden = false;
+  if (undo) {
+    node.querySelector('.toast-undo').addEventListener('click', async () => {
+      node.hidden = true;
+      clearTimeout(toastTimer);
+      try { await undo(); } catch (error) { showToast({ title: "Couldn't undo", description: plainError(error), kind: 'bad' }); }
+    }, { once: true });
+  }
+  toastTimer = setTimeout(() => { node.hidden = true; }, undo ? 5000 : 3200);
+}
+
 function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
@@ -804,10 +890,10 @@ function renderSummary(transactions, periodLabel) {
     { income: 0, expense: 0 }
   );
   const net = totals.income - totals.expense;
-  el.summaryIncome.textContent = totals.income.toFixed(2);
-  el.summaryExpense.textContent = totals.expense.toFixed(2);
-  el.summaryNet.textContent = net.toFixed(2);
-  el.summaryNet.style.color = net >= 0 ? 'var(--income)' : 'var(--destructive)';
+  el.summaryIncome.textContent = formatBaht(totals.income, { sign: true });
+  el.summaryExpense.textContent = formatBaht(totals.expense);
+  el.summaryNet.textContent = formatBaht(net, { sign: true });
+  el.summaryNet.style.color = net >= 0 ? 'var(--income)' : 'var(--foreground)'; // red only for over budget / errors
 }
 
 // Grouped under one header per local calendar day (input is newest-first, so
@@ -863,7 +949,7 @@ function buildTransactionRow(t, showPaymentMethod) {
       ${t.description ? `<div class="transaction-description">${escapeHtml(t.description)}</div>` : ''}
       ${paymentHtml}
     </div>
-    <div class="transaction-amount ${t.type}">${parseFloat(t.amount).toFixed(2)}</div>
+    <div class="transaction-amount ${t.type}">${entryAmount(t)}</div>
   `;
   return li;
 }
@@ -2776,16 +2862,17 @@ function perfDatasets(points) {
     label, data, borderColor: cssToken(colorToken), backgroundColor: cssToken(colorToken),
     borderWidth: 2, pointRadius: 0, pointHoverRadius: 3, tension: 0.2, spanGaps: true, ...extra,
   });
+  // v5: your line in Clay (--brand) at 2.5px; S&P 500 solid muted; SET dotted.
   if (perfView === 'value') {
     return [
-      line('Portfolio', points.map((p) => p.value_thb), '--primary'),
+      line('Portfolio', points.map((p) => p.value_thb), '--brand', { borderWidth: 2.5 }),
       line('Invested', points.map((p) => p.invested_thb), '--muted-foreground', { borderDash: [6, 4], borderWidth: 1.5 }),
     ];
   }
   return [
-    line('Portfolio', points.map((p) => p.twr_pct), '--primary'),
-    line('S&P 500', points.map((p) => p.sp500_pct), '--warning', { borderWidth: 1.5 }),
-    line('SET', points.map((p) => p.set_pct), '--foreground', { borderWidth: 1.5 }),
+    line('Portfolio', points.map((p) => p.twr_pct), '--brand', { borderWidth: 2.5 }),
+    line('S&P 500', points.map((p) => p.sp500_pct), '--muted-foreground', { borderWidth: 1.5 }),
+    line('SET', points.map((p) => p.set_pct), '--muted-foreground', { borderWidth: 1.5, borderDash: [2, 3] }),
   ];
 }
 
@@ -3085,7 +3172,7 @@ function renderGoalChart() {
   const thisMonth = bangkokYmd().slice(0, 7);
   let todayIndex = -1;
   if (p.status !== 'not_started' && p.current_value_thb !== null) points.forEach((pt, i) => { if (pt.date <= thisMonth) todayIndex = i; });
-  const accent = cssToken('--primary');
+  const accent = cssToken('--brand'); // v5: chart lines in Clay
   const secondary = cssToken('--muted-foreground');
   const highlight = cssToken('--warning');
   const gridColor = cssToken('--border');

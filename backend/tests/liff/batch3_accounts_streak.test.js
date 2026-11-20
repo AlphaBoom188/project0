@@ -102,7 +102,7 @@ const descs = (page) => page.$$eval('#txn-full-list .transaction-description', (
 
   // ---- Radius tokens ----
   const radii = await page.evaluate(() => ({ card: getComputedStyle(document.querySelector('.summary-card')).borderRadius, space: getComputedStyle(document.documentElement).getPropertyValue('--space-page').trim() }));
-  assert(radii.card === '14px', `cards use --radius-xl 14px (got ${radii.card})`);
+  assert(radii.card === '12px', `cards use --radius-xl 12px (v5 refresh) (got ${radii.card})`);
 
   // ---- Account filter sheet ----
   await page.click('.nav-tab[data-tab="transactions"]');
@@ -120,7 +120,7 @@ const descs = (page) => page.$$eval('#txn-full-list .transaction-description', (
   const names = await page.$$eval('.account-filter-name', (els) => els.map((e) => e.textContent).sort());
   assert(JSON.stringify(names) === '["Kbank","Wallet Cash"]', `sheet lists the user's accounts (got ${JSON.stringify(names)})`);
   const sheetRadius = await page.evaluate(() => getComputedStyle(document.querySelector('#account-filter-modal .modal-content')).borderTopLeftRadius);
-  assert(sheetRadius === '14px', `sheets use --radius-xl 14px (got ${sheetRadius})`);
+  assert(sheetRadius === '16px', `sheets use a 16px top radius (v5 refresh) (got ${sheetRadius})`);
   await page.screenshot({ path: `${SHOTS}/b3_account_sheet.png` });
   // dismissing via backdrop changes nothing
   await page.check(`#account-filter-list input[value="${cash.id}"]`);
