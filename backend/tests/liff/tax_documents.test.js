@@ -42,6 +42,9 @@ fs.writeFileSync(PDF_PATH, statementPdf([[{ x: 60, y: 780, s: 'INSURANCE CERTIFI
     await page.goto(`${BASE}/liff/`);
     await page.waitForSelector('#app:not([hidden])', { timeout: 15000 });
     await openTab(page, 'tax');
+    // v5: unclaimed deductions sit behind "Browse all"
+    await page.waitForFunction(() => document.getElementById('tax-ded-browse').textContent.startsWith('Browse all'), null, { timeout: 15000 });
+    await page.click('#tax-ded-browse');
     await page.waitForSelector('#tax-years .segment', { timeout: 15000 });
     if (!(await page.$('#tax-years .segment.active[data-year="2569"]'))) await page.click('#tax-years [data-year="2569"]');
     await page.waitForSelector('#tax-incomes-empty:not([hidden])', { timeout: 15000 });
@@ -71,7 +74,7 @@ fs.writeFileSync(PDF_PATH, statementPdf([[{ x: 60, y: 780, s: 'INSURANCE CERTIFI
     await page.click('#tax-income-cancel');
 
     // --- Attach a PDF to a deduction (first page -> image on the phone) ---
-    await page.click('[data-deduction="life_insurance"]');
+    await page.click('#tax-deductions [data-deduction="life_insurance"]');
     await page.waitForSelector('#tax-deduction-modal:not([hidden])');
     assert((await page.textContent('#tax-ded-docs')).includes('Nothing attached yet'), 'deduction: nothing attached');
     await Promise.all([page.waitForResponse((r) => r.url().endsWith('/2569/documents') && r.request().method() === 'POST', { timeout: 30000 }), page.setInputFiles('#tax-ded-attach', PDF_PATH)]);

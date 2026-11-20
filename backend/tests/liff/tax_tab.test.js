@@ -30,6 +30,9 @@ const text = (page, sel) => page.textContent(sel).then((t) => t.replace(/\s+/g, 
     assert(nav.length === 5 && nav[4].tab === 'more' && nav[3].label === 'Money' && nav.every((n) => !n.over), `five items, More last, no overflow at 360px (got ${JSON.stringify(nav.map((n) => n.label))})`);
 
     await openTab(page, 'tax');
+    // v5: unclaimed deductions sit behind "Browse all"
+    await page.waitForFunction(() => document.getElementById('tax-ded-browse').textContent.startsWith('Browse all'), null, { timeout: 15000 });
+    await page.click('#tax-ded-browse');
     await page.waitForSelector('#tax-years .segment', { timeout: 15000 });
     const years = await page.$$eval('#tax-years .segment', (bs) => bs.map((b) => `${b.textContent}${b.classList.contains('active') ? '*' : ''}`));
     assert(years.join() === 'Tax year 2568,Tax year 2569*', `years, the current one selected in November (got ${years})`);
@@ -57,10 +60,10 @@ const text = (page, sel) => page.textContent(sel).then((t) => t.replace(/\s+/g, 
     assert(brk.includes('Net income ฿340,000') && brk.includes('5% on ฿150,000 ฿7,500') && brk.includes('10% on ฿40,000 ฿4,000') && brk.includes('To pay ฿6,500'), `breakdown (got ${brk})`);
 
     // --- Deductions checklist ---
-    const personal = await text(page, '[data-deduction="personal"]');
+    const personal = await text(page, '#tax-deductions [data-deduction="personal"]');
     assert(personal.includes('Everyone gets this'), 'personal allowance row');
-    assert(!(await page.$('[data-deduction="spouse"]')), 'spouse row hidden while single');
-    await page.click('[data-deduction="rmf"]');
+    assert(!(await page.$('#tax-deductions [data-deduction="spouse"]')), 'spouse row hidden while single');
+    await page.click('#tax-deductions [data-deduction="rmf"]');
     await page.waitForSelector('#tax-deduction-modal:not([hidden])');
     assert((await text(page, '#tax-deduction-help')).includes('Up to 30% of your income') && (await text(page, '#tax-deduction-help')).includes('up to ฿150,000'), 'RMF help shows the personal limit');
     await page.fill('#tax-deduction-amount', '200000');
@@ -70,18 +73,18 @@ const text = (page, sel) => page.textContent(sel).then((t) => t.replace(/\s+/g, 
     assert(rmf.includes('paid ฿200,000 · capped') && rmf.includes('฿150,000'), `RMF capped at 150,000 (got ${rmf})`);
     assert((await text(page, '#tax-hero-amount')) === '฿3,000' && (await text(page, '#tax-hero-label')) === 'Refund', `refund 3,000 after RMF (190k net -> 2,000 tax, 5,000 withheld) (got ${await text(page, '#tax-hero-label')} ${await text(page, '#tax-hero-amount')})`);
     // count input
-    await page.click('[data-deduction="parents"]');
+    await page.click('#tax-deductions [data-deduction="parents"]');
     await page.fill('#tax-deduction-amount', '2');
     await Promise.all([page.waitForResponse((r) => r.url().includes('/claims')), page.click('#tax-deduction-save')]);
     await page.waitForSelector('#tax-deduction-modal', { state: 'hidden' });
     assert((await text(page, '.tax-ded-row:has([data-deduction="parents"])')).includes('2 people'), 'parents: 2 people');
     // remove
-    await page.click('[data-deduction="parents"]');
+    await page.click('#tax-deductions [data-deduction="parents"]');
     await Promise.all([page.waitForResponse((r) => r.url().includes('/claims')), page.click('#tax-deduction-remove')]);
     await page.waitForSelector('#tax-deduction-modal', { state: 'hidden' });
     assert((await text(page, '.tax-ded-row:has([data-deduction="parents"])')).includes('Up to ฿120,000'), 'removed claim shows its limit again');
     // bad input
-    await page.click('[data-deduction="parents"]');
+    await page.click('#tax-deductions [data-deduction="parents"]');
     await page.fill('#tax-deduction-amount', '9');
     await page.click('#tax-deduction-save');
     await page.waitForSelector('#tax-deduction-error:not([hidden])');
@@ -144,7 +147,7 @@ const text = (page, sel) => page.textContent(sel).then((t) => t.replace(/\s+/g, 
     await page.waitForFunction(() => document.querySelector('#tax-years .segment.active').dataset.year === '2568', null, { timeout: 10000 });
     await page.waitForSelector('#tax-incomes-empty:not([hidden])', { timeout: 10000 });
     assert(!(await page.isVisible('#tax-warnings')) || !(await text(page, '#tax-warnings')).includes('uses the 2568 rules'), '2568 has no carried-over warning');
-    assert(await page.$('[data-deduction="easy_ereceipt"]'), '2568 shows Easy E-Receipt');
+    assert(await page.$('#tax-deductions [data-deduction="easy_ereceipt"]'), '2568 shows Easy E-Receipt');
     await page.click('#tax-add-income');
     await page.click('#tax-shortcuts [data-kind="salary"]');
     await page.fill('#tax-income-amount', '600000');

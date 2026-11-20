@@ -36,6 +36,7 @@ const call = (method, p, body) => fetch(`${BASE}/api${p}`, { method, headers: { 
     await open2569();
 
     // --- Planner ---
+    if (await page.isVisible('#tax-plan-more')) await page.click('#tax-plan-more'); // v5: top 3 until See all
     const rows = await page.$$eval('#tax-plan .tax-plan-row', (rs) => rs.map((r) => r.innerText.replace(/\s+/g, ' ')));
     assert(rows.length >= 5 && rows[0].includes('Donations counted twice') && rows[0].includes('back per ฿1,000'), `ranked options, x2 donations first (got ${rows[0]})`);
     const esg = rows.find((r) => r.startsWith('ThaiESG'));

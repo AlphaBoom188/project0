@@ -330,7 +330,7 @@ function renderHero(d, rules) {
   x.heroFiling.textContent = !d.incomes.length ? '' : f.mustFile && late
     ? `The ${f.form === 'PND91' ? 'PND 91' : 'PND 90'} deadline was ${thaiDate(lastDay)}. File as soon as you can: unpaid tax gets a 1.5% monthly surcharge.`
     : f.mustFile
-    ? `File ${f.form === 'PND91' ? 'PND 91' : 'PND 90'} ${deadline}${r.instalments ? '. You can pay in 3 instalments.' : ''}`
+    ? `File ${f.form === 'PND91' ? 'PND 91' : 'PND 90'} ${deadline}${r.instalments ? '. You can pay in 3 instalments.' : ''}${d.guide && d.guide.daysLeft != null && d.guide.daysLeft >= 0 ? ` · ${d.guide.daysLeft} day${d.guide.daysLeft === 1 ? '' : 's'} left` : ''}`
     : `Your income is under ${taxBaht(f.threshold)}, so you don't need to file for ${d.year}${r.result === 'refund' ? ', but filing gets your refund' : ''}.`;
 }
 
@@ -387,14 +387,19 @@ function deductionRow(def, d) {
   </li>`;
 }
 
+// v5 (spec 4.6 item 9): claimed items show; "Browse all n" opens the rest.
 function renderDeductions(d, rules) {
   const visible = rules.deductions.filter((def) => d.result.limits[def.key] !== 0 || d.claims[def.key] != null);
-  x.deductionsTotal.textContent = `${taxBaht(d.result.totals.allowances + d.result.totals.donations)} in all`;
+  const claimedCount = [...d.result.allowances, ...d.result.donations].filter((a) => a.allowed > 0).length;
+  x.deductionsTotal.textContent = `${claimedCount} claimed · ${taxBaht(d.result.totals.allowances + d.result.totals.donations)} in all`;
+  const browse = document.getElementById('tax-ded-browse');
+  browse.textContent = x.deductions.classList.contains('show-all') ? 'Claimed only' : `Browse all ${visible.length}`;
   x.deductions.innerHTML = TAX_GROUPS.map(([group, title]) => {
     const defs = visible.filter((def) => def.group === group);
     if (!defs.length) return '';
-    return `<h3 class="tax-group-title">${title}</h3>${TAX_GROUP_NOTES[group] ? `<p class="group-hint tax-group-note">${TAX_GROUP_NOTES[group]}</p>` : ''}
-      <ul class="task-list">${defs.map((def) => deductionRow(def, d)).join('')}</ul>`;
+    const anyClaimed = defs.some((def) => [...d.result.allowances, ...d.result.donations].some((a) => a.key === def.key && a.allowed > 0));
+    return `<section class="tax-ded-group${anyClaimed ? ' has-claimed' : ''}"><h3 class="tax-group-title">${title}</h3>${TAX_GROUP_NOTES[group] ? `<p class="group-hint tax-group-note">${TAX_GROUP_NOTES[group]}</p>` : ''}
+      <ul class="task-list">${defs.map((def) => deductionRow(def, d)).join('')}</ul></section>`;
   }).join('');
 }
 
@@ -470,6 +475,9 @@ function renderPlan(plan) {
   x.planReason.hidden = plan.applicable;
   x.planReason.textContent = plan.reason || '';
   x.plan.hidden = !plan.applicable;
+  const more = document.getElementById('tax-plan-more');
+  more.hidden = !plan.applicable || plan.items.length <= 3;
+  more.textContent = x.plan.classList.contains('show-all') ? 'Show top 3' : `See all ${plan.items.length}`;
   x.plan.innerHTML = plan.items.map((it) => `<li class="task-row tax-plan-row">
     <button type="button" class="task-main" data-deduction="${it.key}">
       <span class="task-title">${escapeHtml(it.label)}${it.verified ? '' : ' <span class="tax-unverified">Unverified</span>'}</span>
@@ -694,7 +702,7 @@ function fillKindOptions() {
   rules.incomeKinds.forEach((k) => { (byType[k.type] ||= []).push(k); });
   x.kind.innerHTML = '<option value="">Choose…</option>' + Object.entries(byType).map(([type, kinds]) =>
     `<optgroup label="${type}">${kinds.map((k) => `<option value="${k.key}">${escapeHtml(k.label)}</option>`).join('')}</optgroup>`).join('');
-  x.shortcuts.innerHTML = rules.shortcuts.map((key) => `<button type="button" class="tax-shortcut" data-kind="${key}">${SVG(SHORTCUT_ICONS[key] || ICONS.other, 20)}<span>${SHORTCUT_LABELS[key] || kindOf(key).label}</span></button>`).join('');
+  x.shortcuts.innerHTML = rules.shortcuts.map((key) => `<button type="button" class="tax-shortcut" data-kind="${key}">${SVG(SHORTCUT_ICONS[key] || ICONS.other, 20)}<span>${SHORTCUT_LABELS[key] || kindOf(key).label}</span><span class="tax-shortcut-code">${escapeHtml((kindOf(key) || {}).type || '')}</span></button>`).join('');
 }
 
 function setExpenseMethod(method) {
@@ -898,3 +906,18 @@ x.incomeDelete.addEventListener('click', deleteTaxIncome);
 x.dedForm.addEventListener('submit', (e) => saveTaxDeduction(e));
 x.dedCancel.addEventListener('click', () => { x.dedModal.hidden = true; });
 x.dedRemove.addEventListener('click', () => saveTaxDeduction(null, true));
+
+// ---- v5 Tax wiring (spec 4.6) ----
+document.getElementById('tax-ded-browse').addEventListener('click', () => {
+  x.deductions.classList.toggle('show-all');
+  if (taxState.data) renderTax();
+});
+document.getElementById('tax-plan-more').addEventListener('click', () => {
+  x.plan.classList.toggle('show-all');
+  if (taxState.data && taxState.data.plan) renderPlan(taxState.data.plan);
+});
+document.getElementById('tax-help').addEventListener('click', () => document.getElementById('tax-sec-breakdown').scrollIntoView({ block: 'start' }));
+document.getElementById('tax-scan-tab').addEventListener('click', () => {
+  openTaxIncomeModal();
+  x.scanInput.click(); // same tick as the tap, or phones block the picker
+});

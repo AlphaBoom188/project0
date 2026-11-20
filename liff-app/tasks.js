@@ -270,6 +270,8 @@ function renderTasksSummary() {
   const g = listGroups();
   t.summaryRepeat.innerHTML = `${SVG(ICONS.repeat, 16)}<span>Repeating ${g.repeat.length}</span>`;
   t.summaryNext.innerHTML = `${SVG(ICONS.clock, 16)}<span>Upcoming ${g.upcoming}</span>`;
+  const doneChip = document.getElementById('tasks-summary-done');
+  if (doneChip) doneChip.innerHTML = `${SVG(ICONS.check, 16)}<span>Done ${g.done.length}</span>`;
 }
 
 const categoryIcon = (c) => `<span class="task-icon">${SVG(ICONS[c] || ICONS.bell, 18)}</span>`;
@@ -278,7 +280,7 @@ function importanceBadge(i) {
   return `<span class="task-badge${i === 2 ? ' strong' : ''}">${IMPORTANCE_LABELS[i]}</span>`;
 }
 
-function reminderRow(r, at, { showDate = false } = {}) {
+function reminderRow(r, at, { showDate = false, timeline = false } = {}) {
   const st = at ? reminderState(r, at) : { done: r.status === 'done', label: '' };
   const canCheck = r.status === 'done' ? r.repeat === 'none' : (r.repeat === 'none' || !at || isCurrent(r, at));
   const meta = [
@@ -287,25 +289,27 @@ function reminderRow(r, at, { showDate = false } = {}) {
     r.group_id ? 'Group' : '',
     r.category ? CATEGORY_LABELS[r.category] : '',
   ].filter(Boolean).join(' · ');
-  return `<li class="task-row${st.done ? ' is-done' : ''}" data-id="${r.id}">
+  // Timeline (spec 4.5): the time sits in a 44px column outside the card.
+  const open = timeline ? '<div class="tl-card">' : '';
+  const close = timeline ? '</div>' : '';
+  return `<li class="task-row${st.done ? ' is-done' : ''}${timeline ? ' tl-row' : ''}" data-id="${r.id}">
     <span class="task-time">${at ? bkkTime(at) : ''}</span>
-    ${categoryIcon(r.category)}
+    ${open}${categoryIcon(r.category)}
     <button type="button" class="task-main" data-open="${r.id}"${isMine(r) ? '' : ' disabled'}>
       <span class="task-title">${escapeHtml(r.title)}</span>
       <span class="task-meta">${importanceBadge(r.importance)}${r.group_id ? SVG(ICONS.group, 14) : ''}<span>${escapeHtml(meta)}</span></span>
     </button>
-    ${canCheck ? `<button type="button" class="task-check${st.done ? ' checked' : ''}" data-check="${r.id}" aria-pressed="${st.done}" aria-label="${st.done ? 'Mark not done' : 'Mark done'}: ${escapeHtml(r.title)}">${SVG(ICONS.check, 16)}</button>` : `<span class="task-check-placeholder">${SVG(ICONS.repeat, 16)}</span>`}
+    ${canCheck ? `<button type="button" class="task-check${st.done ? ' checked' : ''}" data-check="${r.id}" aria-pressed="${st.done}" aria-label="${st.done ? 'Mark not done' : 'Mark done'}: ${escapeHtml(r.title)}">${SVG(ICONS.check, 16)}</button>` : `<span class="task-check-placeholder">${SVG(ICONS.repeat, 16)}</span>`}${close}
   </li>`;
 }
 
 function eventRow(e) {
   const time = e.all_day ? 'All day' : bkkTime(e.start);
   const range = !e.all_day && e.end ? `${bkkTime(e.start)}-${bkkTime(e.end)}` : 'All day';
-  return `<li class="task-row is-event">
+  return `<li class="task-row is-event tl-row">
     <span class="task-time">${time}</span>
-    <span class="task-icon">${SVG(ICONS.calendar, 18)}</span>
-    <span class="task-main"><span class="task-title">${escapeHtml(e.title)}</span><span class="task-meta"><span>Google Calendar · ${range}</span></span></span>
-    <span class="task-check-placeholder"></span>
+    <div class="tl-card"><span class="task-icon">${SVG(ICONS.calendar, 18)}</span>
+    <span class="task-main"><span class="task-title">${escapeHtml(e.title)}</span><span class="task-meta"><span>Google Calendar · ${range}</span></span></span></div>
   </li>`;
 }
 
@@ -325,13 +329,13 @@ function renderTimeline() {
       rows.push(nowLine());
       nowShown = true;
     }
-    rows.push(item.kind === 'event' ? eventRow(item.e) : reminderRow(item.r, item.at));
+    rows.push(item.kind === 'event' ? eventRow(item.e) : reminderRow(item.r, item.at, { timeline: true }));
   }
   if (!nowShown && items.length) rows.push(nowLine());
   t.timeline.innerHTML = rows.join('');
 }
 
-const nowLine = () => `<li class="now-line" aria-label="Now"><span class="now-pill">Now ${bkkTime(new Date().toISOString())}</span><span class="now-rule"></span></li>`;
+const nowLine = () => `<li class="now-line" aria-label="Now ${bkkTime(new Date().toISOString())}"><span class="now-time">${bkkTime(new Date().toISOString())}</span><span class="now-rule"></span><span class="now-label">Now</span></li>`;
 
 function renderTodos() {
   const sel = tasks.selected;
@@ -395,7 +399,7 @@ function setKind(kind) {
 
 function setRepeatMode(mode) {
   tasks.form.mode = mode;
-  t.repeatMode.querySelectorAll('.segment').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
+  document.getElementById('task-repeat-switch').checked = mode === 'repeat';
   t.presets.hidden = mode === 'repeat';
   t.repeatField.hidden = mode !== 'repeat';
   t.clearTime.hidden = mode === 'repeat';
@@ -485,6 +489,9 @@ async function handleTaskSubmit(event) {
     else await apiRequest(`/reminders/${lineUserId}`, { method: 'POST', body: JSON.stringify(body) });
     closeTaskModal();
     if (remindAt && !r) tasks.selected = bkkYmdOf(remindAt);
+    // Spec 6.4: "Reminder set: {title}, {when}."
+    const when = remindAt ? `${bkkYmdOf(remindAt) === bangkokYmd() ? 'today' : longDate(bkkYmdOf(remindAt))} ${bkkTime(remindAt)}` : '';
+    showToast({ title: r ? `Saved: ${title}.` : remindAt ? `Reminder set: ${title}, ${when}.` : `Added to your to-do list: ${title}.` });
     await reloadTasks();
   } catch (error) {
     showModalError(t.error, plainError(error));
@@ -701,7 +708,7 @@ t.kind.addEventListener('click', (e) => {
   if (b.dataset.kind === 'note') openNoteModal(null);
   else openTaskModal(null);
 });
-t.repeatMode.addEventListener('click', (e) => { const b = e.target.closest('[data-mode]'); if (b) setRepeatMode(b.dataset.mode); });
+document.getElementById('task-repeat-switch').addEventListener('change', (e) => setRepeatMode(e.target.checked ? 'repeat' : 'once'));
 t.presets.addEventListener('click', (e) => { const b = e.target.closest('[data-preset]'); if (b) applyPreset(b.dataset.preset); });
 t.clearTime.addEventListener('click', () => { t.dateInput.value = ''; t.timeInput.value = ''; });
 t.categories.addEventListener('click', (e) => {

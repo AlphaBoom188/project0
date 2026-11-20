@@ -106,7 +106,7 @@ const tomorrow = bkkYmd(new Date(Date.now() + 86400000));
     await page.click('#task-save');
     assert((await page.textContent('#task-modal-error')) === 'Add what to remind you about.', 'title required');
     await page.fill('#task-title', 'Water plants');
-    await page.click('#task-repeat-mode [data-mode="repeat"]');
+    await page.click('#task-repeat-switch'); // v5: Repeat is a switch
     assert(await page.isHidden('#task-presets') && await page.isVisible('#task-repeat') && (await page.inputValue('#task-time')) === '09:00', 'repeat mode: presets hidden, repeat select shown, 09:00 default');
     await page.selectOption('#task-repeat', 'weekly');
     await Promise.all([page.waitForResponse((r) => r.url().includes(`/reminders/${U}`) && r.request().method() === 'POST'), page.click('#task-save')]);

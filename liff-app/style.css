@@ -4749,3 +4749,141 @@ select.chip-select:not([value=""]):has(option:checked:not([value=""])) {
 .stmt-amount.income { color: var(--income); }
 input[type="checkbox"]:not([role="switch"]),
 input[type="radio"] { accent-color: var(--primary); }
+
+/* ---- v5 Tasks (spec 4.5) ---- */
+
+.tasks-head.page-head { padding: var(--space-6) var(--space-page) var(--space-4); }
+.tasks-date.page-title { margin: 0; font-size: 24px; line-height: 32px; font-weight: 500; }
+
+.week-day { min-height: 64px; }
+
+/* Timeline: time column outside each card, 8px apart */
+#tasks-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  border: none;
+  background: none;
+  box-shadow: none;
+  overflow: visible;
+}
+
+#tasks-timeline > .tl-row {
+  padding: 0;
+  border: none;
+  min-height: var(--row-h);
+  align-items: stretch;
+  gap: var(--space-2);
+}
+
+#tasks-timeline .task-time {
+  flex: 0 0 44px;
+  display: flex;
+  align-items: center;
+}
+
+#tasks-timeline .task-time:empty { display: flex; }
+
+.tl-card {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  min-height: var(--row-h);
+  padding: 0 var(--space-2) 0 var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+}
+
+.tl-row.is-done .task-title { text-decoration: line-through; color: var(--muted-foreground); }
+
+#tasks-timeline > .now-line {
+  padding: 0;
+  border: none;
+  gap: var(--space-2);
+}
+
+.now-time {
+  flex: 0 0 44px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--brand-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.now-label { font-size: 12px; font-weight: 600; color: var(--brand-text); }
+
+.tasks-tip { margin: 0 var(--space-page) var(--space-6); }
+.tl-card .task-main { min-height: calc(var(--row-h) - 2px); padding-top: 0; padding-bottom: 0; }
+.tl-card .task-check { min-height: calc(var(--row-h) - 2px); }
+
+/* ---- v5 reminder sheet (spec 6.4) ---- */
+
+.switch-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: var(--row-h);
+  margin: var(--space-2) 0;
+  cursor: pointer;
+}
+
+.switch-row .row-title { font-size: 15px; }
+
+.task-kind.seg { margin-bottom: var(--space-4); }
+.task-kind.seg .segment { flex: 1; min-height: 36px; border: 1px solid transparent; border-radius: var(--radius-md); background: none; color: var(--muted-foreground); font: inherit; font-size: 14px; font-weight: 600; }
+.task-kind.seg .segment.active { background: var(--card); color: var(--foreground); border-color: var(--border); }
+
+#task-importance { display: flex; flex-direction: column; gap: var(--space-2); }
+.importance-option { display: flex; align-items: center; gap: var(--space-4); min-height: var(--row-h); padding: var(--space-2) var(--space-4); border: 1px solid var(--border); border-radius: 10px; background: var(--card); text-align: left; }
+.importance-option.active { border: 2px solid var(--brand); padding: calc(var(--space-2) - 1px) calc(var(--space-4) - 1px); }
+.importance-text { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.importance-name { font-size: 15px; font-weight: 600; }
+.importance-sub { font-size: 12px; color: var(--muted-foreground); }
+.importance-dots { order: -1; }
+
+/* ---- v5 Tax (spec 4.6) ---- */
+
+.tax-jump { margin-bottom: var(--space-4); }
+.tax-jump .chip { text-decoration: none; }
+
+.tax-hero {
+  background: var(--foreground);
+  color: var(--background);
+  border-color: var(--foreground);
+}
+
+.tax-hero .tax-hero-label,
+.tax-hero .tax-hero-sub,
+.tax-hero .tax-hero-filing { color: var(--background); opacity: 0.8; }
+.tax-hero .tax-hero-amount { font-family: var(--font-serif); font-weight: 400; color: var(--background); }
+
+/* Deductions: claimed only until "Browse all" */
+.tax-ded-list:not(.show-all) .tax-ded-row:not(.is-claimed),
+.tax-ded-list:not(.show-all) .tax-ded-group:not(.has-claimed),
+.tax-ded-list:not(.show-all) .tax-group-note { display: none; }
+.tax-ded-foot { margin: calc(-1 * var(--space-2)) var(--space-page) var(--space-4); }
+
+/* Planner: top 3 until "See all" */
+#tax-plan:not(.show-all) .tax-plan-row:nth-child(n + 4) { display: none; }
+#tax-plan-more { margin: calc(-1 * var(--space-4)) 0 var(--space-4); }
+#tax-plan-more[hidden] { display: none; }
+
+.tax-scan-tab { width: calc(100% - 2 * var(--space-page)); margin: 0 var(--space-page) var(--space-6); }
+.tax-shortcut-code { font-size: 12px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
+.tax-shortcut.active { border: 2px solid var(--brand); }
+
+/* ---- v5 Settings (spec 4.8) ---- */
+
+.settings-profile { margin: 0 var(--space-page) var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--card); }
+.theme-toggle.seg .theme-toggle-button { flex: 1; min-height: 36px; border: 1px solid transparent; border-radius: var(--radius-md); background: none; color: var(--muted-foreground); font: inherit; font-size: 14px; font-weight: 600; }
+.theme-toggle.seg .theme-toggle-button.active { background: var(--card); color: var(--foreground); border-color: var(--border); }
+.toggle-row { gap: var(--space-4); }
+.toggle-row > span { display: flex; flex-direction: column; gap: 2px; }
+.toggle-sub { font-size: 12px; color: var(--muted-foreground); font-weight: 400; }
+.settings-jump.chip-row { padding: 0 var(--space-page); margin: 0 0 var(--space-4); }
+.settings-jump.chip-row a { flex: 0 0 auto; display: inline-flex; align-items: center; min-height: 36px; padding: 0 var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-full); background: var(--card); color: var(--foreground); font-size: 14px; font-weight: 500; text-decoration: none; }
