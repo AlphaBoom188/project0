@@ -98,15 +98,16 @@ const descs = (page) => page.$$eval('#txn-full-list .transaction-description', (
   await page.waitForTimeout(900);
   await page.screenshot({ path: `${SHOTS}/b2_search.png` });
 
-  // --- Breakdown total follows the Expense/Income toggle ---
+  // --- v5: the Breakdown list is gone; the hero and the rows carry the totals ---
   await openTab(page, 'budgets');
-  await page.waitForFunction(() => document.querySelector('#breakdown-total-value').textContent !== '0.00', null, { timeout: 8000 }).catch(() => {});
-  assert((await page.textContent('#breakdown-total-label')) === 'Spent this cycle' && (await page.textContent('#breakdown-total-value')) === '500.00',
-    `expense breakdown total (got ${await page.textContent('#breakdown-total-label')} ${await page.textContent('#breakdown-total-value')})`);
+  assert((await page.$$('#breakdown-total-value, #category-chart')).length === 0, 'Breakdown list removed');
+  await page.waitForFunction(() => document.getElementById('budget-hero-amount').textContent !== '฿0', null, { timeout: 8000 }).catch(() => {});
+  assert((await page.textContent('#budget-hero-label')) === 'Spent this cycle' && (await page.textContent('#budget-hero-amount')) === '฿500',
+    `no budgets -> hero shows spent this cycle (got ${await page.textContent('#budget-hero-label')} ${await page.textContent('#budget-hero-amount')})`);
   await page.screenshot({ path: `${SHOTS}/b2_breakdown.png`, fullPage: true });
   await page.click('#categories-type-income');
-  await page.waitForFunction(() => document.querySelector('#breakdown-total-label').textContent === 'Earned this cycle', null, { timeout: 8000 }).catch(() => {});
-  assert((await page.textContent('#breakdown-total-value')) === '5000.00', `income toggle switches the breakdown (got ${await page.textContent('#breakdown-total-value')})`);
+  await page.waitForFunction(() => document.getElementById('categories-list').innerText.includes('received this cycle'), null, { timeout: 8000 }).catch(() => {});
+  assert((await page.innerText('#categories-list')).includes('฿5,000 received this cycle'), `income rows show what came in this cycle (got ${await page.innerText('#categories-list')})`);
   await page.click('#categories-type-expense');
 
   // --- Share to LINE ---

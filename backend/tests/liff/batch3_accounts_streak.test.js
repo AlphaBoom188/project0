@@ -101,7 +101,7 @@ const descs = (page) => page.$$eval('#txn-full-list .transaction-description', (
   await page.screenshot({ path: `${SHOTS}/b3_home_streak.png` });
 
   // ---- Radius tokens ----
-  const radii = await page.evaluate(() => ({ card: getComputedStyle(document.querySelector('.summary-card')).borderRadius, space: getComputedStyle(document.documentElement).getPropertyValue('--space-page').trim() }));
+  const radii = await page.evaluate(() => ({ card: getComputedStyle(document.querySelector('#home-hero')).borderRadius, space: getComputedStyle(document.documentElement).getPropertyValue('--space-page').trim() }));
   assert(radii.card === '12px', `cards use --radius-xl 12px (v5 refresh) (got ${radii.card})`);
 
   // ---- Account filter sheet ----

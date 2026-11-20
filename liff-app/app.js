@@ -79,11 +79,7 @@ const el = {
   trendChart: document.getElementById('trend-chart'),
 
   // Budgets tab
-  categoryChart: document.getElementById('category-chart'),
-  analyticsEmptyState: document.getElementById('analytics-empty-state'),
   budgetsStatus: document.getElementById('budgets-status'),
-  advancedToggle: document.getElementById('advanced-toggle'),
-  advancedSection: document.getElementById('advanced-section'),
 
   // Event/Occasion budgets (Budgets tab)
   eventsList: document.getElementById('events-list'),
@@ -116,7 +112,6 @@ const el = {
   portfolioTotalValue: document.getElementById('portfolio-total-value'),
   portfolioTotalCost: document.getElementById('portfolio-total-cost'),
   portfolioTotalGain: document.getElementById('portfolio-total-gain'),
-  portfolioAllocationChart: document.getElementById('portfolio-allocation-chart'),
   emergencyFundCard: document.getElementById('emergency-fund-card'),
   emergencyFundLabel: document.getElementById('emergency-fund-label'),
   emergencyFundFill: document.getElementById('emergency-fund-fill'),
@@ -341,8 +336,6 @@ const el = {
   accountFilterApply: document.getElementById('account-filter-apply'),
   streakCount: document.getElementById('streak-count'),
   streakHint: document.getElementById('streak-hint'),
-  breakdownTotalLabel: document.getElementById('breakdown-total-label'),
-  breakdownTotalValue: document.getElementById('breakdown-total-value'),
   billShareLine: document.getElementById('bill-share-line'),
   // [data-range] only: the Performance card's pills share the .range-pill class.
   txnRangePills: document.querySelectorAll('.range-pill[data-range]'),
@@ -2234,42 +2227,6 @@ function renderTrendChart(transactions) {
 
 // Follows the Budgets tab's Expense/Income toggle (categoriesTabType) rather
 // than having a second switcher of its own.
-function renderCategoryBreakdown(transactions, periodStart, periodEnd, type = 'expense') {
-  const totalsByCategory = new Map();
-  for (const t of transactions) {
-    if (t.type !== type) continue;
-    const d = new Date(t.transaction_date);
-    if (d < periodStart || d >= periodEnd) continue;
-    const name = t.categories?.name || 'Uncategorized';
-    totalsByCategory.set(name, (totalsByCategory.get(name) || 0) + parseFloat(t.amount));
-  }
-
-  const rows = Array.from(totalsByCategory.entries()).sort((a, b) => b[1] - a[1]);
-  const total = rows.reduce((sum, [, amount]) => sum + amount, 0);
-  el.breakdownTotalLabel.textContent = type === 'income' ? 'Earned this cycle' : 'Spent this cycle';
-  el.breakdownTotalValue.textContent = total.toFixed(2);
-  el.breakdownTotalValue.style.color = type === 'income' ? 'var(--income)' : 'var(--destructive)';
-  const maxValue = Math.max(1, ...rows.map(([, amount]) => amount));
-
-  el.categoryChart.innerHTML = rows
-    .map(
-      ([name, amount]) => `
-        <div class="category-bar-row">
-          <div class="category-bar-label-row">
-            <span>${escapeHtml(name)}</span>
-            <span>${amount.toFixed(2)}</span>
-          </div>
-          <div class="category-bar-track">
-            <div class="category-bar-fill" style="width:${Math.round((amount / maxValue) * 100)}%"></div>
-          </div>
-        </div>
-      `
-    )
-    .join('');
-
-  el.categoryChart.hidden = rows.length === 0; // no empty bordered card when there's nothing to chart
-  return rows.length > 0;
-}
 
 // Shared by loadBudgetsTab and loadNetWorthTab -- both need "surplus this
 // period" (Budgets for the category breakdown context, Net Worth for the
@@ -2330,26 +2287,9 @@ function renderPortfolio(data, surplus) {
   el.portfolioSubline.textContent = subline.join(' · ');
   el.portfolioSubline.hidden = subline.length === 0;
 
-  const allocationEntries = Object.entries(data.allocation_by_type).sort((a, b) => b[1] - a[1]);
-  const maxAllocation = Math.max(1, ...allocationEntries.map(([, pct]) => pct));
-  el.portfolioAllocationChart.innerHTML = allocationEntries
-    .map(
-      ([type, pct]) => `
-        <div class="category-bar-row">
-          <div class="category-bar-label-row">
-            <span>${escapeHtml(ASSET_TYPE_LABELS[type] || type)}</span>
-            <span>${pct.toFixed(1)}%</span>
-          </div>
-          <div class="category-bar-track">
-            <div class="category-bar-fill" style="width:${Math.round((pct / maxAllocation) * 100)}%"></div>
-          </div>
-        </div>
-      `
-    )
-    .join('');
 
   renderEmergencyFund(data.emergency_fund, surplus);
-  renderHoldingsList(data.holdings);
+  renderHoldingsList(data.holdings, data.totals.total_value);
 }
 
 // Deliberately does nothing (no suggestion, no progress bar) until the user
@@ -2386,42 +2326,28 @@ function formatPricedAt(holding) {
 
 // Tapping a row opens its detail sheet (My Holdings card + lots), which is
 // also where Edit / Delete live now.
-function renderHoldingsList(holdings) {
+// v5 holding rows (spec 4.4): symbol tile, "Type · x% of portfolio",
+// value and gain. Tapping opens the detail sheet (Edit / Delete live there).
+function renderHoldingsList(holdings, totalThb = 0) {
   el.holdingsList.innerHTML = '';
   el.holdingsEmptyState.hidden = holdings.length > 0;
-
+  el.holdingsList.hidden = holdings.length === 0;
   for (const holding of holdings) {
     const li = document.createElement('li');
-    li.className = 'category-row holding-row';
+    li.className = 'row holding-row';
     li.setAttribute('role', 'button');
     li.tabIndex = 0;
     const closed = holding.quantity === 0;
-    const dayGainHtml =
-      holding.day_gain !== null && !closed
-        ? `<span style="color:${gainColor(holding.day_gain)}">Today ${formatSignedMoney(holding.day_gain, holding.currency)} (${formatSignedPercent(holding.day_gain_percent)})</span>`
-        : '<span></span>';
-    li.innerHTML = `
-      <div class="category-row-top">
-        <span class="category-name">${escapeHtml(holding.symbol)}${holding.name ? ` — ${escapeHtml(holding.name)}` : ''}</span>
-        <span class="category-budget-label">${formatMoney(holding.market_value, holding.currency)}</span>
-      </div>
-      <div class="category-bar-label-row">
-        <span>${ASSET_TYPE_LABELS[holding.asset_type]} · ${closed ? 'Closed position' : `${formatShares(holding.quantity)} shares`}</span>
-        ${
-          holding.current_price === null && !closed
-            ? '<span class="empty-state">No price yet</span>'
-            : `<span style="color:${gainColor(holding.total_gain)}">${formatSignedMoney(holding.total_gain, holding.currency)} (${formatSignedPercent(holding.total_gain_percent)})</span>`
-        }
-      </div>
-      <div class="category-bar-label-row">
-        ${dayGainHtml}
-        <span>${holding.current_price === null ? '' : `${formatMoney(parseFloat(holding.current_price), holding.currency, 4)} · `}${formatPricedAt(holding)}</span>
-      </div>
-    `;
-    li.addEventListener('click', () => openHoldingDetail(holding));
-    li.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') openHoldingDetail(holding);
-    });
+    const share = totalThb > 0 && holding.market_value_thb != null ? `${((holding.market_value_thb / totalThb) * 100).toFixed(1)}% of portfolio` : closed ? 'Closed position' : `${formatShares(holding.quantity)} shares`;
+    const gain = holding.current_price === null && !closed
+      ? '<span class="row-sub">No price yet</span>'
+      : `<span class="row-sub" style="color:${gainColor(holding.total_gain)}">${formatSignedMoney(holding.total_gain, holding.currency)} (${formatSignedPercent(holding.total_gain_percent)})</span>`;
+    const today = holding.day_gain !== null && !closed ? ` · <span style="color:${gainColor(holding.day_gain)}">Today ${formatSignedMoney(holding.day_gain, holding.currency)}</span>` : '';
+    li.innerHTML = `<span class="cat-tile symbol-tile" aria-hidden="true">${escapeHtml(String(holding.symbol).slice(0, 4))}</span>
+      <span class="row-main"><span class="row-title category-name">${escapeHtml(holding.symbol)}${holding.name ? ` <span class="holding-name">${escapeHtml(holding.name)}</span>` : ''}</span>
+        <span class="row-meta">${escapeHtml(ASSET_TYPE_LABELS[holding.asset_type] || holding.asset_type)} · ${share}${today}</span></span>
+      <span class="row-end"><span class="row-value">${formatMoney(holding.market_value, holding.currency)}</span>${gain}</span>`;
+    onActivate(li, () => openHoldingDetail(holding));
     el.holdingsList.appendChild(li);
   }
 }
@@ -2763,14 +2689,38 @@ async function loadBudgetsTab() {
     cachedGet(`/budget-events/${lineUserId}?month=${currentMonthFirstDay()}`),
   ]);
 
-  renderCategoriesList(categoriesResponse.categories, transactionsResponse.transactions);
-  const hasBreakdown = renderCategoryBreakdown(transactionsResponse.transactions, periodStart, periodEnd, categoriesTabType);
-  el.analyticsEmptyState.hidden = transactionsResponse.transactions.length > 0 || hasBreakdown;
+  renderCategoriesList(categoriesResponse.categories, transactionsResponse.transactions, periodStart, periodEnd);
   renderEventBudgetsList(eventsResponse.budget_events);
+  renderBudgetHero(endISO).catch(() => {});
+  await loadRecurringList();
+}
 
-  if (!el.advancedSection.hidden) {
-    await loadRecurringList();
+// Hero "Left to spend" (spec 4.3): this cycle's budgets minus spent.
+async function renderBudgetHero(endISO) {
+  const { report } = await cachedGet(`/reports/${lineUserId}/monthly?offset=0`);
+  const budget = report.categories.reduce((sum, r) => sum + (r.budget || 0), 0);
+  const label = document.getElementById('budget-hero-label');
+  const amount = document.getElementById('budget-hero-amount');
+  const sub = document.getElementById('budget-hero-sub');
+  const bar = document.getElementById('budget-hero-bar');
+  const daysLeft = Math.max(1, Math.ceil((new Date(endISO) - Date.now()) / 86400000));
+  if (!budget) {
+    label.textContent = 'Spent this cycle';
+    amount.textContent = formatBaht(report.expense);
+    amount.classList.remove('amount-over');
+    sub.textContent = 'Set a budget on a category to see what is left.';
+    bar.hidden = true;
+    return;
   }
+  const left = budget - report.expense;
+  label.textContent = left >= 0 ? 'Left to spend' : 'Over budget';
+  amount.textContent = left >= 0 ? formatBaht(left) : `Over by ${formatBaht(-left)}`;
+  amount.classList.toggle('amount-over', left < 0);
+  sub.textContent = `${formatBaht(report.expense)} of ${formatBaht(budget)} spent${left > 0 ? ` · about ${formatBaht(Math.floor(left / daysLeft))} a day for ${daysLeft} day${daysLeft === 1 ? '' : 's'}` : ''}`;
+  bar.hidden = false;
+  bar.classList.toggle('is-over', left < 0);
+  bar.classList.toggle('is-warning', left >= 0 && report.expense >= budget * BUDGET_WARN_RATIO);
+  bar.firstElementChild.style.width = `${Math.min(100, Math.round((report.expense / budget) * 100))}%`;
 }
 
 // ---- Event/Occasion budgets (Budgets tab) ----
@@ -2786,24 +2736,15 @@ function renderEventBudgetsList(events) {
   el.eventsList.innerHTML = '';
   el.eventsEmptyState.hidden = events.length > 0;
   el.eventsList.hidden = events.length === 0;
-
   for (const event of events) {
+    const amount = parseFloat(event.amount);
     const li = document.createElement('li');
-    li.className = 'category-row';
-    li.innerHTML = `
-      <div class="category-row-top">
-        <span class="category-name">${escapeHtml(event.title)}</span>
-        <span class="category-budget-label">${event.spent.toFixed(2)} / ${parseFloat(event.amount).toFixed(2)}</span>
-      </div>
-      <div class="category-bar-label-row"><span>${escapeHtml(event.categories?.name || '')}</span></div>
-      <div class="category-budget-track">
-        <div class="${budgetFillClass(event.spent, parseFloat(event.amount))}" style="width:${Math.round(event.percent)}%"></div>
-      </div>
-      <div class="bill-participant-detail-row" style="margin-top: 6px;">
-        <span></span>
-        <button type="button" class="category-delete event-delete">Delete</button>
-      </div>
-    `;
+    li.className = 'row category-row';
+    li.innerHTML = `${categoryTile(event.categories?.name || '')}
+      <span class="row-main"><span class="row-title category-name">${escapeHtml(event.title)}</span>
+        <span class="row-meta">${formatBaht(event.spent)} of ${formatBaht(amount)}${event.categories?.name ? ` · ${escapeHtml(event.categories.name)}` : ''}</span>
+        <span class="category-budget-track"><span class="${budgetFillClass(event.spent, amount)}" style="width:${Math.min(100, Math.round(event.percent))}%"></span></span></span>
+      <button type="button" class="row-icon-button event-delete" aria-label="Delete ${escapeHtml(event.title)}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>`;
     li.querySelector('.event-delete').addEventListener('click', () => handleDeleteEvent(event.id));
     el.eventsList.appendChild(li);
   }
@@ -2872,33 +2813,44 @@ async function handleDeleteEvent(eventId) {
 }
 
 // ---- Advanced section toggle (Budgets tab -> Recurring rules) ----
-function toggleAdvancedSection() {
-  const isOpen = el.advancedToggle.getAttribute('aria-expanded') === 'true';
-  el.advancedToggle.setAttribute('aria-expanded', String(!isOpen));
-  el.advancedSection.hidden = isOpen;
-  if (!isOpen) {
-    loadRecurringList().catch((error) => showBudgetsStatus(error.message));
-  }
-}
 
 const ACCOUNT_TYPE_LABELS = { bank: 'Bank', credit_card: 'Credit Card', e_wallet: 'E-Wallet', cash: 'Cash' };
 
+const ACCOUNT_ICONS = {
+  bank: '<path d="M10 18v-7"/><path d="M11.12 2.198a2 2 0 0 1 1.76.006l7.866 3.847c.476.233.31.949-.22.949H3.474c-.53 0-.695-.716-.22-.949z"/><path d="M14 18v-7"/><path d="M18 18v-7"/><path d="M3 22h18"/><path d="M6 18v-7"/>',
+  credit_card: '<rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/>',
+  e_wallet: '<rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/>',
+  cash: '<rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/>',
+};
+// v5 account rows: neutral tile by type; a card's negative balance is "owed".
 function renderAccountsList(accounts) {
   el.accountsList.innerHTML = '';
   el.accountsEmptyState.hidden = accounts.length > 0;
-
+  el.accountsList.hidden = accounts.length === 0;
   for (const account of accounts) {
+    const balance = parseFloat(account.balance) || 0;
     const li = document.createElement('li');
-    li.className = 'category-row';
-    li.innerHTML = `
-      <div class="category-row-top">
-        <span class="category-name">${escapeHtml(account.account_name)}</span>
-        <span class="category-budget-label">${parseFloat(account.balance).toFixed(2)}</span>
-      </div>
-      <div class="category-bar-label-row"><span>${ACCOUNT_TYPE_LABELS[account.account_type] || account.account_type}</span></div>
-    `;
+    li.className = 'row category-row';
+    const owed = account.account_type === 'credit_card' && balance < 0;
+    li.innerHTML = `<span class="cat-tile" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ACCOUNT_ICONS[account.account_type] || ACCOUNT_ICONS.bank}</svg></span>
+      <span class="row-main"><span class="row-title category-name">${escapeHtml(account.account_name)}</span><span class="row-meta">${ACCOUNT_TYPE_LABELS[account.account_type] || account.account_type}</span></span>
+      <span class="row-end"><span class="row-value">${formatBaht(balance)}</span>${owed ? '<span class="row-sub">owed</span>' : ''}</span>`;
     el.accountsList.appendChild(li);
   }
+}
+
+// Net worth hero: account balances (cards' owed amounts are negative) plus
+// the portfolio's THB value.
+function renderNetWorthHero(accounts, portfolio) {
+  const cash = accounts.reduce((sum, a) => sum + (parseFloat(a.balance) || 0), 0);
+  const inv = (portfolio && portfolio.totals && portfolio.totals.total_value) || 0;
+  document.getElementById('networth-total').textContent = formatBaht(Math.round(cash + inv));
+  document.getElementById('networth-accounts').textContent = formatBaht(Math.round(cash));
+  document.getElementById('networth-investments').textContent = formatBaht(Math.round(inv));
+  const priced = (portfolio?.holdings || []).map((h) => h.priced_at).filter(Boolean).sort().pop();
+  document.getElementById('networth-sub').textContent = priced
+    ? `Accounts plus investments, prices as of ${new Date(priced).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' })}`
+    : 'Accounts plus investments';
 }
 
 // ---- Performance card (Net Worth tab) ----
@@ -3736,6 +3688,7 @@ async function loadNetWorthTab() {
 
   renderAccountsList(accountsResponse.accounts);
   renderPortfolio(portfolioResponse, surplus);
+  renderNetWorthHero(accountsResponse.accounts, portfolioResponse);
   if (portfolioResponse.holdings.length === 0) {
     el.perfCard.hidden = true;
     el.divCard.hidden = true;
@@ -3847,56 +3800,48 @@ async function handleTransferSubmit(event) {
   }
 }
 
-function renderCategoriesList(categories, transactions) {
+// v5 category rows (spec 4.3 item 3): tile, "฿spent of ฿limit monthly",
+// what's left on the right, a 4px bar. Tap opens the editor.
+function renderCategoriesList(categories, transactions, cycleStart, cycleEnd) {
   el.categoriesList.innerHTML = '';
   el.categoriesEmptyState.hidden = categories.length > 0;
-
+  el.categoriesList.hidden = categories.length === 0;
+  const inCycle = (t) => { const d = new Date(t.transaction_date); return d >= cycleStart && d < cycleEnd; };
   for (const category of categories) {
     const li = document.createElement('li');
-    li.className = 'category-row';
-
-    let budgetHtml = '';
+    li.className = 'row category-row';
+    li.tabIndex = 0;
+    li.setAttribute('role', 'button');
+    const mine = transactions.filter((t) => t.category_id === category.id);
+    const cycleSpent = mine.filter(inCycle).reduce((sum, t) => sum + parseFloat(t.amount), 0);
+    const verb = category.type === 'income' ? 'received' : 'spent';
+    let meta;
+    let end;
+    let barHtml = '';
     if (category.budget_amount && category.budget_period) {
       const periodStart = getPeriodStartDate(category.budget_period);
-      const spent = transactions
-        .filter((t) => t.category_id === category.id && new Date(t.transaction_date) >= periodStart)
-        .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+      const spent = mine.filter((t) => new Date(t.transaction_date) >= periodStart).reduce((sum, t) => sum + parseFloat(t.amount), 0);
       const budget = parseFloat(category.budget_amount);
-      const pct = Math.min(100, Math.round((spent / budget) * 100));
-      budgetHtml = `
-        <div class="category-budget-track">
-          <div class="${budgetFillClass(spent, budget)}" style="width:${pct}%"></div>
-        </div>
-      `;
+      const pct = Math.round((spent / budget) * 100);
+      const period = category.budget_period === 'daily' ? 'today' : category.budget_period;
+      meta = `${formatBaht(spent)} of ${formatBaht(budget)} ${period}${category.budget_period === 'daily' ? ` · ${formatBaht(cycleSpent)} this cycle` : ''}`;
+      if (spent > budget) end = `<span class="row-value amount-over">Over ${formatBaht(spent - budget)}</span>`;
+      else if (spent >= budget * BUDGET_WARN_RATIO) end = `<span class="row-value">${formatBaht(budget - spent)} left</span><span class="row-sub amount-warn">${pct}% used</span>`;
+      else end = `<span class="row-value">${formatBaht(budget - spent)} left</span>`;
+      barHtml = `<span class="category-budget-track"><span class="${budgetFillClass(spent, budget)}" style="width:${Math.min(100, pct)}%"></span></span>`;
+    } else {
+      meta = `${formatBaht(cycleSpent)} ${verb} this cycle`;
+      end = '<span class="row-sub set-budget-link">Set budget</span>';
     }
-
-    const budgetLabel = category.budget_amount
-      ? `${parseFloat(category.budget_amount).toFixed(2)} / ${category.budget_period}`
-      : 'No budget';
-
-    li.innerHTML = `
-      <div class="category-row-top">
-        <span class="category-name">${escapeHtml(category.name)}</span>
-        <span class="category-budget-label">${escapeHtml(budgetLabel)}</span>
-        ${category.is_preset ? '' : '<button type="button" class="category-delete">Delete</button>'}
-      </div>
-      ${budgetHtml}
-    `;
-    li.addEventListener('click', (e) => {
-      if (e.target.closest('.category-delete')) return;
-      openCategoryModal(category);
-    });
-    const deleteButton = li.querySelector('.category-delete');
-    if (deleteButton) {
-      deleteButton.addEventListener('click', (e) => {
-        e.stopPropagation();
-        handleDeleteCategory(category);
-      });
-    }
+    li.innerHTML = `${categoryTile(category.name)}
+      <span class="row-main"><span class="row-title category-name">${escapeHtml(category.name)}</span><span class="row-meta">${meta}</span>${barHtml}</span>
+      <span class="row-end">${end}</span>`;
+    onActivate(li, () => openCategoryModal(category));
     el.categoriesList.appendChild(li);
   }
 }
 
+let editingCategory = null;
 function openCategoryModal(category) {
   editingCategoryId = category ? category.id : null;
   el.categoryModalTitle.textContent = category ? 'Edit Category' : 'Add Category';
@@ -3906,6 +3851,8 @@ function openCategoryModal(category) {
   el.categoryFieldType.disabled = !!category;
   el.categoryFieldBudgetAmount.value = category?.budget_amount || '';
   el.categoryFieldBudgetPeriod.value = category?.budget_period || '';
+  editingCategory = category || null;
+  document.getElementById('delete-category').hidden = !category || category.is_preset;
   clearModalError(el.categoryModalError);
   el.categoryModal.hidden = false;
 }
@@ -4423,12 +4370,12 @@ function renderRecurringList(rules) {
     const li = document.createElement('li');
     li.className = `recurring-row${rule.is_active ? '' : ' inactive'}`;
     li.innerHTML = `
-      <input type="checkbox" class="recurring-active-toggle" ${rule.is_active ? 'checked' : ''} />
+      <input type="checkbox" role="switch" class="recurring-active-toggle" aria-label="Active" ${rule.is_active ? 'checked' : ''} />
       <div class="recurring-details">
         <div class="recurring-description">${escapeHtml(rule.description || rule.categories?.name || 'Recurring')}</div>
         <div class="recurring-meta">${FREQUENCY_LABELS[rule.frequency] || rule.frequency} · next ${formatDate(rule.next_run_date)}</div>
       </div>
-      <div class="recurring-amount ${rule.type}">${parseFloat(rule.amount).toFixed(2)}</div>
+      <div class="recurring-amount transaction-amount ${rule.type}">${entryAmount(rule)}</div>
       <button type="button" class="recurring-delete">Delete</button>
       ${payStatusHtml(rule.pay_status)}
     `;
@@ -4625,6 +4572,12 @@ el.fabAdd.addEventListener('click', () => {
   else openAddExpenseModal();
 });
 el.cancelAddExpense.addEventListener('click', closeAddExpenseModal);
+document.getElementById('delete-category').addEventListener('click', () => {
+  const category = editingCategory;
+  if (!category) return;
+  el.categoryModal.hidden = true;
+  handleDeleteCategory(category);
+});
 el.addExpenseForm.addEventListener('submit', handleAddExpenseSubmit);
 el.fieldReceiptImage.addEventListener('change', handleReceiptFileChange);
 
@@ -4773,7 +4726,6 @@ el.recurringFieldType.addEventListener('change', () =>
   populateRecurringCategoryOptions().catch((error) => showModalError(el.recurringModalError, error.message))
 );
 
-el.advancedToggle.addEventListener('click', toggleAdvancedSection);
 
 el.addEventButton.addEventListener('click', () => openEventModal().catch((error) => showModalError(el.eventModalError, error.message)));
 el.cancelEvent.addEventListener('click', closeEventModal);

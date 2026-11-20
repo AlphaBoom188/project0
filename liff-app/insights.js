@@ -5,7 +5,7 @@
 
 const ins = {
   repeatHeader: document.getElementById('repeat-header'),
-  repeatHint: document.getElementById('repeat-hint'),
+  repeatEmpty: document.getElementById('repeat-empty'),
   repeatList: document.getElementById('repeat-list'),
   repeatStatus: document.getElementById('repeat-status'),
   modal: document.getElementById('report-modal'),
@@ -32,22 +32,34 @@ async function loadRepeatPayments() {
   }
 }
 
+// Recommendation cards (spec 4.3 item 5, no confidence meter). The choice
+// is a single-select list; Accept sends it, Not a repeat dismisses.
+// (The spec's third option, "Track as a subscription only", needs a backend
+// mode that doesn't exist yet, so it isn't offered.)
+let repeatHadAny = false;
 function renderRepeatPayments(list) {
   const any = list.length > 0;
-  ins.repeatHeader.hidden = !any;
-  ins.repeatHint.hidden = !any;
+  ins.repeatHeader.hidden = !any && !repeatHadAny;
   ins.repeatList.hidden = !any;
+  ins.repeatEmpty.hidden = any || !repeatHadAny;
+  if (any) repeatHadAny = true;
   ins.repeatList.innerHTML = list.map((c) => {
     const d = c.dayOfMonth;
     const day = `${d}${d % 10 === 1 && d !== 11 ? 'st' : d % 10 === 2 && d !== 12 ? 'nd' : d % 10 === 3 && d !== 13 ? 'rd' : 'th'}`;
-    return `<li class="tax-sg" data-repeat="${c.key}">
-      <div class="tax-sg-top"><span class="tax-sg-title">${escapeHtml(c.description)}</span><span class="tax-sg-amount">${c.variable ? 'about ' : ''}${whole(c.amount)}</span></div>
-      <div class="tax-sg-tags"><span class="tax-sg-tag${c.confidence === 'high' ? '' : ' conf-low'}">${c.confidence === 'high' ? 'Every month' : 'Most months'}</span><span class="tax-sg-tag">${c.type === 'income' ? 'Income' : 'Payment'} around the ${day}</span>${c.categoryName ? `<span class="tax-sg-tag">${escapeHtml(c.categoryName)}</span>` : ''}</div>
-      <p class="tax-sg-reason">Seen ${c.months} months in a row, last on ${escapeHtml(c.lastDate)}. Next expected ${escapeHtml(c.nextDate)}.</p>
-      <div class="tax-sg-actions">
-        <button type="button" class="secondary-button tax-sg-btn" data-repeat-action="dismiss">Dismiss</button>
-        <button type="button" class="secondary-button tax-sg-btn" data-repeat-action="remind">Remind me monthly</button>
-        <button type="button" class="primary-button tax-sg-btn" data-repeat-action="log">Log automatically</button>
+    const name = `rep-${c.key}`;
+    const opt = (mode, label, checked) => `<label class="rec-option"><input type="radio" name="${name}" value="${mode}"${checked ? ' checked' : ''} /><span class="rec-radio" aria-hidden="true"></span><span>${label}</span></label>`;
+    return `<li class="card rec-card" data-repeat="${c.key}">
+      <div class="rec-top"><span class="cat-tile rec-tile" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg></span>
+        <span class="row-main"><span class="row-title"><span class="tax-sg-title">${escapeHtml(c.description)}</span> · ${c.variable ? 'about ' : ''}${whole(c.amount)} a month</span>
+        <span class="row-meta">${c.months} of the last 6 months, around the ${day}${c.categoryName ? ` · ${escapeHtml(c.categoryName)}` : ''}</span></span></div>
+      <p class="rec-q">What should we do?</p>
+      <div class="rec-options" role="radiogroup" aria-label="What should we do with ${escapeHtml(c.description)}?">
+        ${opt('log', 'Log it automatically', true)}
+        ${opt('remind', 'Remind me to log it', false)}
+      </div>
+      <div class="rec-actions">
+        <button type="button" class="btn btn-outline" data-repeat-action="dismiss">Not a repeat</button>
+        <button type="button" class="btn" data-repeat-action="accept">Accept</button>
       </div>
     </li>`;
   }).join('');
@@ -57,16 +69,38 @@ async function handleRepeatAction(event) {
   const b = event.target.closest('[data-repeat-action]');
   if (!b) return;
   const card = b.closest('[data-repeat]');
-  const action = b.dataset.repeatAction;
-  card.querySelectorAll('button').forEach((x) => { x.disabled = true; });
+  const dismiss = b.dataset.repeatAction === 'dismiss';
+  const mode = dismiss ? null : card.querySelector('input[type="radio"]:checked')?.value || 'log';
+  const title = card.querySelector('.tax-sg-title').textContent;
+  card.querySelectorAll('button, input').forEach((x) => { x.disabled = true; });
   try {
-    const path = `/recurring/${lineUserId}/suggestions/${card.dataset.repeat}/${action === 'dismiss' ? 'dismiss' : 'accept'}`;
-    const res = await apiRequest(path, { method: 'POST', body: JSON.stringify(action === 'dismiss' ? {} : { mode: action }) });
+    const path = `/recurring/${lineUserId}/suggestions/${card.dataset.repeat}/${dismiss ? 'dismiss' : 'accept'}`;
+    const res = await apiRequest(path, { method: 'POST', body: JSON.stringify(dismiss ? {} : { mode }) });
     renderRepeatPayments(res.suggestions);
-    setAiStatus(ins.repeatStatus, 'done', action === 'log' ? 'Added to your recurring rules: it logs itself each month.' : action === 'remind' ? 'Monthly reminder set: you\'ll find it under Tasks.' : 'Dismissed.');
-    if (action === 'log' && typeof loadBudgetsTab === 'function') loadBudgetsTab().catch(() => {});
+    const created = res.created || {};
+    if (dismiss) {
+      showToast({ title: 'Marked as not a repeat', description: title });
+    } else if (mode === 'log') {
+      showToast({
+        title: 'Logs itself each month', description: `${title} is in your recurring rules`,
+        undo: created.recurringId ? async () => {
+          await apiRequest(`/recurring/${lineUserId}/${created.recurringId}`, { method: 'DELETE' });
+          showToast({ title: 'Rule removed', description: title });
+          loadRecurringList().catch(() => {});
+        } : null,
+      });
+      if (typeof loadBudgetsTab === 'function') loadBudgetsTab().catch(() => {});
+    } else {
+      showToast({
+        title: 'Monthly reminder set', description: `${title}: find it under Tasks`,
+        undo: created.reminderId ? async () => {
+          await apiRequest(`/reminders/${lineUserId}/${created.reminderId}`, { method: 'DELETE' });
+          showToast({ title: 'Reminder removed', description: title });
+        } : null,
+      });
+    }
   } catch (error) {
-    card.querySelectorAll('button').forEach((x) => { x.disabled = false; });
+    card.querySelectorAll('button, input').forEach((x) => { x.disabled = false; });
     setAiStatus(ins.repeatStatus, 'error', plainError(error));
   }
 }

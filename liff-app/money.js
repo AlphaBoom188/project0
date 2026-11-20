@@ -41,7 +41,6 @@ const mo = {
   goalSave: document.getElementById('sgoal-save'),
   goalDelete: document.getElementById('sgoal-delete'),
   subsHeader: document.getElementById('subs-header'),
-  subsTotal: document.getElementById('subs-total'),
   subsList: document.getElementById('subs-list'),
 };
 const moState = { csvText: null, mapping: null, goals: [], editingGoal: null, goalSeq: 0, subsSeq: 0 };
@@ -239,14 +238,12 @@ async function loadSubscriptions() {
     const any = o.items.length > 0;
     mo.subsHeader.hidden = !any;
     mo.subsList.hidden = !any;
-    mo.subsTotal.textContent = any ? `${thb(o.monthlyTotal)} a month · ${thb(o.yearlyTotal)} a year` : '';
-    mo.subsList.innerHTML = o.items.map((i) => `<li class="task-row">
-      <span class="task-main"><span class="task-title">${escapeHtml(i.description)}</span>
-        <span class="task-meta"><span>${i.frequency === 'monthly' ? 'Monthly' : i.frequency === 'yearly' ? `Yearly ${thb(i.amount)}` : i.frequency === 'weekly' ? `Weekly ${thb(i.amount)}` : `Daily ${thb(i.amount)}`}${i.category ? ` · ${escapeHtml(i.category)}` : ''}</span></span>
-        ${i.increase ? `<span class="tax-sg-tag conf-low">Went up: ${thb(i.increase.from)} to ${thb(i.increase.to)} (${escapeHtml(i.increase.date)})</span>` : ''}
-      </span>
-      <span class="tax-amount">${thb(i.monthly)}<span class="transaction-date">/mo</span></span>
-    </li>`).join('');
+    mo.subsList.innerHTML = o.items.map((i) => `<li class="row">${categoryTile(i.category || i.description)}
+      <span class="row-main"><span class="row-title">${escapeHtml(i.description)}</span>
+        <span class="row-meta">${i.frequency === 'monthly' ? 'Monthly' : i.frequency === 'yearly' ? `Yearly ${thb(i.amount)}` : i.frequency === 'weekly' ? `Weekly ${thb(i.amount)}` : `Daily ${thb(i.amount)}`}${i.category ? ` · ${escapeHtml(i.category)}` : ''}</span>
+        ${i.increase ? `<span class="row-meta amount-warn">Went up: ${thb(i.increase.from)} to ${thb(i.increase.to)} (${escapeHtml(i.increase.date)})</span>` : ''}</span>
+      <span class="row-end"><span class="row-value">${thb(i.monthly)}</span><span class="row-sub">a month</span></span>
+    </li>`).join('') + (any ? `<li class="row subs-foot"><span class="row-main"><span class="row-title" id="subs-total">${thb(o.monthlyTotal)} a month · ${thb(o.yearlyTotal)} a year</span></span></li>` : '');
   } catch {
     mo.subsHeader.hidden = true; // extra information: never block Budgets
   }

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#06c755" />
   <title>Expense Tracker</title>
-  <link rel="stylesheet" href="style.css?v=20261121i" />
+  <link rel="stylesheet" href="style.css?v=20261121k" />
   <script>
     // Set data-theme before first paint to avoid a flash of the wrong theme.
     (function () {
@@ -217,53 +217,38 @@
           <button type="button" role="tab" data-money="budgets" aria-selected="true">Budgets</button>
           <button type="button" role="tab" data-money="networth" aria-selected="false">Wealth</button>
         </div>
-        <div class="type-toggle">
+        <section class="hero" id="budget-hero" aria-label="Left to spend">
+          <p class="hero-label" id="budget-hero-label">Left to spend</p>
+          <p class="hero-amount" id="budget-hero-amount">฿0</p>
+          <p class="hero-sub" id="budget-hero-sub"></p>
+          <span class="bar" id="budget-hero-bar" hidden><span></span></span>
+        </section>
+
+        <div class="section-head"><h2>Categories</h2><button type="button" id="add-category-button" class="section-action">Add category</button></div>
+        <div class="seg type-toggle cat-type-seg">
           <button type="button" class="type-toggle-button active" id="categories-type-expense" data-type="expense">Expense</button>
           <button type="button" class="type-toggle-button" id="categories-type-income" data-type="income">Income</button>
         </div>
-        <ul id="categories-list" class="categories-list"></ul>
-        <p id="categories-empty-state" class="empty-state" hidden>No categories yet.</p>
-        <button id="add-category-button" class="secondary-button recurring-add-button btn-icon"><span class="icon"><svg class="lucide lucide-plus" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="M12 5v14" /></svg></span><span>Add Category</span></button>
-
-        <h2 class="section-title">Breakdown (this cycle)</h2>
-        <div class="breakdown-total">
-          <span class="summary-label" id="breakdown-total-label">Spent this cycle</span>
-          <span class="breakdown-total-value" id="breakdown-total-value">0.00</span>
-        </div>
-        <div id="category-chart" class="category-chart"></div>
-        <p id="analytics-empty-state" class="empty-state" hidden>Not enough data yet.</p>
-
-        <div class="section-header-row">
-          <h2 class="section-title">Event &amp; Occasion Budgets</h2>
-          <button type="button" id="add-event-button" class="link-button">+ Add Bucket</button>
-        </div>
-        <ul id="events-list" class="categories-list"></ul>
-        <p id="events-empty-state" class="empty-state" hidden>No event budgets this month.</p>
+        <ul id="categories-list" class="card card-flush row-list categories-list"></ul>
+        <p id="categories-empty-state" class="empty-dashed" hidden>No categories yet.</p>
 
         <p id="budgets-status" class="settings-status" hidden></p>
 
-        <div class="section-header-row" id="subs-header" hidden>
-          <h2 class="section-title">Subscriptions &amp; bills</h2>
-          <span class="transaction-date" id="subs-total"></span>
-        </div>
-        <ul id="subs-list" class="task-list" hidden></ul>
-
-        <div class="section-header-row" id="repeat-header" hidden>
-          <h2 class="section-title">Repeat payments we found</h2>
-        </div>
-        <p class="group-hint repeat-hint" id="repeat-hint" hidden>These show up every month in your transactions. Log them automatically, or just get a monthly reminder (better for bills that also come in through statement imports).</p>
-        <ul id="repeat-list" class="tax-suggestions" hidden></ul>
+        <div class="section-head" id="repeat-header" hidden><h2>Repeat payments we found</h2></div>
+        <ul id="repeat-list" class="rec-list" hidden></ul>
+        <p class="empty-dashed" id="repeat-empty" hidden>No new repeat payments. We check again after each import.</p>
         <p id="repeat-status" class="scan-status tasks-status" hidden></p>
 
-        <button type="button" id="advanced-toggle" class="advanced-toggle" aria-expanded="false">
-          <span>Advanced: Recurring Rules</span>
-          <span class="icon"><svg class="lucide lucide-chevron-down" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg></span>
-        </button>
-        <div id="advanced-section" hidden>
-          <ul id="recurring-list" class="recurring-list"></ul>
-          <p id="recurring-empty-state" class="empty-state" hidden>No recurring expenses yet.</p>
-          <button id="add-recurring-button" class="secondary-button recurring-add-button">+ Add Recurring</button>
-        </div>
+        <div class="section-head" id="subs-header" hidden><h2>Subscriptions &amp; bills</h2></div>
+        <ul id="subs-list" class="card card-flush row-list" hidden></ul>
+
+        <div class="section-head"><h2>Recurring rules</h2><button type="button" id="add-recurring-button" class="section-action">Add rule</button></div>
+        <ul id="recurring-list" class="recurring-list"></ul>
+        <p id="recurring-empty-state" class="empty-dashed" hidden>No recurring rules yet. Salary, rent and subscriptions can log themselves.</p>
+
+        <div class="section-head"><h2>Event budgets</h2><button type="button" id="add-event-button" class="section-action">Add event</button></div>
+        <ul id="events-list" class="card card-flush row-list categories-list"></ul>
+        <p id="events-empty-state" class="empty-dashed" hidden>Planning a trip or a wedding? Set a one-off limit on a category for this month. You get alerts at 80% and 100%.</p>
       </section>
 
       <!-- Net Worth: accounts/savings, live investments, emergency fund -->
@@ -279,25 +264,38 @@
           <button type="button" role="tab" data-money="budgets" aria-selected="false">Budgets</button>
           <button type="button" role="tab" data-money="networth" aria-selected="true">Wealth</button>
         </div>
-        <div class="section-header-row">
-          <h2 class="section-title">Savings goals</h2>
-          <button type="button" id="add-goal-button" class="link-button">+ Add Goal</button>
-        </div>
-        <ul id="goals-list" class="tax-suggestions" hidden></ul>
-        <p id="goals-empty" class="empty-state tax-empty">Saving for something? Add a goal, like "Japan trip ฿50,000 by June", and see how much to put aside each month.</p>
+        <section class="hero" id="networth-hero" aria-label="Net worth">
+          <p class="hero-label">Net worth</p>
+          <p class="hero-amount" id="networth-total">฿0</p>
+          <p class="hero-sub" id="networth-sub">Accounts plus investments</p>
+          <div class="hero-stats">
+            <div><span class="hero-stat-label">Cash &amp; accounts</span><span class="hero-stat-value" id="networth-accounts">฿0</span></div>
+            <div><span class="hero-stat-label">Investments</span><span class="hero-stat-value" id="networth-investments">฿0</span></div>
+          </div>
+        </section>
 
-        <h2 class="section-title">Savings &amp; Accounts</h2>
-        <ul id="accounts-list" class="categories-list"></ul>
-        <p id="accounts-empty-state" class="empty-state" hidden>No accounts yet.</p>
-        <div class="export-row">
-          <button id="add-account-button" class="link-button">+ Add Account</button>
-          <button id="add-transfer-button" class="link-button">Transfer Between Accounts</button>
-        </div>
+        <div class="section-head"><h2>Accounts</h2><button type="button" id="add-transfer-button" class="section-action">Transfer</button></div>
+        <ul id="accounts-list" class="card card-flush row-list accounts-card"></ul>
+        <p id="accounts-empty-state" class="empty-dashed" hidden>No accounts yet. Add your bank, card, e-wallet or cash to track balances.</p>
+        <div class="card card-flush add-row-card"><button type="button" id="add-account-button" class="row add-row"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>Add account</span></button></div>
+        <div class="section-head"><h2>Investments</h2><button type="button" id="refresh-prices-button" class="section-action">Refresh prices</button></div>
 
-        <div class="section-header-row">
-          <h2 class="section-title">Investments</h2>
-          <button type="button" id="refresh-prices-button" class="link-button">Refresh Prices</button>
-        </div>
+
+        <section class="hero-stats inv-stats" id="portfolio-summary-card">
+          <div class="summary-item">
+            <span class="summary-label">Value</span>
+            <span class="summary-value" id="portfolio-total-value">0.00</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">Cost Basis</span>
+            <span class="summary-value" id="portfolio-total-cost">0.00</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">Gain</span>
+            <span class="summary-value" id="portfolio-total-gain">0.00</span>
+          </div>
+        </section>
+        <p id="portfolio-subline" class="portfolio-subline" hidden></p>
         <!-- Performance: value vs invested, or TWR vs S&P 500 / SET (Portseido Home & Benchmark) -->
         <section class="perf-card" id="perf-card" hidden>
           <span class="summary-label">Portfolio value</span>
@@ -336,25 +334,13 @@
             </div>
           </div>
         </section>
-        <!-- Dividends: received (solid) vs projected (light) bars (Portseido Dividend Insights) -->
-        <section class="perf-card" id="div-card" hidden>
-          <span class="summary-label">Dividend income, last 12 months</span>
-          <div class="perf-total" id="div-trailing">฿0.00</div>
-          <p class="div-yoy" id="div-yoy"></p>
-          <dl class="holding-stats div-metrics">
-            <div><dt>Portfolio yield</dt><dd id="div-portfolio-yield">—</dd></div>
-            <div><dt>Yield on cost</dt><dd id="div-yield-on-cost">—</dd></div>
-            <div><dt>Avg monthly</dt><dd id="div-avg-monthly">—</dd></div>
-            <div><dt>Avg daily</dt><dd id="div-avg-daily">—</dd></div>
-          </dl>
-          <div class="type-toggle" role="group" aria-label="Dividend period">
-            <button type="button" class="type-toggle-button active" data-div-mode="monthly">Monthly</button>
-            <button type="button" class="type-toggle-button" data-div-mode="quarterly">Quarterly</button>
-            <button type="button" class="type-toggle-button" data-div-mode="annual">Annually</button>
-          </div>
-          <div class="perf-chart-wrap" id="div-chart-wrap"><canvas id="div-chart" aria-label="Dividend income chart"></canvas></div>
-          <p class="perf-note" id="div-note"></p>
-        </section>
+        <ul id="holdings-list" class="card card-flush row-list"></ul>
+        <p id="holdings-empty-state" class="empty-state" hidden>No holdings yet.</p>
+        <div class="card card-flush add-row-card"><button type="button" id="add-holding-button" class="row add-row"><span class="icon"><svg class="lucide lucide-plus" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="M12 5v14" /></svg></span><span>Add Holding</span></button></div>
+
+        <div class="section-head"><h2>Goals and income</h2><button type="button" id="add-goal-button" class="section-action">Add goal</button></div>
+        <ul id="goals-list" class="tax-suggestions" hidden></ul>
+        <p id="goals-empty" class="empty-dashed">Saving for something? Add a goal, like "Japan trip ฿50,000 by June", and see how much to put aside each month.</p>
         <!-- Goal tracker: projection toward a target vs today's portfolio value (Portseido Goal Tracker) -->
         <section class="perf-card" id="goal-card" hidden>
           <div id="goal-empty">
@@ -388,27 +374,26 @@
             <button type="button" id="goal-edit-button" class="secondary-button goal-button">Edit goal</button>
           </div>
         </section>
-        <section class="summary-card" id="portfolio-summary-card">
-          <div class="summary-item">
-            <span class="summary-label">Value</span>
-            <span class="summary-value" id="portfolio-total-value">0.00</span>
+        <!-- Dividends: received (solid) vs projected (light) bars (Portseido Dividend Insights) -->
+        <section class="perf-card" id="div-card" hidden>
+          <span class="summary-label">Dividend income, last 12 months</span>
+          <div class="perf-total" id="div-trailing">฿0.00</div>
+          <p class="div-yoy" id="div-yoy"></p>
+          <dl class="holding-stats div-metrics">
+            <div><dt>Portfolio yield</dt><dd id="div-portfolio-yield">—</dd></div>
+            <div><dt>Yield on cost</dt><dd id="div-yield-on-cost">—</dd></div>
+            <div><dt>Avg monthly</dt><dd id="div-avg-monthly">—</dd></div>
+            <div><dt>Avg daily</dt><dd id="div-avg-daily">—</dd></div>
+          </dl>
+          <div class="type-toggle" role="group" aria-label="Dividend period">
+            <button type="button" class="type-toggle-button active" data-div-mode="monthly">Monthly</button>
+            <button type="button" class="type-toggle-button" data-div-mode="quarterly">Quarterly</button>
+            <button type="button" class="type-toggle-button" data-div-mode="annual">Annually</button>
           </div>
-          <div class="summary-item">
-            <span class="summary-label">Cost Basis</span>
-            <span class="summary-value" id="portfolio-total-cost">0.00</span>
-          </div>
-          <div class="summary-item">
-            <span class="summary-label">Gain</span>
-            <span class="summary-value" id="portfolio-total-gain">0.00</span>
-          </div>
+          <div class="perf-chart-wrap" id="div-chart-wrap"><canvas id="div-chart" aria-label="Dividend income chart"></canvas></div>
+          <p class="perf-note" id="div-note"></p>
         </section>
-        <p id="portfolio-subline" class="portfolio-subline" hidden></p>
-        <div id="portfolio-allocation-chart" class="category-chart"></div>
-        <ul id="holdings-list" class="categories-list"></ul>
-        <p id="holdings-empty-state" class="empty-state" hidden>No holdings yet.</p>
-        <button type="button" id="add-holding-button" class="secondary-button recurring-add-button btn-icon"><span class="icon"><svg class="lucide lucide-plus" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="M12 5v14" /></svg></span><span>Add Holding</span></button>
-
-        <h2 class="section-title">Emergency Fund</h2>
+        <h3 class="sheet-section wealth-sub">Emergency fund</h3>
         <div id="emergency-fund-card" class="settings-card" hidden>
           <div class="category-row-top">
             <span class="category-name">Progress</span>
@@ -974,6 +959,7 @@
         </label>
         <p id="category-modal-error" class="modal-error" hidden></p>
         <div class="modal-actions">
+          <button type="button" id="delete-category" class="secondary-button btn-destructive" hidden>Delete</button>
           <button type="button" id="cancel-category" class="secondary-button">Cancel</button>
           <button type="submit" class="primary-button">Save</button>
         </div>
@@ -1638,10 +1624,10 @@
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script src="/liff-config.js"></script>
   <!-- Chart.js for the Net Worth performance chart; app.js renders everything else without it if this is blocked. -->
-  <script src="app.js?v=20261121i"></script>
-  <script src="tasks.js?v=20261121i"></script>
-  <script src="tax.js?v=20261121i"></script>
-  <script src="insights.js?v=20261121i"></script>
-  <script src="money.js?v=20261121i"></script>
+  <script src="app.js?v=20261121k"></script>
+  <script src="tasks.js?v=20261121k"></script>
+  <script src="tax.js?v=20261121k"></script>
+  <script src="insights.js?v=20261121k"></script>
+  <script src="money.js?v=20261121k"></script>
 </body>
 </html>

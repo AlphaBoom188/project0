@@ -75,7 +75,7 @@ fs.writeFileSync(CSV, 'Date;Category;Amount;Note\n25/10/2026;Food;-120;Coffee\n2
 
     // --- Subscriptions ---
     await openTab(page, 'budgets');
-    await page.waitForSelector('#subs-list:not([hidden]) .task-row', { timeout: 15000 });
+    await page.waitForSelector('#subs-list:not([hidden]) .row', { timeout: 15000 });
     assert((await page.textContent('#subs-total')) === '฿419 a month · ฿5,028 a year' && (await page.innerText('#subs-list')).includes('Netflix'), 'subscriptions total and list');
     assert(errors.length === 0, `no page errors (got ${JSON.stringify(errors)})`);
   } finally {

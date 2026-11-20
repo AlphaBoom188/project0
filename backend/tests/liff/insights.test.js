@@ -56,12 +56,12 @@ const lastMonth = (day) => { const d = new Date(Date.now() + 7 * 3600000); retur
     await page.waitForSelector('#repeat-list:not([hidden]) [data-repeat]', { timeout: 15000 });
     const cards = await page.$$eval('#repeat-list [data-repeat] .tax-sg-title', (ts) => ts.map((t) => t.textContent));
     assert(cards.includes('NETFLIX.COM') && cards.includes('TRUEMOVE H'), `repeat payments listed (got ${JSON.stringify(cards)})`);
-    await Promise.all([page.waitForResponse((r) => r.url().includes('/accept')), page.click('[data-repeat]:has-text("TRUEMOVE") [data-repeat-action="remind"]')]);
-    await page.waitForFunction(() => document.getElementById('repeat-status').dataset.state === 'done', null, { timeout: 10000 });
-    assert((await page.textContent('#repeat-status')).includes('Monthly reminder set') && (await db.from('reminders').select('id').eq('line_user_id', U)).data.length === 1, 'Remind me monthly -> a reminder');
-    await Promise.all([page.waitForResponse((r) => r.url().includes('/accept')), page.click('[data-repeat]:has-text("NETFLIX") [data-repeat-action="log"]')]);
-    await page.waitForFunction(() => document.getElementById('repeat-status').textContent.includes('recurring rules'), null, { timeout: 10000 });
-    assert((await db.from('recurring_transactions').select('id').eq('line_user_id', U)).data.length === 1 && await page.isHidden('#repeat-list'), 'Log automatically -> a recurring rule; nothing left to suggest');
+    await Promise.all([page.waitForResponse((r) => r.url().includes('/accept')), page.click('[data-repeat]:has-text("TRUEMOVE") .rec-option:has-text("Remind")').then(() => page.click('[data-repeat]:has-text("TRUEMOVE") [data-repeat-action="accept"]'))]);
+    await page.waitForSelector('#toast:not([hidden])', { timeout: 10000 });
+    assert((await page.textContent('#toast')).includes('Monthly reminder set') && (await page.isVisible('#toast .toast-undo')) && (await db.from('reminders').select('id').eq('line_user_id', U)).data.length === 1, 'Remind me monthly -> a reminder');
+    await Promise.all([page.waitForResponse((r) => r.url().includes('/accept')), page.click('[data-repeat]:has-text("NETFLIX") [data-repeat-action="accept"]')]);
+    await page.waitForFunction(() => document.getElementById('toast').textContent.includes('recurring rules'), null, { timeout: 10000 });
+    assert((await db.from('recurring_transactions').select('id').eq('line_user_id', U)).data.length === 1 && await page.isHidden('#repeat-list') && await page.isVisible('#repeat-empty'), 'Log automatically -> a recurring rule; nothing left to suggest');
 
     // --- ?report=last ---
     await page.goto(`${BASE}/liff/?report=last`);

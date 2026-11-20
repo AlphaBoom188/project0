@@ -35,7 +35,7 @@ async function cleanup() {
   await page.goto(`${BASE}/liff/`);
   await page.waitForSelector('#app:not([hidden])', { timeout: 15000 });
   await openTab(page, 'budgets');
-  await page.click('#advanced-toggle');
+  // v5: recurring rules are always visible (no Advanced toggle)
   await page.waitForSelector('.recurring-row', { timeout: 8000 });
 
   const rentRow = page.locator('.recurring-row', { hasText: 'Rent' });
