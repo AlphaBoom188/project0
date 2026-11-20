@@ -24,6 +24,13 @@ router.post('/:line_user_id/export-link', (req, res) => {
   res.json({ success: true, query: signExportLink(req.params.line_user_id, query) });
 });
 
+// POST /api/transactions/:line_user_id/import-csv/preview { csv, mapping? } (writes nothing) and
+// POST .../import-csv { csv, mapping?, createCategories? } - transactions from another app's CSV export
+const csvImport = require('../controllers/csvImportController');
+const { rateLimit, LIMITS } = require('../services/rateLimit');
+router.post('/:line_user_id/import-csv/preview', rateLimit('csv', 60, LIMITS.statement.windowMs), csvImport.preview);
+router.post('/:line_user_id/import-csv', rateLimit('csv-import', 20, LIMITS.statement.windowMs), csvImport.import);
+
 // GET /api/transactions/:line_user_id/export - Export transactions as CSV (UTF-8 BOM)
 router.get('/:line_user_id/export', transactionController.exportTransactions);
 

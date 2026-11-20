@@ -1,0 +1,285 @@
+// CSV import (History tab), savings goals (Wealth tab) and the
+// subscriptions & bills overview (Budgets tab). Loaded after app.js,
+// tasks.js, tax.js and insights.js; shares their globals.
+// Backend: /api/transactions/:u/import-csv(/preview), /api/goals/:u,
+// /api/recurring/:u/overview.
+
+const mo = {
+  csvButton: document.getElementById('import-csv-button'),
+  csvModal: document.getElementById('csv-modal'),
+  csvFile: document.getElementById('csv-file'),
+  csvStatus: document.getElementById('csv-status'),
+  csvReview: document.getElementById('csv-review'),
+  csvMapping: document.getElementById('csv-mapping'),
+  csvSummary: document.getElementById('csv-summary'),
+  csvCategories: document.getElementById('csv-categories'),
+  csvCreateRow: document.getElementById('csv-create-row'),
+  csvCreate: document.getElementById('csv-create'),
+  csvPreview: document.getElementById('csv-preview'),
+  csvError: document.getElementById('csv-error'),
+  csvCancel: document.getElementById('csv-cancel'),
+  csvImport: document.getElementById('csv-import'),
+  csvClose: document.getElementById('csv-close'),
+  goalsList: document.getElementById('goals-list'),
+  goalsEmpty: document.getElementById('goals-empty'),
+  addGoal: document.getElementById('add-goal-button'),
+  goalModal: document.getElementById('sgoal-modal'),
+  goalTitle: document.getElementById('sgoal-title'),
+  goalForm: document.getElementById('sgoal-form'),
+  goalName: document.getElementById('sgoal-name'),
+  goalTarget: document.getElementById('sgoal-target'),
+  goalDate: document.getElementById('sgoal-date'),
+  goalAccount: document.getElementById('sgoal-account'),
+  goalSavedField: document.getElementById('sgoal-saved-field'),
+  goalSaved: document.getElementById('sgoal-saved'),
+  goalRemind: document.getElementById('sgoal-remind'),
+  goalAddRow: document.getElementById('sgoal-add-row'),
+  goalAddAmount: document.getElementById('sgoal-add-amount'),
+  goalAdd: document.getElementById('sgoal-add'),
+  goalError: document.getElementById('sgoal-error'),
+  goalCancel: document.getElementById('sgoal-cancel'),
+  goalSave: document.getElementById('sgoal-save'),
+  goalDelete: document.getElementById('sgoal-delete'),
+  subsHeader: document.getElementById('subs-header'),
+  subsTotal: document.getElementById('subs-total'),
+  subsList: document.getElementById('subs-list'),
+};
+const moState = { csvText: null, mapping: null, goals: [], editingGoal: null, goalSeq: 0, subsSeq: 0 };
+const thb = (n) => `฿${Math.round(Number(n) || 0).toLocaleString('en-US')}`;
+const moneyInput = (v) => (String(v || '').trim() === '' ? null : Number(String(v).replace(/[,\s฿]/g, '')));
+
+// ---- CSV import ----
+const CSV_FIELDS = [
+  ['date', 'Date'], ['amount', 'Amount (+ / -)'], ['income', 'Income column'], ['expense', 'Expense column'],
+  ['type', 'Type (income/expense)'], ['category', 'Category'], ['description', 'Note'],
+];
+
+function openCsvImport() {
+  moState.csvText = null;
+  moState.mapping = null;
+  mo.csvReview.hidden = true;
+  mo.csvFile.value = '';
+  hideAiStatus(mo.csvStatus);
+  clearModalError(mo.csvError);
+  mo.csvModal.hidden = false;
+}
+
+async function previewCsv() {
+  setAiStatus(mo.csvStatus, 'working', 'Reading the file…');
+  clearModalError(mo.csvError);
+  try {
+    const p = await apiRequest(`/transactions/${lineUserId}/import-csv/preview`, { method: 'POST', body: JSON.stringify({ csv: moState.csvText, mapping: moState.mapping }) });
+    moState.mapping = p.mapping;
+    renderCsvPreview(p);
+    if (p.problem) setAiStatus(mo.csvStatus, 'error', `${p.problem}: pick it below.`);
+    else setAiStatus(mo.csvStatus, 'done', `${p.toImport} of ${p.total} rows ready to import.`);
+  } catch (error) {
+    mo.csvReview.hidden = true;
+    setAiStatus(mo.csvStatus, 'error', plainError(error));
+  }
+}
+
+function renderCsvPreview(p) {
+  mo.csvReview.hidden = false;
+  const opts = (sel) => `<option value="">Not in this file</option>${p.headers.map((h, i) => `<option value="${i}"${sel === i ? ' selected' : ''}>${escapeHtml(h || `Column ${i + 1}`)}</option>`).join('')}`;
+  mo.csvMapping.innerHTML = CSV_FIELDS.map(([k, label]) => `<label class="field">${label}<select data-map="${k}">${opts(p.mapping[k])}</select></label>`).join('')
+    + `<label class="field">Dates are<select data-map="dateOrder">${[['dmy', 'Day/Month/Year'], ['mdy', 'Month/Day/Year'], ['ymd', 'Year-Month-Day']].map(([v, l]) => `<option value="${v}"${p.mapping.dateOrder === v ? ' selected' : ''}>${l}</option>`).join('')}</select></label>`
+    + `<label class="field">Amounts without a sign are<select data-map="signed">${[['signed', 'Income (minus = expense)'], ['positive-expense', 'Expenses'], ['positive-income', 'Income']].map(([v, l]) => `<option value="${v}"${p.mapping.signed === v ? ' selected' : ''}>${l}</option>`).join('')}</select></label>`;
+  const ok = !p.problem;
+  mo.csvImport.disabled = !ok || !p.toImport;
+  mo.csvSummary.hidden = !ok;
+  mo.csvPreview.parentElement.hidden = !ok;
+  if (!ok) { mo.csvCategories.innerHTML = ''; mo.csvCreateRow.hidden = true; return; }
+  const line = (l, v) => `<div class="tax-line"><span>${l}</span><span>${v}</span></div>`;
+  mo.csvSummary.innerHTML = line('Rows', p.total) + line('Expenses / income', `${p.expense} / ${p.income}`)
+    + (p.duplicates ? line('Already imported', p.duplicates) : '') + (p.errorCount ? line('Skipped (problems)', p.errorCount) : '')
+    + `<div class="tax-line is-total"><span>Will import</span><span>${p.toImport}</span></div>`
+    + (p.errors.length ? `<p class="tax-rates">${p.errors.slice(0, 3).map((e) => `Line ${e.line}: ${escapeHtml(e.error)}`).join(' · ')}${p.errorCount > 3 ? ' …' : ''}</p>` : '');
+  const fresh = p.categories.filter((c) => !c.matched);
+  mo.csvCreateRow.hidden = fresh.length === 0;
+  mo.csvCategories.innerHTML = p.categories.length
+    ? `<h3 class="group-subtitle">Categories</h3><div class="category-chips">${p.categories.map((c) => `<span class="tax-sg-tag${c.matched ? '' : ' conf-low'}">${escapeHtml(c.name)} · ${c.count}${c.matched ? '' : ' · new'}</span>`).join('')}</div>`
+    : '';
+  mo.csvPreview.innerHTML = `<tr><th>Date</th><th>Type</th><th class="n">Amount</th><th>Category</th><th>Note</th></tr>${p.preview.slice(0, 10).map((r) => (r.error
+    ? `<tr class="is-error"><td colspan="5">Line ${r.line}: ${escapeHtml(r.error)}</td></tr>`
+    : `<tr><td>${escapeHtml(r.date)}</td><td>${r.type === 'income' ? 'Income' : 'Expense'}</td><td class="n">${thb(r.amount)}</td><td>${escapeHtml(r.category || '')}</td><td>${escapeHtml(r.description || '')}</td></tr>`)).join('')}`;
+}
+
+async function importCsv() {
+  mo.csvImport.disabled = true;
+  setAiStatus(mo.csvStatus, 'working', 'Importing…');
+  try {
+    const r = await apiRequest(`/transactions/${lineUserId}/import-csv`, { method: 'POST', body: JSON.stringify({ csv: moState.csvText, mapping: moState.mapping, createCategories: !mo.csvCreateRow.hidden && mo.csvCreate.checked }) });
+    mo.csvReview.hidden = true;
+    setAiStatus(mo.csvStatus, 'done', `Imported ${r.imported} transaction${r.imported === 1 ? '' : 's'}${r.duplicates ? `, ${r.duplicates} already there` : ''}${r.skipped ? `, ${r.skipped} skipped` : ''}${r.createdCategories.length ? `. New categories: ${r.createdCategories.join(', ')}` : ''}.`);
+    if (typeof loadTransactionsTab === 'function') loadTransactionsTab().catch(() => {});
+  } catch (error) {
+    mo.csvImport.disabled = false;
+    setAiStatus(mo.csvStatus, 'error', plainError(error));
+  }
+}
+
+// ---- Savings goals ----
+async function loadGoals() {
+  const seq = ++moState.goalSeq;
+  try {
+    const { goals } = await cachedGet(`/goals/${lineUserId}`);
+    if (seq !== moState.goalSeq) return;
+    moState.goals = goals;
+    renderGoals();
+  } catch (error) {
+    if (seq === moState.goalSeq) showError(plainError(error));
+  }
+}
+
+function renderGoals() {
+  const goals = moState.goals;
+  mo.goalsEmpty.hidden = goals.length > 0;
+  mo.goalsList.hidden = goals.length === 0;
+  mo.goalsList.innerHTML = goals.map((g) => {
+    const st = g.status;
+    const plan = st.achieved ? 'Reached. Well done.'
+      : st.overdue ? `The date passed with ${thb(st.remaining)} to go.`
+        : st.perMonth ? `Put aside ${thb(Math.ceil(st.perMonth))} a month to reach it by ${escapeHtml(g.target_date)}.`
+          : `${thb(st.remaining)} to go.`;
+    return `<li class="tax-sg goal-card${st.achieved ? ' is-achieved' : ''}" data-goal="${g.id}">
+      <button type="button" class="goal-main" data-goal-open="${g.id}">
+        <div class="tax-sg-top"><span class="tax-sg-title">${escapeHtml(g.name)}</span><span class="tax-sg-amount">${thb(st.saved)} <span class="transaction-date">of ${thb(g.target_amount)}</span></span></div>
+        <span class="tax-bar goal-bar" aria-hidden="true"><span style="width:${st.pct}%"></span></span>
+        <p class="tax-sg-reason">${plan}</p>
+        <div class="tax-sg-tags"><span class="tax-sg-tag">${st.pct}%</span><span class="tax-sg-tag">${g.account_name ? `Follows ${escapeHtml(g.account_name)}` : 'Added by hand'}</span>${g.reminder_id ? '<span class="tax-sg-tag">Monthly reminder</span>' : ''}</div>
+      </button>
+    </li>`;
+  }).join('');
+}
+
+async function openSavingsGoalModal(goal = null) {
+  moState.editingGoal = goal;
+  clearModalError(mo.goalError);
+  mo.goalTitle.textContent = goal ? 'Edit goal' : 'New savings goal';
+  try {
+    const accounts = (await cachedGet(`/accounts/${lineUserId}`)).accounts || [];
+    mo.goalAccount.innerHTML = '<option value="">I\'ll add money here by hand</option>' + accounts.filter((a) => a.account_type !== 'credit_card').map((a) => `<option value="${a.id}">${escapeHtml(a.account_name)} (${thb(a.balance)})</option>`).join('');
+  } catch { /* accounts are optional */ }
+  mo.goalRemind.innerHTML = (goal && goal.reminder_id ? '<option value="keep">Keep the monthly reminder</option>' : '') + '<option value="">No reminder</option>' + Array.from({ length: 28 }, (_, i) => `<option value="${i + 1}">On the ${i + 1}${[1, 21].includes(i + 1) ? 'st' : [2, 22].includes(i + 1) ? 'nd' : [3, 23].includes(i + 1) ? 'rd' : 'th'} of each month</option>`).join('');
+  mo.goalName.value = goal ? goal.name : '';
+  mo.goalTarget.value = goal ? goal.target_amount : '';
+  mo.goalDate.value = goal && goal.target_date ? goal.target_date : '';
+  mo.goalAccount.value = goal && goal.account_id ? goal.account_id : '';
+  mo.goalSaved.value = goal && !goal.account_id && goal.saved_amount ? goal.saved_amount : '';
+  mo.goalRemind.value = goal && goal.reminder_id ? 'keep' : '';
+  syncGoalAccount();
+  mo.goalSavedField.hidden = !!goal || !!mo.goalAccount.value;
+  mo.goalAddRow.hidden = !goal || !!goal.account_id;
+  mo.goalAddAmount.value = '';
+  mo.goalDelete.hidden = !goal;
+  mo.goalModal.hidden = false;
+  if (!goal) setTimeout(() => mo.goalName.focus(), 50);
+}
+
+const syncGoalAccount = () => { if (!moState.editingGoal) mo.goalSavedField.hidden = !!mo.goalAccount.value; };
+
+async function saveGoal(event) {
+  event.preventDefault();
+  clearModalError(mo.goalError);
+  const target = moneyInput(mo.goalTarget.value);
+  if (!mo.goalName.value.trim()) return showModalError(mo.goalError, 'Give the goal a name.');
+  if (!(target > 0)) return showModalError(mo.goalError, 'Enter the target amount.');
+  const body = { name: mo.goalName.value.trim(), target_amount: target, target_date: mo.goalDate.value || null, account_id: mo.goalAccount.value || null };
+  if (!moState.editingGoal && !body.account_id) body.saved_amount = moneyInput(mo.goalSaved.value) || 0;
+  const remind = mo.goalRemind.value;
+  if (remind && remind !== 'keep') body.remind_day = Number(remind);
+  else if (!remind && moState.editingGoal && moState.editingGoal.reminder_id) body.remind_day = null; // turn it off
+  mo.goalSave.disabled = true;
+  try {
+    const g = moState.editingGoal;
+    const res = g ? await apiRequest(`/goals/${lineUserId}/${g.id}`, { method: 'PUT', body: JSON.stringify(body) }) : await apiRequest(`/goals/${lineUserId}`, { method: 'POST', body: JSON.stringify(body) });
+    moState.goals = res.goals;
+    renderGoals();
+    mo.goalModal.hidden = true;
+  } catch (error) {
+    showModalError(mo.goalError, plainError(error));
+  } finally {
+    mo.goalSave.disabled = false;
+  }
+}
+
+async function addToGoal() {
+  const amount = moneyInput(mo.goalAddAmount.value);
+  if (!amount || !Number.isFinite(amount)) return showModalError(mo.goalError, 'Enter an amount, like 1000 or -500.');
+  try {
+    const res = await apiRequest(`/goals/${lineUserId}/${moState.editingGoal.id}/add`, { method: 'POST', body: JSON.stringify({ amount }) });
+    moState.goals = res.goals;
+    renderGoals();
+    mo.goalModal.hidden = true;
+  } catch (error) {
+    showModalError(mo.goalError, plainError(error));
+  }
+}
+
+async function deleteGoal() {
+  const g = moState.editingGoal;
+  if (!g || !(await confirmAction(`Delete "${g.name}"?`))) return;
+  try {
+    const res = await apiRequest(`/goals/${lineUserId}/${g.id}`, { method: 'DELETE' });
+    moState.goals = res.goals;
+    renderGoals();
+    mo.goalModal.hidden = true;
+  } catch (error) {
+    showModalError(mo.goalError, plainError(error));
+  }
+}
+
+// ---- Subscriptions & bills ----
+async function loadSubscriptions() {
+  const seq = ++moState.subsSeq;
+  try {
+    const o = await cachedGet(`/recurring/${lineUserId}/overview`);
+    if (seq !== moState.subsSeq) return;
+    const any = o.items.length > 0;
+    mo.subsHeader.hidden = !any;
+    mo.subsList.hidden = !any;
+    mo.subsTotal.textContent = any ? `${thb(o.monthlyTotal)} a month · ${thb(o.yearlyTotal)} a year` : '';
+    mo.subsList.innerHTML = o.items.map((i) => `<li class="task-row">
+      <span class="task-main"><span class="task-title">${escapeHtml(i.description)}</span>
+        <span class="task-meta"><span>${i.frequency === 'monthly' ? 'Monthly' : i.frequency === 'yearly' ? `Yearly ${thb(i.amount)}` : i.frequency === 'weekly' ? `Weekly ${thb(i.amount)}` : `Daily ${thb(i.amount)}`}${i.category ? ` · ${escapeHtml(i.category)}` : ''}</span></span>
+        ${i.increase ? `<span class="tax-sg-tag conf-low">Went up: ${thb(i.increase.from)} to ${thb(i.increase.to)} (${escapeHtml(i.increase.date)})</span>` : ''}
+      </span>
+      <span class="tax-amount">${thb(i.monthly)}<span class="transaction-date">/mo</span></span>
+    </li>`).join('');
+  } catch {
+    mo.subsHeader.hidden = true; // extra information: never block Budgets
+  }
+}
+
+// ---- Wiring ----
+mo.csvButton.addEventListener('click', openCsvImport);
+mo.csvFile.addEventListener('change', async () => {
+  const file = mo.csvFile.files[0];
+  if (!file) return;
+  if (file.size > 5 * 1024 * 1024) { setAiStatus(mo.csvStatus, 'error', 'The file is over 5 MB. Split it and import the parts.'); return; }
+  moState.csvText = await file.text();
+  moState.mapping = null;
+  previewCsv();
+});
+mo.csvMapping.addEventListener('change', (e) => {
+  const sel = e.target.closest('[data-map]');
+  if (!sel) return;
+  const k = sel.dataset.map;
+  moState.mapping = { ...moState.mapping, [k]: ['dateOrder', 'signed'].includes(k) ? sel.value : (sel.value === '' ? null : Number(sel.value)) };
+  previewCsv();
+});
+mo.csvImport.addEventListener('click', importCsv);
+mo.csvCancel.addEventListener('click', () => { mo.csvModal.hidden = true; });
+mo.csvClose.addEventListener('click', () => { mo.csvModal.hidden = true; });
+mo.addGoal.addEventListener('click', () => openSavingsGoalModal(null));
+mo.goalsList.addEventListener('click', (e) => { const b = e.target.closest('[data-goal-open]'); if (b) openSavingsGoalModal(moState.goals.find((g) => g.id === b.dataset.goalOpen)); });
+mo.goalAccount.addEventListener('change', syncGoalAccount);
+mo.goalForm.addEventListener('submit', saveGoal);
+mo.goalCancel.addEventListener('click', () => { mo.goalModal.hidden = true; });
+mo.goalAdd.addEventListener('click', addToGoal);
+mo.goalDelete.addEventListener('click', deleteGoal);
+const baseLoadNetWorth = TAB_LOADERS.networth;
+TAB_LOADERS.networth = async () => { loadGoals(); await baseLoadNetWorth(); };
+const baseLoadBudgetsMoney = TAB_LOADERS.budgets;
+TAB_LOADERS.budgets = async () => { await baseLoadBudgetsMoney(); loadSubscriptions(); };

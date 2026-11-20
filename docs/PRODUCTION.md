@@ -9,7 +9,7 @@ Goal: a product that serves hundreds, then thousands, of users reliably. This fi
 | Backend | `node backend/index.js` on port 3000 |
 | Public URL | ngrok **static** free domain (`https://<domain>.ngrok-free.dev`); LINE webhook, LIFF endpoint and Google redirect point here, so restarts don't change them |
 | Supervision | `deploy/macos/install.sh <domain>` installs three LaunchAgents: backend and tunnel (restart on crash, start at login) and keep-awake (`caffeinate -s -i`: no sleep on AC power). Logs go to `~/Library/Logs/expense-tracker/`. `deploy/macos/uninstall.sh` reverses it. |
-| Database | Supabase (free tier). **It pauses when idle and has no backups**; see Planned. |
+| Database | Supabase (free tier). It pauses when idle and keeps no backups of its own, so `jobs/nightlyBackup.js` copies the database and storage to `~/Backups/expense-tracker` at 03:00 (last 14 kept; `npm run backup` by hand; restore with `node scripts/restore.js <folder> [--confirm] [--user <id>]`). |
 
 **Before installing the services:** stop the backend and ngrok you started by hand (port 3000 must be free), then run the installer with your static domain.
 

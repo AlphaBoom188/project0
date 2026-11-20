@@ -20,6 +20,8 @@ router.post('/:line_user_id', recurringController.createRecurring);
 const insights = require('../controllers/insightsController');
 router.param('key', (req, res, next, value) => (/^[0-9a-f]{12}$/.test(value) ? next() : res.status(400).json({ error: 'Invalid suggestion id' })));
 router.get('/:line_user_id/suggestions', insights.recurringSuggestions);
+// GET /api/recurring/:line_user_id/overview - subscriptions and bills totals, price rises
+router.get('/:line_user_id/overview', insights.subscriptionsOverview);
 router.post('/:line_user_id/suggestions/:key/:action', insights.recurringSuggestionAction);
 
 // PUT /api/recurring/:line_user_id/:recurring_id - Update (or pause/resume via is_active)

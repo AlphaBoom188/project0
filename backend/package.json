@@ -7,7 +7,9 @@
     "start": "node index.js",
     "dev": "node index.js",
     "test": "node tests/run.js",
-    "test:openai": "node tests/run.js --group=openai"
+    "test:openai": "node tests/run.js --group=openai",
+    "backup": "node scripts/backup.js",
+    "restore": "node scripts/restore.js"
   },
   "keywords": [],
   "author": "",

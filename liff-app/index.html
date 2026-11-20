@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#06c755" />
   <title>Expense Tracker</title>
-  <link rel="stylesheet" href="style.css?v=20261121a" />
+  <link rel="stylesheet" href="style.css?v=20261121b" />
   <script>
     // Set data-theme before first paint to avoid a flash of the wrong theme.
     (function () {
@@ -195,6 +195,7 @@
           <button id="export-csv-button" class="link-button">Download CSV</button>
           <button id="export-email-button" class="link-button">Email CSV</button>
           <button id="import-statement-button" class="link-button">Import Statement</button>
+          <button type="button" id="import-csv-button" class="link-button">Import CSV</button>
         </div>
         <p id="export-status" class="settings-status" hidden></p>
 
@@ -229,6 +230,12 @@
 
         <p id="budgets-status" class="settings-status" hidden></p>
 
+        <div class="section-header-row" id="subs-header" hidden>
+          <h2 class="section-title">Subscriptions &amp; bills</h2>
+          <span class="transaction-date" id="subs-total"></span>
+        </div>
+        <ul id="subs-list" class="task-list" hidden></ul>
+
         <div class="section-header-row" id="repeat-header" hidden>
           <h2 class="section-title">Repeat payments we found</h2>
         </div>
@@ -249,6 +256,13 @@
 
       <!-- Net Worth: accounts/savings, live investments, emergency fund -->
       <section id="tab-networth" class="tab-panel" hidden>
+        <div class="section-header-row">
+          <h2 class="section-title">Savings goals</h2>
+          <button type="button" id="add-goal-button" class="link-button">+ Add Goal</button>
+        </div>
+        <ul id="goals-list" class="tax-suggestions" hidden></ul>
+        <p id="goals-empty" class="empty-state tax-empty">Saving for something? Add a goal, like "Japan trip ฿50,000 by June", and see how much to put aside each month.</p>
+
         <h2 class="section-title">Savings &amp; Accounts</h2>
         <ul id="accounts-list" class="categories-list"></ul>
         <p id="accounts-empty-state" class="empty-state" hidden>No accounts yet.</p>
@@ -1053,6 +1067,58 @@
     </div>
   </div>
 
+  <div id="csv-modal" class="modal" hidden>
+    <div class="modal-content sheet-scroll">
+      <h2 class="section-title tasks-sheet-title">Import transactions from a CSV</h2>
+      <p class="group-hint">From Money Lover, Wallet, Spendee, your bank or a spreadsheet. You'll see what will be imported before anything is saved. Importing the same file again adds nothing.</p>
+      <label class="secondary-button tax-scan-button">Choose a CSV file<input type="file" id="csv-file" accept=".csv,text/csv,text/plain" hidden /></label>
+      <p id="csv-status" class="scan-status" hidden></p>
+      <div id="csv-review" hidden>
+        <h3 class="group-subtitle">Columns</h3>
+        <div class="csv-mapping" id="csv-mapping"></div>
+        <div class="tax-breakdown" id="csv-summary"></div>
+        <div id="csv-categories"></div>
+        <label class="toggle-row" id="csv-create-row" hidden><span>Create the new categories (otherwise they go to Others / Income)</span><input type="checkbox" id="csv-create" checked /></label>
+        <h3 class="group-subtitle">First rows</h3>
+        <div class="table-wrap csv-table-wrap"><table class="csv-table" id="csv-preview"></table></div>
+        <p id="csv-error" class="modal-error" hidden></p>
+        <div class="modal-actions">
+          <button type="button" id="csv-cancel" class="secondary-button">Cancel</button>
+          <button type="button" id="csv-import" class="primary-button">Import</button>
+        </div>
+      </div>
+      <button type="button" id="csv-close" class="secondary-button recurring-add-button">Close</button>
+    </div>
+  </div>
+
+  <div id="sgoal-modal" class="modal" hidden>
+    <div class="modal-content sheet-scroll">
+      <h2 class="section-title tasks-sheet-title" id="sgoal-title">New savings goal</h2>
+      <form id="sgoal-form" novalidate>
+        <label class="field">What are you saving for?<input type="text" id="sgoal-name" maxlength="100" autocomplete="off" placeholder="Japan trip" /></label>
+        <label class="field">Target (THB)<input type="text" id="sgoal-target" inputmode="decimal" autocomplete="off" /></label>
+        <label class="field">By (optional)<input type="date" id="sgoal-date" /></label>
+        <label class="field">Track with
+          <select id="sgoal-account"><option value="">I'll add money here by hand</option></select>
+        </label>
+        <label class="field" id="sgoal-saved-field">Saved so far (THB)<input type="text" id="sgoal-saved" inputmode="decimal" autocomplete="off" placeholder="0" /></label>
+        <label class="field">Monthly reminder to put money aside
+          <select id="sgoal-remind"><option value="">No reminder</option></select>
+        </label>
+        <div class="goal-add-row" id="sgoal-add-row" hidden>
+          <label class="field">Add or take out (THB)<input type="text" id="sgoal-add-amount" inputmode="decimal" autocomplete="off" placeholder="1000 or -500" /></label>
+          <button type="button" id="sgoal-add" class="secondary-button">Update</button>
+        </div>
+        <p id="sgoal-error" class="modal-error" hidden></p>
+        <div class="modal-actions">
+          <button type="button" id="sgoal-cancel" class="secondary-button">Cancel</button>
+          <button type="submit" id="sgoal-save" class="primary-button">Save</button>
+        </div>
+        <button type="button" id="sgoal-delete" class="secondary-button danger-button recurring-add-button" hidden>Delete goal</button>
+      </form>
+    </div>
+  </div>
+
   <div id="task-modal" class="modal" hidden>
     <div class="modal-content sheet-scroll">
       <div class="task-kind" id="task-kind" role="tablist">
@@ -1457,9 +1523,10 @@
   <script src="/liff-config.js"></script>
   <!-- Chart.js for the Net Worth performance chart; app.js renders everything else without it if this is blocked. -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-  <script src="app.js?v=20261121a"></script>
-  <script src="tasks.js?v=20261121a"></script>
-  <script src="tax.js?v=20261121a"></script>
-  <script src="insights.js?v=20261121a"></script>
+  <script src="app.js?v=20261121b"></script>
+  <script src="tasks.js?v=20261121b"></script>
+  <script src="tax.js?v=20261121b"></script>
+  <script src="insights.js?v=20261121b"></script>
+  <script src="money.js?v=20261121b"></script>
 </body>
 </html>
