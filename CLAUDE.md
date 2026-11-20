@@ -77,15 +77,17 @@ npm run test:openai       # tests/openai/: real OpenAI calls (a few cents)
 - **Thumbnails.** `transactions.thumbnail_url` stores a private Storage *path*, signed fresh (1 h) on every read. It must be `<own line_user_id>/<ms>-<8 hex>.jpg` (`isOwnThumbnailPath`).
 - **Outbound calls** (OpenAI, LINE, Yahoo, CoinGecko, Typhoon) always have a 10-45 s timeout and degrade to a logged failure.
 - **LINE groups.** Events with `source.type` `group`/`room` go to `controllers/lineGroupHandler.js`, never the 1:1 flows. In groups the bot answers only exact commands, or expenses starting with `+` or @mentioning it.
-- **LIFF app rules** (`liff-app/`: plain HTML/JS/CSS, no build step; feature files load after app.js and share its globals, so check new top-level names and element ids don't collide: `tests/api/liff_html.test.js` catches duplicate ids):
+- **LIFF app rules** (`liff-app/`: plain HTML/JS/CSS, no build step; feature files load after app.js and share its globals, so check new top-level names and element ids don't collide: `tests/api/liff_html.test.js` fails on duplicate ids and on a top-level name declared in two scripts):
   - No emoji anywhere in `liff-app/`; all labels in English.
   - Colors, spacing and radii only through the CSS tokens on `:root`, with dark mode under `prefers-color-scheme` plus `[data-theme]`. Theme choice is stored in `localStorage`.
+  - v5 "Claude style" design (`docs/FEATURES.md`, UX/UI refresh v5): ivory/slate surfaces, Clay `--brand` as the one accent for graphics and `--brand-text` for clay text, slate `--primary` buttons, serif page/sheet titles, category tints `--c-*` via `categoryTile()`. Amounts use `formatBaht()` (U+2212 minus); expenses are not red (red = over budget or an error). Confirmations go through `showToast({ title, description, kind, undo })`, not banners.
   - Inputs at least 16px (stops iOS zoom); tap targets at least `--tap-min` (44px).
   - Reads go through `cachedGet()`; any non-GET `apiRequest()` clears the cache. `apiRequest` errors start with `[status]`.
   - Async renders use a sequence-number stale guard (`txnLoadSeq`, `perfLoadSeq`, ...).
   - Chart.js 4.4.1 and pdf.js 3.11.174 load from cdnjs on first use (`loadChartJs`/`chartReady`, `loadPdfJs`), never at startup. Pages must still work ("Chart unavailable", "Couldn't load the PDF reader") when a CDN is blocked.
   - **Bump the `?v=` tag in `index.html` whenever any `.js` or `.css` in `liff-app/` changes.** Versioned files are served `Cache-Control: immutable` for a year (and everything is gzipped), so an unchanged tag means phones keep the old file. `tests/api/liff_html.test.js` checks the tags match; `tests/api/perf_headers.test.js` checks compression and caching.
-  - Modals stack at z-index 20, the confirm modal at 30, the FAB at 15, the nav at 10.
+  - Modals stack at z-index 20, the confirm modal at 30, the toast at 40, the FAB at 15, the nav at 10.
+  - Navigation: 5 nav items (Home, Tasks, History, Money, More); every panel keeps its `tab-*` id and `switchTab(name)` takes `home|tasks|transactions|budgets|networth|tax|settings|more` (and `money` = last of budgets/networth, `localStorage.moneyView`). LIFF suites open panels with `openTab(page, name)` from `tests/lib.js`.
 - **Legal pages must stay true.** `liff-app/privacy.html` (+ `privacy-th.html`) states what is collected, who it goes to and how long it's kept: error reports 90 days, alerts 180 days, job records 30 days, server logs 30 days (`deploy/macos/logrotate.sh`). When a change sends data somewhere new, stores something new or changes retention, update both languages. Never log message text, transcripts or receipt contents.
 - **Privacy.** Never commit real user data, including from statements the owner shares for testing: names, account numbers, last-4 digits, counterparties. Keep extracted data in the session scratchpad and use the synthetic fixtures in tests. Run a grep sweep before committing.
 
@@ -193,10 +195,12 @@ deploy/macos/           LaunchAgents for self-hosting (backend, ngrok tunnel, ke
 - **CSV import, savings goals, subscriptions** (`services/csvImport.js`, `savingsGoals.js`, `subscriptions.js`; LIFF `money.js`): History → Import CSV (Money Lover / Wallet / bank / spreadsheet exports, column mapping, preview, dedupe); Wealth → Savings goals (progress from an account balance or by hand, "put aside ฿X a month" with an optional monthly reminder); Budgets → Subscriptions & bills (active expense rules as monthly/yearly totals, price rises from the latest payment).
 - **Backups:** `services/backup.js` dumps every table and the private buckets nightly to `BACKUP_DIR` (0700/0600, last 14 kept); `scripts/restore.js` upserts parents first, dry run by default, `--user` for one person.
 - **Notifications:** budget-crossing alerts, event-budget alerts at 80% and 100%, a 21:00 daily digest, 12:00/20:00 activity nudges, and pay-window due/overdue reminders. All respect `notifications_enabled`.
-- **LIFF app:**
-  - Tabs: Home / Tasks / History (transactions) / Budgets / Wealth (net worth) / Tax / Settings. The floating Add button adds a reminder or note on Tasks and an income on Tax.
-  - Floating Add button: receipt scan and a Speak (mic) button, both of which fill the form for review.
-  - Day-grouped timeline, search, account filter, logging streak.
+- **LIFF app** (v5 refresh, `LIFF_UXUI_REFRESH_SPEC.md`):
+  - Nav: Home / Tasks / History / Money (Budgets | Wealth switch) / More (Tax, recurring, groups, bills, export/import, Settings, bot help). The floating Add button (Home, History, Tasks, Tax; hidden on Money, More, Settings) adds an entry, a reminder or note on Tasks, an income on Tax.
+  - Home: "Spent this cycle" hero against budgets, Scan/Speak/Split tiles, streak row, LINE groups, Budgets to watch, Tax and Investments rows, Monthly pulse, last 3 entries; a "Get set up" checklist in the first week. (No Insights card: dropped by the owner.)
+  - Add entry: Expense/Income/Transfer, category chips (Auto first), account, AI tool chips and a "How I read this" trace after a scan or voice fill, save toast with Undo.
+  - History: filter chips (type, accounts, category), period card with totals, Export / Import sheet, error state with Try again.
+  - Statement import: task rows while working, an approval card per uncertain row, a done summary, import toast with Undo.
   - Dark/light themes; English labels.
 - **Accounts and transfers:** bank, credit card, e-wallet and cash accounts. Balances update on account-attributed transactions and transfers.
 - **Recurring rules:** auto-logged on `next_run_date`. Monthly rules can have a pay window (with Mark Paid) that drives due/overdue reminders.
