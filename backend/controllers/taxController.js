@@ -7,6 +7,8 @@ const store = require('../services/tax/taxStore');
 const { buildSuggestions } = require('../services/tax/taxSuggest');
 const { buildPlan, buildGuide } = require('../services/tax/taxPlan');
 const reminderStore = require('../services/reminderStore');
+const docs = require('../services/tax/taxDocuments');
+const { isUuid } = require('../services/uuid');
 const supabase = require('../config/supabase');
 const { bangkokMidnight, getBangkokYmd } = require('../services/bangkokDay');
 
@@ -108,6 +110,12 @@ async function stateResponse(lineUserId, rules, { withRules = false } = {}) {
   const input = store.toCalcInput(state);
   const result = computeTax(rules, input);
   const today = getBangkokYmd();
+  const documents = await docs.listDocuments(lineUserId, rules.year);
+  const guide = buildGuide(rules, input, result, { today });
+  // Tick the filing checklist for what already has a document attached.
+  const kindOfIncome = new Map(state.incomes.map((i) => [i.id, i.kind]));
+  const attached = new Set(documents.flatMap((d) => [d.claim_key, kindOfIncome.get(d.income_id)]).filter(Boolean));
+  guide.documents = guide.documents.map((doc) => ({ ...doc, attached: attached.has(doc.key) }));
   return {
     year: rules.year,
     years: YEARS,
@@ -117,7 +125,8 @@ async function stateResponse(lineUserId, rules, { withRules = false } = {}) {
     incomes: state.incomes,
     result,
     plan: buildPlan(rules, input, { today }),
-    guide: buildGuide(rules, input, result, { today }),
+    guide,
+    documents,
     reminders: await filingReminders(lineUserId, state.profile),
   };
 }
@@ -161,6 +170,7 @@ const taxController = {
     if (error) return bad(res, error);
     const added = await store.insertIncome(req.params.line_user_id, rules.year, value);
     if (added.error) return bad(res, added.error);
+    if (isUuid(req.body.documentId)) await docs.linkDocument(req.params.line_user_id, rules.year, req.body.documentId, { incomeId: added.income.id });
     res.status(201).json({ ...(await stateResponse(req.params.line_user_id, rules)), income: added.income });
   }),
 
@@ -175,6 +185,7 @@ const taxController = {
     const withheld = value.withheld ?? Number(existing.withheld);
     if (withheld > amount) return bad(res, "Tax withheld can't be more than the income");
     await store.updateIncome(u, rules.year, id, value);
+    if (isUuid(req.body.documentId)) await docs.linkDocument(u, rules.year, req.body.documentId, { incomeId: id });
     res.json(await stateResponse(u, rules));
   }),
 
@@ -280,6 +291,79 @@ taxController.clearReminders = handle('clearReminders', async (req, res, rules) 
   }
   await store.saveProfileRow(u, rules.year, { profile: { ...state.profile, _reminders: [] }, claims: state.claims });
   res.json(await stateResponse(u, rules));
+});
+
+// ---- Documents (Phase 5) ----
+const docError = (res, error, name) => {
+  if (error instanceof docs.DocumentError) return bad(res, error.message);
+  console.error(`Error in tax ${name}:`, error);
+  return res.status(500).json({ error: error.message });
+};
+
+// Checks an attachment target belongs to this user and year.
+async function validTarget(u, rules, { incomeId, claimKey }) {
+  if (incomeId != null) {
+    if (!isUuid(incomeId) || !(await store.getIncome(u, rules.year, incomeId))) return 'Income not found';
+  }
+  if (claimKey != null && !rules.deductions.some((d) => d.key === claimKey)) return `"${claimKey}" isn't a deduction in tax year ${rules.year}`;
+  if (incomeId != null && claimKey != null) return 'Attach to an income or a deduction, not both';
+  return null;
+}
+
+// POST /api/tax/:u/:year/documents { image (base64), kind?, incomeId?, claimKey?, fileName? }
+taxController.uploadDocument = async (req, res) => {
+  const rules = getRules(req.params.year);
+  const u = req.params.line_user_id;
+  try {
+    const { image, incomeId = null, claimKey = null, fileName = null } = req.body || {};
+    const problem = await validTarget(u, rules, { incomeId, claimKey });
+    if (problem) return bad(res, problem);
+    const kind = req.body.kind || (claimKey ? docs.kindForClaim(claimKey) : incomeId ? '50tawi' : 'other');
+    const document = await docs.saveDocument(u, rules.year, { imageBase64: image, kind, incomeId, claimKey, fileName });
+    res.status(201).json({ ...(await stateResponse(u, rules)), document });
+  } catch (error) {
+    docError(res, error, 'uploadDocument');
+  }
+};
+
+// POST /api/tax/:u/:year/documents/scan-50tawi { image, fileName? } -> reads a
+// 50 ทวิ (OpenAI Vision) and saves it; the app pre-fills the income sheet.
+taxController.scan50Tawi = async (req, res) => {
+  const rules = getRules(req.params.year);
+  const u = req.params.line_user_id;
+  try {
+    const { image, fileName = null } = req.body || {};
+    const extracted = await docs.read50Tawi(image);
+    if (!extracted.is50Tawi) return res.status(422).json({ error: "This doesn't look like a 50 ทวิ withholding certificate. Check the photo, or enter the figures by hand.", extracted });
+    const document = await docs.saveDocument(u, rules.year, { imageBase64: image, kind: '50tawi', fileName, extracted });
+    const warnings = [];
+    if (extracted.yearBE && extracted.yearBE !== rules.year) warnings.push(`This certificate looks like it's for ${extracted.yearBE}, not ${rules.year}.`);
+    if (!extracted.kind) warnings.push(extracted.incomeType ? `It's ${extracted.incomeType} income: choose the exact type.` : 'Choose the income type.');
+    res.status(201).json({ document, extracted, warnings });
+  } catch (error) {
+    if (error.status || /timed out|timeout/i.test(error.message || '')) {
+      console.error(`[tax] 50 ทวิ reading failed: ${error.message}`);
+      return res.status(502).json({ error: "Couldn't read the certificate right now. Try again, or enter the figures by hand." });
+    }
+    docError(res, error, 'scan50Tawi');
+  }
+};
+
+// PUT /api/tax/:u/:year/documents/:document_id { incomeId?, claimKey? } (null detaches)
+taxController.updateDocument = handle('updateDocument', async (req, res, rules) => {
+  const u = req.params.line_user_id;
+  const target = { incomeId: req.body ? req.body.incomeId ?? null : null, claimKey: req.body ? req.body.claimKey ?? null : null };
+  const problem = await validTarget(u, rules, target);
+  if (problem) return bad(res, problem);
+  const doc = await docs.linkDocument(u, rules.year, req.params.document_id, target);
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+  res.json(await stateResponse(u, rules));
+});
+
+// DELETE /api/tax/:u/:year/documents/:document_id
+taxController.deleteDocument = handle('deleteDocument', async (req, res, rules) => {
+  await docs.deleteDocument(req.params.line_user_id, rules.year, req.params.document_id);
+  res.json(await stateResponse(req.params.line_user_id, rules));
 });
 
 module.exports = taxController;

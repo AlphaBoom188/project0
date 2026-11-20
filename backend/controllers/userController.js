@@ -237,6 +237,7 @@ const userController = {
       }
       const thumbnails = await removeFolder(BUCKET);
       await removeFolder(SLIP_BUCKET);
+      await removeFolder(require('../services/tax/taxDocuments').BUCKET);
       // Slips other members sent for bills this user collected: those bills
       // go with the user row (cascade), so their slips go too.
       const { data: owned } = await supabase.from('group_expenses').select('id').eq('payer_line_user_id', line_user_id);

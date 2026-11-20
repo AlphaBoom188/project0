@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#06c755" />
   <title>Expense Tracker</title>
-  <link rel="stylesheet" href="style.css?v=20261120d" />
+  <link rel="stylesheet" href="style.css?v=20261120e" />
   <script>
     // Set data-theme before first paint to avoid a flash of the wrong theme.
     (function () {
@@ -917,6 +917,11 @@
   <div id="tax-income-modal" class="modal" hidden>
     <div class="modal-content sheet-scroll">
       <h2 class="section-title tasks-sheet-title" id="tax-income-title">Add income</h2>
+      <label class="secondary-button tax-scan-button" id="tax-scan-label">
+        <span id="tax-scan-text">Scan a 50 ทวิ (photo or PDF)</span>
+        <input type="file" id="tax-scan-input" accept="image/*,application/pdf" hidden />
+      </label>
+      <p id="tax-scan-status" class="scan-status" hidden></p>
       <div class="tax-shortcuts" id="tax-shortcuts"></div>
       <form id="tax-income-form" novalidate>
         <label class="field">Income type
@@ -954,6 +959,12 @@
           </select>
         </label>
         <p class="group-hint" id="tax-credit-help" hidden>Only add dividends here if you want them taxed with your other income. Otherwise the 10% withheld is final and you leave them out.</p>
+        <label class="toggle-row tax-also-row" id="tax-also-row" hidden><span id="tax-also-text"></span><input type="checkbox" id="tax-also" checked /></label>
+        <div class="tax-attachments" id="tax-income-attachments" hidden>
+          <h3 class="group-subtitle">Documents</h3>
+          <ul class="tax-doc-list" id="tax-income-docs"></ul>
+          <label class="link-button tax-attach-label">Attach a photo or PDF<input type="file" id="tax-income-attach" accept="image/*,application/pdf" hidden /></label>
+        </div>
         <p id="tax-income-error" class="modal-error" hidden></p>
         <div class="modal-actions">
           <button type="button" id="tax-income-cancel" class="secondary-button">Cancel</button>
@@ -972,6 +983,12 @@
         <label class="field" id="tax-deduction-amount-field"><span id="tax-deduction-amount-label">Amount paid this year (THB)</span>
           <input type="text" id="tax-deduction-amount" inputmode="decimal" autocomplete="off" />
         </label>
+        <div class="tax-attachments" id="tax-ded-attachments">
+          <h3 class="group-subtitle">Certificates and receipts</h3>
+          <ul class="tax-doc-list" id="tax-ded-docs"></ul>
+          <label class="link-button tax-attach-label">Attach a photo or PDF<input type="file" id="tax-ded-attach" accept="image/*,application/pdf" hidden /></label>
+        </div>
+        <p id="tax-attach-status" class="scan-status" hidden></p>
         <p id="tax-deduction-error" class="modal-error" hidden></p>
         <div class="modal-actions">
           <button type="button" id="tax-deduction-cancel" class="secondary-button">Cancel</button>
@@ -1386,8 +1403,8 @@
   <script src="/liff-config.js"></script>
   <!-- Chart.js for the Net Worth performance chart; app.js renders everything else without it if this is blocked. -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-  <script src="app.js?v=20261120d"></script>
-  <script src="tasks.js?v=20261120d"></script>
-  <script src="tax.js?v=20261120d"></script>
+  <script src="app.js?v=20261120e"></script>
+  <script src="tasks.js?v=20261120e"></script>
+  <script src="tax.js?v=20261120e"></script>
 </body>
 </html>

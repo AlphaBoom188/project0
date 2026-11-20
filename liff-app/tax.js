@@ -96,6 +96,19 @@ const x = {
   credit: document.getElementById('tax-income-credit'),
   creditHelp: document.getElementById('tax-credit-help'),
   incomeError: document.getElementById('tax-income-error'),
+  scanLabel: document.getElementById('tax-scan-label'),
+  scanText: document.getElementById('tax-scan-text'),
+  scanInput: document.getElementById('tax-scan-input'),
+  scanStatus: document.getElementById('tax-scan-status'),
+  alsoRow: document.getElementById('tax-also-row'),
+  alsoText: document.getElementById('tax-also-text'),
+  also: document.getElementById('tax-also'),
+  incomeAttachments: document.getElementById('tax-income-attachments'),
+  incomeDocs: document.getElementById('tax-income-docs'),
+  incomeAttach: document.getElementById('tax-income-attach'),
+  dedDocs: document.getElementById('tax-ded-docs'),
+  dedAttach: document.getElementById('tax-ded-attach'),
+  attachStatus: document.getElementById('tax-attach-status'),
   incomeCancel: document.getElementById('tax-income-cancel'),
   incomeSave: document.getElementById('tax-income-save'),
   incomeDelete: document.getElementById('tax-income-delete'),
@@ -123,6 +136,7 @@ const taxState = {
   suggestions: null, // { year, suggestions, dividendsError }
   sgSeq: 0,
   showHidden: false, // also show added and dismissed suggestions
+  scanned: null, // { document, extracted } from the last 50 ทวิ scan in the income sheet
 };
 
 // Whole baht, with satang only when there are some: ฿500,000 / ฿17,647.06.
@@ -436,7 +450,7 @@ function renderFiling(d) {
   x.remindClear.hidden = rem.length === 0;
   const ticks = loadDocTicks();
   x.docsTitle.hidden = g.documents.length === 0;
-  x.docs.innerHTML = g.documents.map((doc) => `<li><label class="tax-doc"><input type="checkbox" data-doc="${doc.key}"${ticks[doc.key] ? ' checked' : ''} /><span>${escapeHtml(doc.label)}</span></label></li>`).join('');
+  x.docs.innerHTML = g.documents.map((doc) => `<li><label class="tax-doc"><input type="checkbox" data-doc="${doc.key}"${ticks[doc.key] || doc.attached ? ' checked' : ''}${doc.attached ? ' disabled' : ''} /><span>${escapeHtml(doc.label)}</span>${doc.attached ? '<span class="tax-doc-attached">Attached</span>' : ''}</label></li>`).join('');
   x.steps.innerHTML = g.steps.map((st) => `<li><strong>${escapeHtml(st.title)}</strong><span>${escapeHtml(st.body)}</span></li>`).join('');
   const line = (label, value) => `<div class="tax-line"><span>${escapeHtml(label)}</span><span>${value}</span></div>`;
   x.enter.innerHTML = [
@@ -461,6 +475,104 @@ async function handleTaxReminders(clear = false) {
     setAiStatus(x.remindStatus, 'error', plainError(error));
   } finally {
     x.remind.disabled = false;
+  }
+}
+
+// ---- Documents and 50 ทวิ scanning (Phase 5) ----
+
+// A photo, or the first page of a PDF rendered on the phone -> JPEG base64.
+async function fileToJpegBase64(file) {
+  let blob;
+  if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
+    const pdfjsLib = await loadPdfJs();
+    let doc;
+    try {
+      doc = await pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+    } catch (error) {
+      throw new Error(error && error.name === 'PasswordException' ? 'This PDF has a password. Open it, save a copy without one, or send a photo instead.' : "Couldn't open this PDF.");
+    }
+    const page = await doc.getPage(1);
+    const base = page.getViewport({ scale: 1 });
+    const viewport = page.getViewport({ scale: Math.min(2.5, 1800 / Math.max(base.width, base.height)) });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(viewport.width);
+    canvas.height = Math.round(viewport.height);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    blob = await new Promise((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Couldn't read this PDF."))), 'image/jpeg', 0.85));
+  } else {
+    blob = await resizeImageToJpegBlob(file, 1800, 0.85);
+  }
+  return (await blobToBase64AndHash(blob)).base64;
+}
+
+function renderDocList(list, pred) {
+  const docsFor = (taxState.data.documents || []).filter(pred);
+  list.innerHTML = docsFor.length
+    ? docsFor.map((doc) => `<li class="tax-doc-item">
+        <a href="${escapeHtml(doc.url || '#')}" target="_blank" rel="noopener" class="tax-doc-thumb">${doc.url ? `<img src="${escapeHtml(doc.url)}" alt="" />` : ''}</a>
+        <span class="tax-doc-name">${escapeHtml(doc.file_name || ({ '50tawi': '50 ทวิ', insurance: 'Insurance certificate', fund: 'Fund certificate', donation: 'Donation receipt' }[doc.kind] || 'Document'))}</span>
+        <button type="button" class="link-button" data-doc-delete="${doc.id}">Remove</button>
+      </li>`).join('')
+    : '<li class="tax-doc-empty">Nothing attached yet.</li>';
+}
+
+async function handleScan50Tawi() {
+  const file = x.scanInput.files[0];
+  x.scanInput.value = '';
+  if (!file) return;
+  const fields = [x.kind, x.amount, x.withheld, x.payer];
+  clearModalError(x.incomeError);
+  clearAiMarks(x.incomeModal);
+  setFieldsLoading(fields, true);
+  setAiStatus(x.scanStatus, 'working', 'Reading your 50 ทวิ…');
+  try {
+    const image = await fileToJpegBase64(file);
+    const res = await apiRequest(`${taxBase()}/documents/scan-50tawi`, { method: 'POST', body: JSON.stringify({ image, fileName: file.name }) });
+    const e = res.extracted;
+    taxState.scanned = res;
+    if (e.kind) x.kind.value = e.kind;
+    syncKindFields();
+    x.amount.value = e.amount ?? '';
+    x.withheld.value = e.withheld ?? '';
+    x.payer.value = e.payer || '';
+    markAiFilled(fields.filter((f) => f.value));
+    const extras = [e.socialSecurity ? `social security ${taxBaht(e.socialSecurity)}` : null, e.providentFund ? `provident fund ${taxBaht(e.providentFund)}` : null].filter(Boolean);
+    x.alsoRow.hidden = extras.length === 0;
+    x.alsoText.textContent = `Also add ${extras.join(' and ')} from this certificate`;
+    setAiStatus(x.scanStatus, res.warnings.length ? 'info' : 'done', ['Filled from your 50 ทวิ. Check the figures, then save.', ...res.warnings].join(' '));
+    x.scanText.textContent = 'Scan another 50 ทวิ';
+  } catch (error) {
+    setAiStatus(x.scanStatus, 'error', plainError(error));
+  } finally {
+    setFieldsLoading(fields, false);
+  }
+}
+
+async function attachDocument(input, target, list, pred) {
+  const file = input.files[0];
+  input.value = '';
+  if (!file) return;
+  setAiStatus(x.attachStatus, 'working', 'Uploading…');
+  try {
+    const image = await fileToJpegBase64(file);
+    applyTaxState(await apiRequest(`${taxBase()}/documents`, { method: 'POST', body: JSON.stringify({ image, fileName: file.name, ...target }) }));
+    renderDocList(list, pred);
+    setAiStatus(x.attachStatus, 'done', 'Attached.');
+  } catch (error) {
+    setAiStatus(x.attachStatus, 'error', plainError(error));
+  }
+}
+
+async function deleteDocumentFrom(list, pred, id) {
+  if (!(await confirmAction('Remove this document?', 'Remove'))) return;
+  try {
+    applyTaxState(await apiRequest(`${taxBase()}/documents/${id}`, { method: 'DELETE' }));
+    renderDocList(list, pred);
+  } catch (error) {
+    showError(plainError(error));
   }
 }
 
@@ -547,6 +659,13 @@ function openTaxIncomeModal(income = null) {
   setExpenseMethod(income ? income.expense_method : 'flat');
   syncKindFields();
   x.incomeDelete.hidden = !income;
+  taxState.scanned = null;
+  hideAiStatus(x.scanStatus);
+  clearAiMarks(x.incomeModal);
+  x.scanLabel.hidden = !!income;
+  x.alsoRow.hidden = true;
+  x.incomeAttachments.hidden = !income;
+  if (income) renderDocList(x.incomeDocs, (d) => d.income_id === income.id);
   x.incomeModal.hidden = false;
 }
 
@@ -565,6 +684,7 @@ async function saveTaxIncome(event) {
     expenseMethod: k.expense === 'actual' ? 'actual' : k.actualAllowed ? taxState.method : 'flat',
     actualExpenses: taxState.method === 'actual' ? parseMoney(x.actual.value) || 0 : 0,
     creditRate: k.dividendCredit && x.credit.value ? Number(x.credit.value) : null,
+    ...(taxState.scanned ? { documentId: taxState.scanned.document.id } : {}),
   };
   if ([body.amount, body.withheld, body.actualExpenses].some((n) => !Number.isFinite(n))) return showModalError(x.incomeError, 'Amounts must be numbers.');
   x.incomeSave.disabled = true;
@@ -573,7 +693,16 @@ async function saveTaxIncome(event) {
     const data = inc
       ? await apiRequest(`${taxBase()}/incomes/${inc.id}`, { method: 'PUT', body: JSON.stringify(body) })
       : await apiRequest(`${taxBase()}/incomes`, { method: 'POST', body: JSON.stringify(body) });
-    applyTaxState(data);
+    let state = data;
+    const sc = taxState.scanned;
+    if (sc && !x.alsoRow.hidden && x.also.checked) {
+      // Social security / provident fund printed on the 50 ทวิ, unless already entered.
+      const claims = {};
+      if (sc.extracted.socialSecurity && taxState.data.claims.social_security == null) claims.social_security = sc.extracted.socialSecurity;
+      if (sc.extracted.providentFund && taxState.data.claims.provident_fund == null) claims.provident_fund = sc.extracted.providentFund;
+      if (Object.keys(claims).length) state = await apiRequest(`${taxBase()}/claims`, { method: 'PUT', body: JSON.stringify(claims) });
+    }
+    applyTaxState(state);
     x.incomeModal.hidden = true;
   } catch (error) {
     showModalError(x.incomeError, plainError(error));
@@ -617,6 +746,8 @@ function openTaxDeduction(key) {
   x.dedAmount.inputMode = def.input === 'count' ? 'numeric' : 'decimal';
   x.dedAmount.value = d.claims[key] != null ? d.claims[key] : '';
   x.dedRemove.hidden = d.claims[key] == null;
+  hideAiStatus(x.attachStatus);
+  renderDocList(x.dedDocs, (doc) => doc.claim_key === key);
   x.dedModal.hidden = false;
   setTimeout(() => x.dedAmount.focus(), 50);
 }
@@ -659,6 +790,13 @@ x.deductions.addEventListener('click', (e) => {
   if (b && !b.disabled) openTaxDeduction(b.dataset.deduction);
 });
 x.marital.addEventListener('change', syncSpouseRow);
+x.scanInput.addEventListener('change', handleScan50Tawi);
+const incomeDocPred = () => (d) => taxState.editingIncome && d.income_id === taxState.editingIncome.id;
+const dedDocPred = () => (d) => taxState.deduction && d.claim_key === taxState.deduction.key;
+x.incomeAttach.addEventListener('change', () => attachDocument(x.incomeAttach, { incomeId: taxState.editingIncome.id }, x.incomeDocs, incomeDocPred()));
+x.dedAttach.addEventListener('change', () => attachDocument(x.dedAttach, { claimKey: taxState.deduction.key }, x.dedDocs, dedDocPred()));
+x.incomeDocs.addEventListener('click', (e) => { const b = e.target.closest('[data-doc-delete]'); if (b) deleteDocumentFrom(x.incomeDocs, incomeDocPred(), b.dataset.docDelete); });
+x.dedDocs.addEventListener('click', (e) => { const b = e.target.closest('[data-doc-delete]'); if (b) deleteDocumentFrom(x.dedDocs, dedDocPred(), b.dataset.docDelete); });
 x.plan.addEventListener('click', (e) => { const b = e.target.closest('[data-deduction]'); if (b) openTaxDeduction(b.dataset.deduction); });
 x.remind.addEventListener('click', () => handleTaxReminders(false));
 x.remindClear.addEventListener('click', () => handleTaxReminders(true));

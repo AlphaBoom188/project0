@@ -39,6 +39,7 @@
       <tr><td><strong>Payment slips</strong> you send for a group bill</td><td>So the person you paid can check and confirm the payment. Stored privately and shown only to you and that person.</td></tr>
       <tr><td><strong>Reminders, to-dos and notes</strong> you set in the app or by messaging the bot (title, details, time, repeat, category, importance; note text)</td><td>To remind you at the time you choose and show them under Tasks. A reminder you set in a LINE group, and who it mentions, is visible to that group.</td></tr>
       <tr><td><strong>Tax information</strong> you enter (optional): marital status, whether your spouse has income, age 65+ or disability, your children's birth years, income by type with tax withheld and payer names, and the deductions you claim</td><td>To estimate your Thai personal income tax under Tax. Suggestions under Tax are worked out from your own transactions and investments inside the app. It stays in your account; we don't file anything for you or send it to the Revenue Department.</td></tr>
+      <tr><td><strong>Tax documents</strong> you attach (optional): photos or PDFs of withholding certificates (50 ทวิ), insurance and fund certificates and receipts</td><td>Kept with the income or deduction they prove, so you have them when you file. Stored privately (a PDF as an image of its first page) and shown only to you through short-lived links. When you scan a 50 ทวิ, the image is sent to OpenAI to read the payer and amounts.</td></tr>
       <tr><td><strong>Google Calendar</strong> (optional, read-only)</td><td>If you connect it, we keep an encrypted access token and your Google email, and read event titles and times from your primary calendar only when you open Tasks, to show them there. Events are not stored and we never change your calendar.</td></tr>
       <tr><td><strong>Email address</strong> (optional), including one verified with Google</td><td>Only to send CSV exports you request.</td></tr>
       <tr><td><strong>Technical data:</strong> error reports and request logs</td><td>To keep the service working and secure. Logs record events and errors, not the content of your messages or receipts.</td></tr>
@@ -51,7 +52,7 @@
     <ul>
       <li><strong>LY Corporation (LINE)</strong>: sign-in, the bot, and notifications.</li>
       <li><strong>Supabase</strong>: database and file storage ([REGION]).</li>
-      <li><strong>OpenAI</strong>: reading receipts, converting voice to text, understanding typed expenses and reminders, and suggesting categories for imported statement lines. Under OpenAI's API terms, data sent this way is not used to train their models by default.</li>
+      <li><strong>OpenAI</strong>: reading receipts, converting voice to text, understanding typed expenses and reminders, reading 50 ทวิ withholding certificates you scan, and suggesting categories for imported statement lines. Under OpenAI's API terms, data sent this way is not used to train their models by default.</li>
       <li><strong>Google</strong>: verifying your email address (only if you connect Google), delivering CSV exports by email, and reading your calendar events (only if you connect Google Calendar).</li>
       <li><strong>Anthropic</strong>: if enabled by the operator, technical error details are sent for automated diagnosis; these are error messages with identifiers removed, not your financial records.</li>
       <li><strong>ngrok</strong>: secure tunnelling of connections to our server.</li>
@@ -64,7 +65,7 @@
 
     <h2>5. How long we keep it</h2>
     <ul>
-      <li>Your account data is kept until you delete it. <strong>Settings &rarr; Delete My Account</strong> permanently erases your transactions, categories, accounts, budgets, investments, shared bills, group memberships, payment details, payment slips, reminders, notes, tax information and receipt thumbnails, and disconnects Google Calendar (we revoke our access with Google). Group bills you paid for, and group reminders you set, are removed from those groups.</li>
+      <li>Your account data is kept until you delete it. <strong>Settings &rarr; Delete My Account</strong> permanently erases your transactions, categories, accounts, budgets, investments, shared bills, group memberships, payment details, payment slips, reminders, notes, tax information, tax documents and receipt thumbnails, and disconnects Google Calendar (we revoke our access with Google). Group bills you paid for, and group reminders you set, are removed from those groups.</li>
       <li>Disconnecting Google Calendar in Settings revokes our access and deletes the stored token straight away.</li>
       <li>A payment slip is deleted when the person you paid rejects it or cancels the bill; otherwise it is kept with the bill until either of you deletes your account.</li>
       <li>Error reports are kept for up to 90 days, alert history for 180 days, scheduled-job records for 30 days, and server logs for up to 30 days.</li>
@@ -73,7 +74,7 @@
     </ul>
 
     <h2>6. Security</h2>
-    <p>Connections are encrypted (HTTPS). Every request for your data must carry your verified LINE sign-in. Receipt thumbnails and payment slips are stored privately and shown through short-lived links. The Google Calendar token is stored encrypted. We limit how often costly features can be used to prevent abuse. No system is perfectly secure; if a breach affects your data, we will notify you and the authorities as the PDPA requires.</p>
+    <p>Connections are encrypted (HTTPS). Every request for your data must carry your verified LINE sign-in. Receipt thumbnails, payment slips and tax documents are stored privately and shown through short-lived links. The Google Calendar token is stored encrypted. We limit how often costly features can be used to prevent abuse. No system is perfectly secure; if a breach affects your data, we will notify you and the authorities as the PDPA requires.</p>
 
     <h2>7. Your rights</h2>
     <p>Under the PDPA you can ask to access or get a copy of your data, correct it, delete it, restrict or object to its use, receive it in a portable format, and withdraw consent at any time (this does not affect processing before withdrawal). You can export your transactions as CSV in the app and delete your account in Settings. For anything else, email [CONTACT EMAIL]; we will reply within 30 days. You may also complain to Thailand's Personal Data Protection Committee (PDPC).</p>

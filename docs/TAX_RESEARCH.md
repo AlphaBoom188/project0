@@ -439,3 +439,18 @@ Booklet numbering is used in the UI; the decree number is stored for citation.
   - A "Filing" section (summary, Remind me on LINE / Update / Remove, documents checklist kept in the phone's browser storage, steps, figures to enter).
 - **Tests:** `api/tax_plan` (25), `api/tax_api` (now 50), `liff/tax_plan` (18).
 - **Next (Phase 5):** documents and 50 ทวิ OCR.
+
+## 12. Phase 5 built (2026-11-20): documents and 50 ทวิ reading
+
+- **Storage (migration 022):** `tax_documents` holds a kind (50tawi, insurance, fund, donation, other) and an optional link: `income_id` (ON DELETE SET NULL, so a deleted income keeps its document, detached) or `claim_key`. A private `tax-documents` bucket stores `<line_user_id>/<ms>-<hex>.jpg`, with sharp resizing to at most 1600x2400 at JPEG quality 80. Signed URLs last 1 hour. Account deletion removes the folder.
+- **PDFs** become a JPEG of their first page on the phone (pdf.js, already used for statements). Password-protected PDFs get a clear message.
+- **50 ทวิ reading** (`taxDocuments.read50Tawi`, gpt-4o-mini vision) extracts:
+  - payer, income type (40(x) mapped to an income kind; 40(6)/40(8) left for the user to pick), amount, withheld, social security, provident fund and year;
+  - `interpret50Tawi` sanitizes the output (commas, negatives, withheld above the amount, unknown types).
+  - The endpoint saves the image only when it is a 50 ทวิ (otherwise 422) and warns when the year differs. It uses the shared OCR rate limit.
+- **LIFF:**
+  - **"Scan a 50 ทวิ"** in the new-income sheet fills type, amount, withheld and payer with AI tags (beautifului-style working → done states). It offers to add the social security and provident fund printed on it (only where not already entered) and links the document to the saved income.
+  - **Attachments** in the income and deduction sheets: thumbnails, attach a photo or PDF, remove.
+  - **The filing checklist** ticks and labels "Attached" for documents already attached.
+- **Tests:** `api/tax_documents` (31: storage, validation, links, signed URLs, deletion), `liff/tax_documents` (16, scan mocked), `openai/tax_50tawi` (7, paid, on a synthetic certificate from `tests/fixtures/tawi50.js`).
+- **Next (Phase 6):** a mid-year check (projection from year-to-date income, PND 94 guidance for 40(5)-(8)) and the yearly rules refresh routine.

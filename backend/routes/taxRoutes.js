@@ -6,6 +6,8 @@ const { YEARS } = require('../services/tax/rules');
 // Every :line_user_id route requires that user's LINE token (services/lineAuth.js).
 router.param('line_user_id', requireOwnUser);
 router.param('income_id', requireUuidParam('income'));
+router.param('document_id', requireUuidParam('document'));
+const { rateLimit, LIMITS } = require('../services/rateLimit');
 router.param('year', (req, res, next, value) => {
   if (!YEARS.includes(Number(value))) return res.status(404).json({ error: `No tax rules for ${value}. Available: ${YEARS.join(', ')}` });
   next();
@@ -25,6 +27,12 @@ router.post('/:line_user_id/:year/suggestions/:suggestion_id/:action', c.suggest
 // POST|DELETE /api/tax/:line_user_id/:year/reminders - LINE reminders for filing (and buying funds by 31 Dec)
 router.post('/:line_user_id/:year/reminders', c.setReminders);
 router.delete('/:line_user_id/:year/reminders', c.clearReminders);
+// Documents: POST /documents (attach a photo), POST /documents/scan-50tawi (read a 50 ทวิ; OCR budget),
+// PUT|DELETE /documents/:document_id. Literal paths before the :document_id wildcard.
+router.post('/:line_user_id/:year/documents/scan-50tawi', rateLimit('ocr', LIMITS.ocr.max, LIMITS.ocr.windowMs), c.scan50Tawi);
+router.post('/:line_user_id/:year/documents', rateLimit('taxdoc', 60, 10 * 60 * 1000), c.uploadDocument);
+router.put('/:line_user_id/:year/documents/:document_id', c.updateDocument);
+router.delete('/:line_user_id/:year/documents/:document_id', c.deleteDocument);
 // PUT /api/tax/:line_user_id/:year/profile - Marital status, spouse income, 65+/disabled, children
 router.put('/:line_user_id/:year/profile', c.updateProfile);
 // PUT /api/tax/:line_user_id/:year/claims - Deduction amounts (merged; null removes)

@@ -3293,3 +3293,83 @@ body {
 .tax-plan-row .task-main {
   padding: var(--space-2) 0;
 }
+
+/* ---- Tax documents (Phase 5) ---- */
+
+.tax-scan-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--tap-min);
+  margin-bottom: var(--space-4);
+  font-weight: 600;
+  border: 1px dashed var(--border);
+}
+
+.tax-attachments {
+  margin-bottom: var(--space-4);
+}
+
+.tax-doc-list {
+  list-style: none;
+  margin: 0 0 var(--space-2);
+  padding: 0;
+}
+
+.tax-doc-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--row-h);
+  border-bottom: 1px solid var(--border);
+}
+
+.tax-doc-thumb {
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  background: var(--muted);
+}
+
+.tax-doc-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tax-doc-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tax-doc-empty {
+  font-size: 14px;
+  color: var(--muted-foreground);
+  padding: var(--space-2) 0;
+}
+
+.tax-attach-label {
+  padding-left: 0;
+}
+
+.tax-doc-attached {
+  margin-left: auto;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.tax-also-row {
+  font-size: 14px;
+}
