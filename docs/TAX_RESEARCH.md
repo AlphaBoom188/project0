@@ -472,3 +472,13 @@ Booklet numbering is used in the UI; the decree number is stored for citation.
   - `jobs/taxRulesCheck.js` sends that list to the owner on LINE on 10 January and 1 March (runOnce per day; quiet when current).
 - **Tests:** `api/tax_halfyear` (15), `api/tax_rules_check` (8), `liff/tax_halfyear` (11).
 - **The Tax section's planned phases (1-6) are complete.** Next is whatever the owner prioritizes. Candidates: a professional review of the rules, Easy E-Receipt detection from transactions, joint filing for married couples, and the 2570 rules when the RD publishes them.
+
+## 14. One-year measures spotted in spending (2026-11-20)
+
+`taxSuggest` now looks for spending inside each one-year measure's window. The windows are CE dates on the rule (`window`):
+
+- **Easy E-Receipt 2.0** (16 Jan - 28 Feb 2568): shopping and eating out, skipping alcohol, tobacco, fuel, utilities, phone and internet, travel, hotels and insurance by keyword or category. Capped at 50,000.
+- **เที่ยวดีมีคืน** (29 Oct - 15 Dec 2568): hotels, resorts, tours and stays.
+- **Solar rooftop** (2569): "solar" / "โซลาร์".
+
+Each is a low-confidence suggestion ("Possible …") with the e-Tax invoice requirement in its note. They use the same Add / Dismiss flow and the same tax-effect figure. Tests: `api/tax_suggest` (now 31).

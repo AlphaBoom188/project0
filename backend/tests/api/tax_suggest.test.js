@@ -105,4 +105,27 @@ assert(find(s, (x) => x.kind === 'fund_distribution').amount === 800 && find(s, 
 assert(s.filter((x) => x.kind === 'dividend_th').length === 1, 'dividend deposits are skipped when the portfolio has dividends');
 assert(buildSuggestions({ year: 2569, rules: R69, today: '2026-11-20' }).length === 0, 'no data: no suggestions');
 
+// --- One-year measures from spending ---
+const shop = [
+  tx('2025-01-20', 'expense', 3000, 'Central Department Store', 'Shopping'),
+  tx('2025-02-10', 'expense', 1200, 'Dinner MK', 'Food'),
+  tx('2025-02-11', 'expense', 900, 'เติมน้ำมัน ปตท', 'Transport'),
+  tx('2025-02-12', 'expense', 1500, 'ค่าไฟ', 'Utilities'),
+  tx('2025-02-13', 'expense', 600, 'Beer', 'Food'),
+  tx('2025-03-05', 'expense', 9000, 'Laptop', 'Shopping'), // after the window
+  tx('2025-11-10', 'expense', 4500, 'Hotel Chiang Mai', 'Accommodation'),
+  tx('2025-11-12', 'expense', 2000, 'ทัวร์ดอยสุเทพ', 'Others'),
+  tx('2025-12-20', 'expense', 3000, 'Resort Hua Hin', 'Accommodation'), // after the window
+];
+s = buildSuggestions({ year: 2568, rules: R68, transactions: shop, today: '2026-11-20' });
+const ee = find(s, (x) => x.key === 'easy_ereceipt');
+assert(ee && ee.amount === 4200 && ee.confidence === 'low' && ee.sources.length === 2 && ee.reason.includes('16/01 and 28/02'), `Easy E-Receipt: shopping and dining in 16 Jan - 28 Feb, not fuel, power, beer or March (got ${ee && ee.amount})`);
+assert(ee.note.includes('e-Tax invoice'), 'note: needs an e-Tax invoice');
+const trip = find(s, (x) => x.key === 'travel_main');
+assert(trip && trip.amount === 6500 && trip.sources.length === 2, `เที่ยวดีมีคืน: hotel + tour in 29 Oct - 15 Dec only (got ${trip && trip.amount})`);
+const big = buildSuggestions({ year: 2568, rules: R68, transactions: [tx('2025-02-01', 'expense', 80000, 'iPhone', 'Shopping')], today: '2026-11-20' });
+assert(find(big, (x) => x.key === 'easy_ereceipt').amount === 50000 && find(big, (x) => x.key === 'easy_ereceipt').reason.includes('capped at 50,000'), 'capped at 50,000');
+s = buildSuggestions({ year: 2569, rules: R69, transactions: [tx('2026-02-01', 'expense', 3000, 'Central', 'Shopping'), tx('2026-05-01', 'expense', 180000, 'ติดตั้งโซลาร์เซลล์', 'Others')], today: '2026-11-20' });
+assert(!find(s, (x) => x.key === 'easy_ereceipt') && find(s, (x) => x.key === 'solar_rooftop').amount === 180000, '2569: no Easy E-Receipt; solar rooftop spotted');
+
 process.exit(failures ? 1 : 0);

@@ -194,6 +194,53 @@ function buildSuggestions({ year, rules, transactions = [], holdings = [], lotsB
     });
   }
 
+  // ---- One-year measures spotted in spending (windows are CE dates in the rules) ----
+  const MEASURES = {
+    // Easy E-Receipt 2.0: most shopping and eating out with an e-Tax invoice /
+    // e-Receipt. Not: alcohol, tobacco, fuel, vehicles, utility bills, phone
+    // and internet, travel and hotels, insurance.
+    easy_ereceipt: {
+      exclude: /เหล้า|เบียร์|ไวน์|บุหรี่|น้ำมัน|ปตท|ค่าไฟ|ค่าน้ำ|ค่าเน็ต|ค่าโทร|ประกัน|โรงแรม|alcohol|beer|wine|tobacco|cigarette|fuel|petrol|gasoline|electric|water bill|internet|insurance|hotel|grab|taxi|bts|mrt/,
+      excludeCategories: /transport|utilities|telecom|accommodation|travel/,
+      title: 'Possible Easy E-Receipt spending',
+      note: 'Counts only with an e-Tax invoice or e-Receipt from the shop (most chains issue them on request). Up to 30,000 from VAT-registered sellers plus 20,000 from OTOP and community shops. Alcohol, tobacco, fuel, vehicles, utility bills and travel don\'t count.',
+    },
+    // เที่ยวดีมีคืน: hotels, tours, restaurants and attractions.
+    travel_main: {
+      include: /โรงแรม|รีสอร์ท|ทัวร์|ที่พัก|hotel|resort|hostel|tour|homestay|agoda|booking/,
+      includeCategories: /accommodation|travel|hotel/,
+      title: 'Possible เที่ยวดีมีคืน spending',
+      note: 'Hotels, tours, restaurants and attractions with an e-Tax invoice. Spending in secondary cities counts 1.5 times: change it to that line if it applies.',
+    },
+    // Solar rooftop (2569-2571): one on-grid system with an e-Tax invoice.
+    solar_rooftop: {
+      include: /โซลาร์|โซล่า|solar/,
+      title: 'Solar rooftop',
+      note: 'One on-grid system per person, with an e-Tax invoice; up to 200,000.',
+    },
+  };
+  for (const [key, m] of Object.entries(MEASURES)) {
+    const def = rules.deductions.find((dd) => dd.key === key);
+    if (!def) continue;
+    const [from, to] = def.window || [`${ce}-01-01`, `${ce}-12-31`];
+    const rows = txns.filter((t) => t.type === 'expense' && t.date >= from && t.date <= to).filter((t) => {
+      const desc = lower(t.description);
+      const cat = lower(t.category_name);
+      if (m.include) return m.include.test(desc) || (m.includeCategories && m.includeCategories.test(cat));
+      return !(m.exclude.test(desc) || (m.excludeCategories && m.excludeCategories.test(cat)));
+    });
+    if (!rows.length) continue;
+    const total = sum(rows);
+    const amount = def.cap ? Math.min(total, def.cap) : total;
+    out.push({
+      id: stableId('claim', key, 'spending'), target: 'claim', key, amount, confidence: 'low',
+      title: m.title,
+      reason: `${rows.length} purchase${rows.length === 1 ? '' : 's'} totalling ${total.toLocaleString('en-US')} between ${from.slice(5).split('-').reverse().join('/')} and ${to.slice(5).split('-').reverse().join('/')}${total > amount ? ` (capped at ${amount.toLocaleString('en-US')})` : ''}.`,
+      note: m.note,
+      sources: sourceRows(rows),
+    });
+  }
+
   // ---- Fund purchases from portfolio lots ----
   const fundTargets = { rmf: 'rmf', thai_esg: 'thai_esg', esgx: deductionKeys.has('thai_esgx_new') ? 'thai_esgx_new' : null };
   for (const [type, lots] of Object.entries(fundBuys)) {
