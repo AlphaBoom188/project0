@@ -46,14 +46,14 @@ let seed;
     cls: r.querySelector('.bill-status-pill').className, sub: r.querySelector('.category-bar-label-row').textContent.trim(), h: r.getBoundingClientRect().height,
   })));
   assert(rows.length === 2 && rows[0].name === 'Test Trip' && rows[1].name === 'LINE chat', `two rows, newest first; an unnamed room shows "LINE chat" (got ${JSON.stringify(rows.map((r) => r.name))})`);
-  assert(rows[0].pill === 'Owed to you ฿200.00' && rows[0].cls.includes('paid') && rows[0].sub === '2 open bills · 3 members', `Test Trip: owed 200, 2 open bills (got ${JSON.stringify(rows[0])})`);
+  assert(rows[0].pill === 'Owed ฿200' && rows[0].cls.includes('paid') && rows[0].sub === '2 open bills · 3 members', `Test Trip: owed 200, 2 open bills (got ${JSON.stringify(rows[0])})`);
   assert(rows[1].pill === 'All paid' && rows[1].cls.includes('settled') && rows[1].sub === '0 open bills · 2 members', 'room: all paid');
   assert(rows.every((r) => r.h >= 56), 'rows use the shared 56px row height');
   assert(ann.userPosts[0] && ann.userPosts[0].via === undefined, 'a normal app open is not marked as a group-bill visit');
 
   await page.click('#groups-list .group-row >> nth=0');
   await page.waitForFunction(() => document.getElementById('group-detail-title').textContent === 'Test Trip', null, { timeout: 10000 }).catch(() => {});
-  assert((await page.textContent('#group-detail-meta')) === '3 members' && (await page.textContent('#group-detail-mine')) === 'Owed to you ฿200.00', 'group sheet: members and my total');
+  assert((await page.textContent('#group-detail-meta')) === '3 members' && (await page.textContent('#group-detail-mine')) === 'Owed ฿200', 'group sheet: members and my total');
   const open = await parts(page, '#group-detail-open li');
   assert(JSON.stringify(open) === JSON.stringify(['taxi | 0 of 1 paid', 'ข้าว | 1 of 2 paid']), `open bills with status pills (got ${JSON.stringify(open)})`);
   const closed = await parts(page, '#group-detail-closed li');

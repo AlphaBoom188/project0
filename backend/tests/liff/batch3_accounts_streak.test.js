@@ -86,11 +86,11 @@ const descs = (page) => page.$$eval('#txn-full-list .transaction-description', (
 
   // ---- Streak ----
   await page.waitForFunction(() => document.querySelector('#streak-count').textContent.length > 0);
-  assert((await page.textContent('#streak-count')) === '3-day logging streak', `current streak (got "${await page.textContent('#streak-count')}")`);
-  assert((await page.textContent('#streak-best')) === 'Best: 4 days (6 mo)', `best run in window (got "${await page.textContent('#streak-best')}")`);
-  const dots = await page.$$eval('.streak-dot', (els) => els.map((e) => e.classList.contains('logged')));
-  assert(JSON.stringify(dots) === '[false,false,false,false,true,true,true]', `7-day dots, oldest first (got ${JSON.stringify(dots)})`);
-  assert((await page.textContent('#streak-hint')).startsWith('Logged today'), 'hint when today is logged');
+  // v5: one row, no 7-dot week (computeStreak still finds the best run).
+  assert((await page.textContent('#streak-count')) === '3-day streak', `current streak (got "${await page.textContent('#streak-count')}")`);
+  assert((await page.evaluate(() => computeStreak(homeTxns).best)) === 4, 'best run in the window is still computed');
+  assert((await page.$$('.streak-dot')).length === 0, 'the 7-dot week is gone');
+  assert((await page.textContent('#streak-hint')) === 'Logged today', 'hint when today is logged');
   const hint2 = await page.evaluate(() => {
     const ts = [1, 2].map((n) => { const d = new Date(); d.setDate(d.getDate() - n); return { transaction_date: d.toISOString() }; });
     const r = computeStreak(ts); return { current: r.current, loggedToday: r.loggedToday };

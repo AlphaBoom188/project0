@@ -341,8 +341,6 @@ const el = {
   accountFilterClear: document.getElementById('account-filter-clear'),
   accountFilterApply: document.getElementById('account-filter-apply'),
   streakCount: document.getElementById('streak-count'),
-  streakBest: document.getElementById('streak-best'),
-  streakDays: document.getElementById('streak-days'),
   streakHint: document.getElementById('streak-hint'),
   breakdownTotalLabel: document.getElementById('breakdown-total-label'),
   breakdownTotalValue: document.getElementById('breakdown-total-value'),
@@ -716,6 +714,7 @@ const LUCIDE_PATHS = {
   briefcase: '<path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><rect width="20" height="14" x="2" y="6" rx="2"/>',
   'arrow-left-right': '<path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/>',
   house: '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
   tag: '<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/>',
 };
 const lucide = (name, size = 18) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${LUCIDE_PATHS[name] || LUCIDE_PATHS.tag}</svg>`;
@@ -1029,27 +1028,120 @@ function computeStreak(transactions, today = new Date()) {
   return { current, best: Math.max(best, current), loggedToday, lastSeven };
 }
 
+// v5: one row, "{n}-day streak" with today's state on the right.
 function renderStreak(transactions) {
-  const { current, best, loggedToday, lastSeven } = computeStreak(transactions);
-  el.streakCount.textContent = current === 0 ? 'No streak yet' : `${current}-day logging streak`;
-  el.streakBest.textContent = best > 0 ? `Best: ${best} day${best === 1 ? '' : 's'} (6 mo)` : '';
-  el.streakDays.innerHTML = lastSeven
-    .map(
-      (d) => `
-        <div class="streak-day${d.isToday ? ' today' : ''}">
-          <span class="streak-dot${d.logged ? ' logged' : ''}" aria-label="${d.logged ? 'Logged' : 'Not logged'}"></span>
-          <span>${d.isToday ? 'Today' : d.date.toLocaleDateString(undefined, { weekday: 'narrow' })}</span>
-        </div>
-      `
-    )
-    .join('');
-  if (loggedToday) {
-    el.streakHint.textContent = 'Logged today. Come back tomorrow to keep it going.';
-  } else if (current > 0) {
-    el.streakHint.textContent = `Log something today to keep your ${current}-day streak.`;
-  } else {
-    el.streakHint.textContent = 'Log a transaction today to start a streak.';
+  const { current, loggedToday } = computeStreak(transactions);
+  el.streakCount.textContent = current === 0 ? 'No streak yet' : `${current}-day streak`;
+  el.streakHint.textContent = loggedToday ? 'Logged today' : current > 0 ? 'Log today to keep it' : 'Log today to start one';
+}
+
+// ---- Home (v5, spec 4.1) ----
+let homeCycleReport = Promise.resolve(null); // this cycle's report (offset 0)
+let homeTxns = []; // the 6-month window Home loaded, newest first
+let homeLoadSeq = 0;
+
+// Totals per month for the last 6 Bangkok months (oldest first).
+function monthlySeries(pred) {
+  const { year, month } = bangkokParts();
+  const keys = [];
+  for (let i = 5; i >= 0; i--) keys.push(monthKey(bangkokMidnight(year, month - i, 1)));
+  const totals = Object.fromEntries(keys.map((k) => [k, 0]));
+  for (const t of homeTxns) {
+    if (!pred(t)) continue;
+    const k = monthKey(new Date(t.transaction_date));
+    if (k in totals) totals[k] += parseFloat(t.amount) || 0;
   }
+  return keys.map((k) => ({ key: k, label: monthLabel(k), value: totals[k] }));
+}
+
+// Hero sub line + bar, and Budgets to watch, from this cycle's report.
+async function renderHomeBudgets(seq, endISO) {
+  const report = await homeCycleReport;
+  if (seq !== homeLoadSeq) return;
+  const sub = document.getElementById('home-hero-sub');
+  const bar = document.getElementById('home-hero-bar');
+  const rows = (report && report.categories) || [];
+  const budget = rows.reduce((sum, r) => sum + (r.budget || 0), 0);
+  const daysLeft = Math.max(0, Math.ceil((new Date(endISO) - Date.now()) / 86400000));
+  if (!budget) {
+    sub.textContent = 'No budget set yet';
+    bar.hidden = true;
+  } else {
+    const spent = report.expense;
+    sub.textContent = `of ${formatBaht(budget)} budget · ${daysLeft} day${daysLeft === 1 ? '' : 's'} left`;
+    bar.hidden = false;
+    bar.classList.toggle('is-over', spent > budget);
+    bar.firstElementChild.style.width = `${Math.min(100, Math.round((spent / budget) * 100))}%`;
+  }
+  const watch = rows.filter((r) => r.budget && r.pct >= 80).sort((a, b) => b.pct - a.pct).slice(0, 3);
+  document.getElementById('home-watch').hidden = watch.length === 0;
+  document.getElementById('home-watch-list').innerHTML = watch.map((r) => {
+    const over = r.spent > r.budget;
+    return `<li class="row">${categoryTile(r.name)}
+      <span class="row-main"><span class="row-title">${escapeHtml(r.name)}</span><span class="row-meta">${formatBaht(r.spent)} of ${formatBaht(r.budget)}</span>
+        <span class="bar bar-thin${over ? ' is-over' : ' is-warning'}"><span style="width:${Math.min(100, r.pct)}%"></span></span></span>
+      <span class="row-end"><span class="row-value ${over ? 'amount-over' : 'amount-warn'}">${over ? `Over ${formatBaht(r.spent - r.budget)}` : `${r.pct}% used`}</span></span>
+    </li>`;
+  }).join('');
+}
+
+// First week (fewer than 7 days with entries): the Get set up checklist,
+// Scan / Speak / Import tiles, and a note instead of the pulse.
+async function renderFirstWeek(seq, txns) {
+  const days = new Set(txns.map((t) => getBangkokYmd(new Date(t.transaction_date))));
+  const firstWeek = days.size < 7;
+  document.getElementById('home-setup').hidden = !firstWeek;
+  document.getElementById('add-bill-button').hidden = firstWeek;
+  document.getElementById('home-import').hidden = !firstWeek;
+  document.getElementById('home-pulse').hidden = firstWeek;
+  document.getElementById('home-pulse-note').hidden = !firstWeek;
+  if (!firstWeek) return;
+  const [report, accounts, groups] = await Promise.all([
+    homeCycleReport,
+    cachedGet(`/accounts/${lineUserId}`).then((r) => r.accounts || []).catch(() => []),
+    cachedGet(`/groups/${lineUserId}`).then((r) => r.groups || []).catch(() => []),
+  ]);
+  if (seq !== homeLoadSeq) return;
+  const steps = [
+    { key: 'entry', title: 'Log your first entry', meta: 'Type, scan a receipt or speak', done: txns.length > 0, go: () => openAddExpenseModal().catch((e) => showError(e.message)) },
+    { key: 'budget', title: 'Set a monthly budget', meta: 'On a category under Money', done: Boolean(report && report.categories.some((r) => r.budget)), go: () => switchTab('budgets') },
+    { key: 'accounts', title: 'Add your accounts', meta: 'Bank, card, e-wallet or cash', done: accounts.length > 0, go: () => switchTab('networth') },
+    { key: 'group', title: 'Add the bot to a LINE group', meta: 'Split bills with friends', done: groups.length > 0, go: () => { document.getElementById('help-modal').hidden = false; } },
+  ];
+  const doneCount = steps.filter((x) => x.done).length;
+  document.getElementById('home-setup-count').textContent = `${doneCount} of ${steps.length}`;
+  document.getElementById('home-setup-bar').style.width = `${(doneCount / steps.length) * 100}%`;
+  const list = document.getElementById('home-setup-list');
+  list.innerHTML = steps.map((x) => `<li><button type="button" class="row setup-row${x.done ? ' is-done' : ''}" data-step="${x.key}"${x.done ? ' disabled' : ''}>
+    <span class="setup-check" aria-hidden="true">${x.done ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>' : ''}</span>
+    <span class="row-main"><span class="row-title">${escapeHtml(x.title)}</span><span class="row-meta">${x.done ? 'Done' : escapeHtml(x.meta)}</span></span>
+  </button></li>`).join('');
+  list.querySelectorAll('[data-step]').forEach((b) => b.addEventListener('click', () => steps.find((x) => x.key === b.dataset.step).go()));
+}
+
+// Tax row: 1 Oct - 31 Mar (filing season for the year just ending).
+async function renderHomeTax(seq) {
+  const wrap = document.getElementById('home-tax');
+  const { year, month } = bangkokParts();
+  const inSeason = month >= 10 || month <= 3;
+  if (!inSeason) { wrap.hidden = true; return; }
+  const taxYear = (month >= 10 ? year : year - 1) + 543;
+  const d = await cachedGet(`/tax/${lineUserId}/${taxYear}`);
+  if (seq !== homeLoadSeq) return;
+  const r = d.result;
+  const title = document.getElementById('home-tax-title');
+  const meta = document.getElementById('home-tax-meta');
+  if (!d.incomes.length) {
+    title.textContent = `Estimate your ${taxYear} tax`;
+    meta.textContent = 'File PND 90/91 by 31 Mar';
+  } else {
+    title.textContent = r.result === 'refund' ? `Refund ${formatBaht(Math.abs(r.balance))}` : r.result === 'pay' ? `Tax to pay ${formatBaht(r.balance)}` : 'No tax to pay';
+    const plan = d.plan && d.plan.applicable ? d.plan.items : [];
+    const save = plan.length ? Math.max(...plan.map((it) => it.saves || 0)) : 0;
+    const form = d.guide && d.guide.form === 'PND91' ? 'PND 91' : 'PND 90';
+    meta.textContent = `File ${form} by 31 Mar${plan.length && save > 0 ? ` · ${plan.length} tip${plan.length === 1 ? '' : 's'} can save up to ${formatBaht(save)}` : ''}`;
+  }
+  wrap.hidden = false;
 }
 
 async function loadHomeTab() {
@@ -1064,6 +1156,9 @@ async function loadHomeTab() {
   });
   const { year: nowYear, month: nowMonth } = bangkokParts();
   const sixMonthsAgoISO = bangkokMidnight(nowYear, nowMonth - 5, 1).toISOString();
+  // This cycle's per-category budgets and spend (hero, Budgets to watch,
+  // insights). Shared with insights.js; never blocks Home.
+  homeCycleReport = cachedGet(`/reports/${lineUserId}/monthly?offset=0`).then((r) => r.report).catch(() => null);
   const [userResponse, transactionsResponse, billsResponse] = await Promise.all([
     cachedGet(`/users/${lineUserId}`),
     cachedGet(`/transactions/${lineUserId}?start_date=${encodeURIComponent(sixMonthsAgoISO)}&limit=1000`),
@@ -1086,12 +1181,16 @@ async function loadHomeTab() {
     return d >= periodStart && d < periodEnd;
   });
 
+  homeTxns = allTransactions;
   renderSummary(inPeriod, periodLabel);
   renderStreak(allTransactions);
   renderTrendChart(allTransactions);
-  // allTransactions is newest-first (API default order) across the whole
-  // 6-month window -- the first 50 are still the 50 most recent overall.
-  renderTransactionList(el.transactionList, el.emptyState, allTransactions.slice(0, 50));
+  // allTransactions is newest-first (API default order): the last 3 entries.
+  renderTransactionList(el.transactionList, el.emptyState, allTransactions.slice(0, 3));
+  const seq = ++homeLoadSeq;
+  renderHomeBudgets(seq, endISO).catch(() => {});
+  renderFirstWeek(seq, allTransactions).catch(() => {});
+  renderHomeTax(seq).catch(() => { document.getElementById('home-tax').hidden = true; });
   renderBillsList(billsResponse.bills);
   renderHomeInvestments().catch(() => {
     el.homeInvestmentsCard.hidden = true;
@@ -1110,8 +1209,8 @@ const plainError = (error) => String(error.message).replace(/^\[\d+\]\s*/, '');
 
 // "You owe ฿245.00" / "Owed to you ฿400.00" / "All paid", with a pill class.
 function groupTotalsStatus(g) {
-  if (g.my_owe > 0) return { text: `You owe ${formatMoney(g.my_owe, 'THB')}`, cls: 'unpaid' };
-  if (g.my_owed > 0) return { text: `Owed to you ${formatMoney(g.my_owed, 'THB')}`, cls: 'paid' };
+  if (g.my_owe > 0) return { text: `You owe ${formatBaht(g.my_owe)}`, cls: 'unpaid' };
+  if (g.my_owed > 0) return { text: `Owed ${formatBaht(g.my_owed)}`, cls: 'paid' };
   return { text: 'All paid', cls: 'settled' };
 }
 
@@ -1127,12 +1226,10 @@ async function renderHomeGroups() {
   el.groupsList.innerHTML = groups.map((g, i) => {
     const status = groupTotalsStatus(g);
     const detail = `${g.open_bills} open bill${g.open_bills === 1 ? '' : 's'} · ${g.member_count} member${g.member_count === 1 ? '' : 's'}`;
-    return `<li class="category-row group-row" data-i="${i}" role="button" tabindex="0">
-      <div class="category-row-top">
-        <span class="category-name">${escapeHtml(groupDisplayName(g))}</span>
-        <span class="bill-status-pill ${status.cls}">${escapeHtml(status.text)}</span>
-      </div>
-      <div class="category-bar-label-row"><span>${escapeHtml(detail)}</span></div>
+    return `<li class="row group-row" data-i="${i}" role="button" tabindex="0">
+      <span class="cat-tile" aria-hidden="true">${lucide('users')}</span>
+      <span class="row-main"><span class="row-title category-name">${escapeHtml(groupDisplayName(g))}</span><span class="row-meta category-bar-label-row">${escapeHtml(detail)}</span></span>
+      <span class="row-end"><span class="row-value bill-status-pill ${status.cls}">${escapeHtml(status.text)}</span>${g.my_owe > 0 ? '<span class="row-sub">Pay now</span>' : ''}</span>
     </li>`;
   }).join('');
   el.groupsList.querySelectorAll('.group-row').forEach((row) => onActivate(row, () => openGroupDetail(groups[Number(row.dataset.i)].group_id)));
@@ -2139,10 +2236,10 @@ function renderTrendChart(transactions) {
       return `
         <div class="trend-month">
           <div class="trend-bars">
-            <div class="trend-bar income" style="height:${incomeHeight}%" title="Income ${totals[m].income.toFixed(2)}"></div>
-            <div class="trend-bar expense" style="height:${expenseHeight}%" title="Expense ${totals[m].expense.toFixed(2)}"></div>
+            <div class="trend-bar income" style="height:${incomeHeight}%" title="Income ${formatBaht(totals[m].income)}"></div>
+            <div class="trend-bar expense" style="height:${expenseHeight}%" title="Spent ${formatBaht(totals[m].expense)}"></div>
           </div>
-          <div class="trend-month-label">${monthLabel(m)}</div>
+          <div class="trend-month-label${m === months[5] ? ' is-current' : ''}">${monthLabel(m)}</div>
         </div>
       `;
     })
@@ -4443,7 +4540,7 @@ async function init() {
 
     renderProfile(profile);
     await loadHomeTab();
-    renderHomeReportCard(); // insights.js; never blocks Home
+    renderHomeInsights(); // insights.js; never blocks Home
     setTimeout(() => loadChartJs().catch(() => {}), 1500); // warm up for the Wealth tab
 
     el.loading.hidden = true;
@@ -4494,6 +4591,17 @@ el.addExpenseForm.addEventListener('submit', handleAddExpenseSubmit);
 el.fieldReceiptImage.addEventListener('change', handleReceiptFileChange);
 
 el.addBillButton.addEventListener('click', openBillModal);
+document.getElementById('home-scan').addEventListener('click', () => {
+  openAddExpenseModal().catch((error) => showError(error.message));
+  el.fieldReceiptImage.click(); // same tick as the tap (see txnScanButton)
+});
+document.getElementById('home-speak').addEventListener('click', () => {
+  openAddExpenseModal().then(() => el.voiceButton.click()).catch((error) => showError(error.message));
+});
+document.getElementById('home-import').addEventListener('click', () => document.getElementById('import-statement-button').click());
+document.getElementById('home-watch-all').addEventListener('click', () => switchTab('budgets'));
+document.getElementById('home-recent-all').addEventListener('click', () => switchTab('transactions'));
+document.getElementById('home-tax-row').addEventListener('click', () => switchTab('tax'));
 el.cancelBill.addEventListener('click', closeBillModal);
 el.billForm.addEventListener('submit', handleBillSubmit);
 el.billAddParticipant.addEventListener('click', () => addParticipantRow());

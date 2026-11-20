@@ -37,11 +37,13 @@ const lastMonth = (day) => { const d = new Date(Date.now() + 7 * 3600000); retur
     await page.goto(`${BASE}/liff/`);
     await page.waitForSelector('#app:not([hidden])', { timeout: 15000 });
 
-    // --- Home report card ---
-    await page.waitForSelector('#home-report-card:not([hidden])', { timeout: 15000 });
-    const meta = await page.textContent('#home-report-meta');
-    assert((await page.textContent('#home-report-title')).startsWith('Last period:') && meta.includes('Spent ฿') && meta.includes('over budget: 1'), `Home card (got ${meta})`);
-    await page.click('#home-report-card');
+    // --- Home Insights pager (v5): first page is last month's report ---
+    await page.waitForSelector('#home-insights:not([hidden])', { timeout: 15000 });
+    const insightTitle = await page.textContent('#home-insight-page .insight-title');
+    assert(/^You (saved|spent)/.test(insightTitle) && (await page.$$('#home-insight-page .mini-bar')).length === 6, `insight page 1: last month + 6 mini bars (got ${insightTitle})`);
+    const action = await page.textContent('#home-insight-page .insight-action');
+    assert(action.startsWith('Open ') && action.endsWith(' report'), `action opens the report (got ${action})`);
+    await page.click('#home-insight-page .insight-action');
     await page.waitForFunction(() => document.querySelector('#report-body .report-totals'), null, { timeout: 10000 });
     const body = await page.innerText('#report-body');
     assert(body.includes('Income') && body.includes('Food') && body.includes('117% of ฿3,000 budget') && body.includes('Largest expenses') && body.includes('New phone case'), 'report sheet: totals, budget %, largest expenses');
