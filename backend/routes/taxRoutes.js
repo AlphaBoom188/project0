@@ -21,7 +21,7 @@ const c = require('../controllers/taxController');
 // GET /api/tax/:line_user_id/:year - Rules for the app, profile, claims, incomes and the computed result
 router.get('/:line_user_id/:year', c.get);
 // GET /api/tax/:line_user_id/:year/suggestions - From transactions and the portfolio
-router.get('/:line_user_id/:year/suggestions', c.suggestions);
+router.get('/:line_user_id/:year/suggestions', rateLimit('tax-suggestions', 30, 10 * 60 * 1000), c.suggestions); // reads Yahoo dividends
 // POST /api/tax/:line_user_id/:year/suggestions/:suggestion_id/accept|dismiss|restore
 router.post('/:line_user_id/:year/suggestions/:suggestion_id/:action', c.suggestionAction);
 // POST|DELETE /api/tax/:line_user_id/:year/reminders - LINE reminders for filing (and buying funds by 31 Dec)

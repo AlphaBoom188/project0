@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#06c755" />
   <title>Expense Tracker</title>
-  <link rel="stylesheet" href="style.css?v=20261121b" />
+  <link rel="stylesheet" href="style.css?v=20261121c" />
   <script>
     // Set data-theme before first paint to avoid a flash of the wrong theme.
     (function () {
@@ -512,7 +512,13 @@
         <p class="group-hint tax-disclaimer">An estimate from what you entered, using the Revenue Department's rules for this year. It isn't tax advice: check your figures when you file at efiling.rd.go.th.</p>
       </section>
       <section id="tab-settings" class="tab-panel" hidden>
-        <h2 class="section-title">Appearance</h2>
+        <nav class="settings-jump" aria-label="Settings sections">
+          <a href="#settings-general">General</a><a href="#settings-notifications">Notifications</a><a href="#settings-groups">LINE groups</a><a href="#settings-connections">Connected services</a><a href="#settings-privacy">Privacy &amp; data</a>
+        </nav>
+        <p id="settings-status" class="settings-status" hidden></p>
+        <h2 class="section-title settings-section" id="settings-general">General</h2>
+        <p class="group-hint settings-hint">How the app looks, and when your budget month starts.</p>
+        <h3 class="settings-subtitle">Appearance</h3>
         <div class="settings-card">
           <div class="theme-toggle">
             <button type="button" class="theme-toggle-button" id="theme-option-system" data-theme-option="system">System</button>
@@ -520,28 +526,35 @@
             <button type="button" class="theme-toggle-button" id="theme-option-dark" data-theme-option="dark">Dark</button>
           </div>
         </div>
-
-        <h2 class="section-title">Preferences</h2>
+        <h3 class="settings-subtitle">Budget cycle</h3>
+        <div class="settings-card">
+          <label class="field">
+            Cycle start day
+            <input type="number" id="setting-cycle-day" min="1" max="31" />
+          </label>
+          <button id="save-cycle-day" class="secondary-button">Save</button>
+        </div>
+        <h2 class="section-title settings-section" id="settings-notifications">Notifications</h2>
+        <p class="group-hint settings-hint">What the bot sends you on LINE. Reminders you set are always sent.</p>
         <div class="settings-card">
           <label class="toggle-row">
             <span>Notifications</span>
             <input type="checkbox" id="setting-notifications" />
           </label>
           <label class="toggle-row">
-            <span>Save receipt thumbnails</span>
-            <input type="checkbox" id="setting-thumbnails" />
-          </label>
-          <label class="toggle-row">
-            <span>Add my share of LINE group expenses to my transactions</span>
-            <input type="checkbox" id="setting-group-copies" />
-          </label>
-          <label class="toggle-row">
             <span>Morning briefing on LINE at 07:30 (today's reminders, events and to-dos)</span>
             <input type="checkbox" id="setting-morning-briefing" />
           </label>
         </div>
-
-        <h2 class="section-title">Get Paid for Group Bills</h2>
+        <h2 class="section-title settings-section" id="settings-groups">LINE groups</h2>
+        <p class="group-hint settings-hint">Bills you split in LINE groups.</p>
+        <div class="settings-card">
+          <label class="toggle-row">
+            <span>Add my share of LINE group expenses to my transactions</span>
+            <input type="checkbox" id="setting-group-copies" />
+          </label>
+        </div>
+        <h3 class="settings-subtitle">Get paid for group bills</h3>
         <div class="settings-card">
           <p class="danger-text">Shown on bills you collect in LINE groups, only to the members who owe you.</p>
           <label class="field">
@@ -578,25 +591,16 @@
           <button id="save-payment-details" class="secondary-button">Save</button>
           <p id="payment-details-status" class="scan-status" hidden></p>
         </div>
-
-        <h2 class="section-title">Google Calendar</h2>
+        <h2 class="section-title settings-section" id="settings-connections">Connected services</h2>
+        <p class="group-hint settings-hint">Google accounts linked to the app. You can disconnect them any time.</p>
+        <h3 class="settings-subtitle">Google Calendar</h3>
         <div class="settings-card">
           <p class="danger-text" id="gcal-status-text">Show your Google Calendar events under Tasks. Read-only: the app never changes your calendar or stores your events.</p>
           <button type="button" id="gcal-connect" class="secondary-button">Connect Google Calendar</button>
           <button type="button" id="gcal-disconnect" class="secondary-button danger-button" hidden>Disconnect</button>
           <p id="gcal-status" class="scan-status" hidden></p>
         </div>
-
-        <h2 class="section-title">Budget Cycle</h2>
-        <div class="settings-card">
-          <label class="field">
-            Cycle start day
-            <input type="number" id="setting-cycle-day" min="1" max="31" />
-          </label>
-          <button id="save-cycle-day" class="secondary-button">Save</button>
-        </div>
-
-        <h2 class="section-title">Export</h2>
+        <h3 class="settings-subtitle">Export email</h3>
         <div class="settings-card">
           <div id="google-connected-row" class="verified-row" hidden>
             <span class="verified-badge"><span class="icon"><svg class="lucide lucide-circle-check" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10" /><path d="m9 12 2 2 4-4" /></svg></span><span id="google-connected-email"></span></span>
@@ -610,10 +614,15 @@
           </label>
           <button id="save-email" class="secondary-button">Save</button>
         </div>
-
-        <p id="settings-status" class="settings-status" hidden></p>
-
-        <h2 class="section-title">Danger Zone</h2>
+        <h2 class="section-title settings-section" id="settings-privacy">Privacy &amp; data</h2>
+        <p class="group-hint settings-hint">What the app keeps, and deleting it.</p>
+        <div class="settings-card">
+          <label class="toggle-row">
+            <span>Save receipt thumbnails</span>
+            <input type="checkbox" id="setting-thumbnails" />
+          </label>
+        </div>
+        <h3 class="settings-subtitle">Delete data</h3>
         <div class="settings-card">
           <p class="danger-text">Permanently deletes every transaction in your history. This cannot be undone.</p>
           <button id="clear-history-button" class="danger-button">Clear Transaction History</button>
@@ -1523,10 +1532,10 @@
   <script src="/liff-config.js"></script>
   <!-- Chart.js for the Net Worth performance chart; app.js renders everything else without it if this is blocked. -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-  <script src="app.js?v=20261121b"></script>
-  <script src="tasks.js?v=20261121b"></script>
-  <script src="tax.js?v=20261121b"></script>
-  <script src="insights.js?v=20261121b"></script>
-  <script src="money.js?v=20261121b"></script>
+  <script src="app.js?v=20261121c"></script>
+  <script src="tasks.js?v=20261121c"></script>
+  <script src="tax.js?v=20261121c"></script>
+  <script src="insights.js?v=20261121c"></script>
+  <script src="money.js?v=20261121c"></script>
 </body>
 </html>

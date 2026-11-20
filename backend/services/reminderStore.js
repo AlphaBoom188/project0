@@ -6,9 +6,14 @@ const m = require('./reminderMath');
 const COLUMNS = 'id, line_user_id, group_id, mention_ids, title, details, category, importance, repeat, remind_at, anchor_at, next_fire_at, fire_count, last_fired_at, status, done_at, created_at, updated_at';
 
 // -> { reminder } | { error } (validation)
+const MAX_OPEN_REMINDERS = 500; // each one can become LINE pushes (OA quota)
+
 async function createReminder(lineUserId, body, { groupId = null, mentionIds = [], now = new Date() } = {}) {
   const { value, error } = m.normalizeInput(body);
   if (error) return { error };
+  const { count, error: countError } = await supabase.from('reminders').select('id', { count: 'exact', head: true }).eq('line_user_id', lineUserId).eq('status', 'open');
+  if (countError) throw countError;
+  if (count >= MAX_OPEN_REMINDERS) return { error: `You have ${MAX_OPEN_REMINDERS} open reminders. Finish or delete some first.` };
   const repeat = value.repeat || 'none';
   const sched = m.initialSchedule({ remindAt: value.remind_at || null, repeat }, now);
   if (sched.error) return { error: sched.error };

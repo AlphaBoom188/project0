@@ -413,6 +413,9 @@ taxController.exportSummary = handle('exportSummary', async (req, res, rules) =>
   const { buildSummaryHtml, buildSummaryCsv } = require('../services/tax/taxSummary');
   const { signExportLink } = require('../services/lineAuth');
   const u = req.params.line_user_id;
+  // Only a link made by export-link for the tax summary (a transactions
+  // export link is signed for the same user but isn't meant for this).
+  if (req.query.sig && req.query.kind !== 'tax') return res.status(401).json({ error: 'This link is for something else. Open the summary from the Tax tab again.', code: 'link_invalid' });
   const data = await stateResponse(u, rules, { withRules: true });
   res.set({ 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' });
   if (req.query.format === 'csv') {

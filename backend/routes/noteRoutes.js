@@ -6,11 +6,12 @@ const { requireUuidParam } = require('../services/uuid');
 router.param('line_user_id', requireOwnUser);
 router.param('note_id', requireUuidParam('note'));
 const c = require('../controllers/reminderController');
+const { rateLimit } = require('../services/rateLimit');
 
 // GET /api/notes/:line_user_id?from=YYYY-MM-DD&to=YYYY-MM-DD
 router.get('/:line_user_id', c.listNotes);
 // POST /api/notes/:line_user_id { body, note_date?, pinned? }
-router.post('/:line_user_id', c.createNote);
+router.post('/:line_user_id', rateLimit('note-create', 120, 10 * 60 * 1000), c.createNote);
 // PUT|DELETE /api/notes/:line_user_id/:note_id
 router.put('/:line_user_id/:note_id', c.updateNote);
 router.delete('/:line_user_id/:note_id', c.deleteNote);

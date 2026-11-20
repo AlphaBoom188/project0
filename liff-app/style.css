@@ -3517,3 +3517,46 @@ body {
   min-height: var(--tap-min);
   margin-bottom: var(--space-4);
 }
+
+/* ---- Settings sections ---- */
+
+.settings-jump {
+  display: flex;
+  gap: var(--space-2);
+  overflow-x: auto;
+  padding: var(--space-4) var(--space-page);
+  scrollbar-width: none;
+}
+
+.settings-jump a {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--card);
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.settings-section {
+  margin-top: var(--space-6);
+  color: var(--foreground);
+  scroll-margin-top: var(--space-4);
+}
+
+.settings-hint {
+  margin: 0 var(--space-page) var(--space-2);
+}
+
+.settings-subtitle {
+  margin: var(--space-4) var(--space-page) var(--space-2);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+}
