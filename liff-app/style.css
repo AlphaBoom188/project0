@@ -3035,3 +3035,138 @@ body {
 .tax-ded-row .task-main {
   padding-left: 0;
 }
+
+/* ---- Tax suggestions (Found in your data) ---- */
+
+.tax-suggestions {
+  list-style: none;
+  margin: 0 var(--space-page) var(--space-6);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.tax-sg {
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--card);
+}
+
+.tax-sg.is-warning {
+  border-color: var(--warning);
+}
+
+.tax-sg.is-muted {
+  opacity: 0.7;
+}
+
+.tax-sg-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.tax-sg-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.tax-sg-amount {
+  font-size: 16px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.tax-sg-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+}
+
+.tax-sg-tag,
+.tax-sg-impact {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 22px;
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.tax-sg-tag.conf-low {
+  border: 1px solid var(--warning);
+  background: none;
+  color: var(--warning);
+}
+
+.tax-sg-impact.is-good {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.tax-sg-reason,
+.tax-sg-note {
+  margin: 0 0 var(--space-2);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.tax-sg-note {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.tax-sg-sources {
+  margin-bottom: var(--space-2);
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.tax-sg-sources summary {
+  min-height: var(--tap-min);
+  display: flex;
+  align-items: center;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.tax-sg-sources ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tax-sg-sources li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.tax-sg-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.tax-sg-btn {
+  width: auto;
+  margin: 0;
+  min-height: var(--tap-min);
+  padding: var(--space-2) var(--space-4);
+  font-size: 14px;
+}
+
+.tax-sg-added {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--primary);
+}

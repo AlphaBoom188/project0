@@ -944,4 +944,20 @@ const portfolioController = {
   },
 };
 
+// Dividends received with ex-dates in one calendar year, per holding, for
+// the tax suggestions (services/tax/taxSuggest.js). -> [{ symbol, thai,
+// fund, received_thb }] (Yahoo failures leave a holding out).
+async function dividendsReceivedInYear(lineUserId, calendarYear) {
+  const state = await loadPortfolio(lineUserId);
+  if (!state.holdings.some((h) => DIVIDEND_ASSET_TYPES.includes(h.asset_type))) return [];
+  const built = await buildDividends(state, 'annual');
+  const prefix = String(calendarYear);
+  return built.holdings.map((h) => {
+    const holding = state.holdings.find((x) => x.id === h.holding_id) || {};
+    const received = h.events.filter((e) => e.kind === 'received' && e.ex_date.startsWith(prefix) && e.amount_thb != null).reduce((sum, e) => sum + e.amount_thb, 0);
+    return { symbol: h.symbol, thai: /\.BK$/i.test(h.symbol) || h.currency === 'THB', fund: holding.asset_type === 'etf', received_thb: Math.round(received * 100) / 100 };
+  }).filter((d) => d.received_thb > 0);
+}
+
 module.exports = portfolioController;
+module.exports.dividendsReceivedInYear = dividendsReceivedInYear;

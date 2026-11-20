@@ -46,6 +46,10 @@ const x = {
   deductionsTotal: document.getElementById('tax-deductions-total'),
   breakdown: document.getElementById('tax-breakdown'),
   warnings: document.getElementById('tax-warnings'),
+  sgHeader: document.getElementById('tax-sg-header'),
+  sgToggle: document.getElementById('tax-sg-toggle'),
+  sgStatus: document.getElementById('tax-sg-status'),
+  sgList: document.getElementById('tax-suggestions'),
   // profile sheet
   profileModal: document.getElementById('tax-profile-modal'),
   profileForm: document.getElementById('tax-profile-form'),
@@ -102,6 +106,9 @@ const taxState = {
   editingIncome: null,
   method: 'flat',
   deduction: null,
+  suggestions: null, // { year, suggestions, dividendsError }
+  sgSeq: 0,
+  showHidden: false, // also show added and dismissed suggestions
 };
 
 // Whole baht, with satang only when there are some: ฿500,000 / ฿17,647.06.
@@ -139,6 +146,7 @@ async function loadTaxTab(year) {
     taxState.data = data;
     hideAiStatus(x.status);
     renderTax();
+    loadTaxSuggestions();
   } catch (error) {
     if (seq !== taxState.seq) return;
     setAiStatus(x.status, 'error', plainError(error));
@@ -149,6 +157,93 @@ async function loadTaxTab(year) {
 function applyTaxState(data) {
   taxState.data = { ...data, rules: taxState.rules[data.year] };
   renderTax();
+  if (data.suggestions) {
+    taxState.suggestions = { year: data.year, suggestions: data.suggestions, dividendsError: data.dividendsError };
+    renderTaxSuggestions();
+  } else loadTaxSuggestions(); // statuses and tax effects depend on what changed
+}
+
+// ---- Suggestions (Phase 3): found in transactions and the portfolio ----
+async function loadTaxSuggestions() {
+  const seq = ++taxState.sgSeq;
+  const year = taxState.year;
+  if (!taxState.suggestions || taxState.suggestions.year !== year) {
+    x.sgHeader.hidden = false;
+    x.sgList.hidden = true;
+    setAiStatus(x.sgStatus, 'working', 'Checking your transactions and investments…');
+  }
+  try {
+    const data = await cachedGet(`${taxBase()}/suggestions`);
+    if (seq !== taxState.sgSeq) return;
+    taxState.suggestions = data;
+    renderTaxSuggestions();
+  } catch (error) {
+    if (seq !== taxState.sgSeq) return;
+    setAiStatus(x.sgStatus, 'error', `Couldn't check your data: ${plainError(error)}`);
+  }
+}
+
+const SG_CONFIDENCE = { high: 'From your portfolio', medium: 'Likely', low: 'Check first' };
+
+function impactText(sg) {
+  if (sg.impact == null) return '';
+  if (Math.abs(sg.impact) < 0.01) return 'No change to your tax';
+  return sg.impact < 0 ? `Lowers your tax by ${taxBaht(-sg.impact)}` : `Raises your tax by ${taxBaht(sg.impact)}`;
+}
+
+function suggestionCard(sg) {
+  const hiddenState = sg.status === 'added' || sg.status === 'dismissed';
+  const action = sg.status === 'dismissed'
+    ? `<button type="button" class="secondary-button tax-sg-btn" data-sg="${sg.id}" data-sg-action="restore">Show again</button>`
+    : sg.status === 'added' ? '<span class="tax-sg-added">Added</span>'
+      : `<button type="button" class="secondary-button tax-sg-btn" data-sg="${sg.id}" data-sg-action="dismiss">Dismiss</button>
+         <button type="button" class="primary-button tax-sg-btn" data-sg="${sg.id}" data-sg-action="accept">${sg.status === 'changed' ? `Update to ${taxBaht(sg.amount)}` : sg.status === 'entered' ? `Use ${taxBaht(sg.amount)}` : 'Add'}</button>`;
+  const conf = sg.confidence === 'high' && !/portfolio/.test(sg.reason) ? 'Confident' : SG_CONFIDENCE[sg.confidence];
+  const status = sg.status === 'changed' ? 'Your data changed since you added this.' : sg.status === 'entered' ? `You entered ${taxBaht(sg.entered)}.` : '';
+  const sources = sg.sources && sg.sources.length
+    ? `<details class="tax-sg-sources"><summary>Based on ${sg.sources.length}${sg.sources.length === 20 ? '+' : ''} item${sg.sources.length === 1 ? '' : 's'}</summary><ul>${sg.sources.map((src) => `<li><span>${escapeHtml([src.date, src.description].filter(Boolean).join(' · '))}</span><span>${taxBaht(src.amount)}</span></li>`).join('')}</ul></details>`
+    : '';
+  return `<li class="tax-sg${sg.warning ? ' is-warning' : ''}${hiddenState ? ' is-muted' : ''}" data-sg-card="${sg.id}">
+    <div class="tax-sg-top">
+      <span class="tax-sg-title">${escapeHtml(sg.title)}</span>
+      <span class="tax-sg-amount">${taxBaht(sg.amount)}</span>
+    </div>
+    <div class="tax-sg-tags"><span class="tax-sg-tag conf-${sg.confidence}">${conf}</span>${impactText(sg) ? `<span class="tax-sg-impact${sg.impact < 0 ? ' is-good' : ''}">${impactText(sg)}</span>` : ''}</div>
+    <p class="tax-sg-reason">${escapeHtml(sg.reason)}${status ? ` ${escapeHtml(status)}` : ''}</p>
+    ${sg.note ? `<p class="tax-sg-note">${escapeHtml(sg.note)}</p>` : ''}
+    ${sources}
+    <div class="tax-sg-actions">${action}</div>
+  </li>`;
+}
+
+function renderTaxSuggestions() {
+  const data = taxState.suggestions;
+  if (!data || data.year !== taxState.year) return;
+  const all = data.suggestions;
+  const open = all.filter((sg) => sg.status !== 'added' && sg.status !== 'dismissed');
+  const done = all.length - open.length;
+  const shown = taxState.showHidden ? all : open;
+  x.sgHeader.hidden = all.length === 0 && !data.dividendsError;
+  x.sgToggle.hidden = done === 0;
+  x.sgToggle.textContent = taxState.showHidden ? 'Hide added and dismissed' : `Show ${done} added or dismissed`;
+  x.sgList.hidden = shown.length === 0;
+  x.sgList.innerHTML = shown.map(suggestionCard).join('');
+  if (data.dividendsError) setAiStatus(x.sgStatus, 'info', data.dividendsError);
+  else if (all.length && !open.length) setAiStatus(x.sgStatus, 'done', 'All caught up: everything found in your data is added or dismissed.');
+  else hideAiStatus(x.sgStatus);
+}
+
+async function handleSuggestionAction(event) {
+  const b = event.target.closest('[data-sg-action]');
+  if (!b) return;
+  const card = b.closest('.tax-sg');
+  card.querySelectorAll('button').forEach((btn) => { btn.disabled = true; });
+  try {
+    applyTaxState(await apiRequest(`${taxBase()}/suggestions/${b.dataset.sg}/${b.dataset.sgAction}`, { method: 'POST' }));
+  } catch (error) {
+    card.querySelectorAll('button').forEach((btn) => { btn.disabled = false; });
+    setAiStatus(x.sgStatus, 'error', plainError(error));
+  }
 }
 
 // ---- Render ----
@@ -457,9 +552,12 @@ x.years.addEventListener('click', (e) => {
   const b = e.target.closest('[data-year]');
   if (!b || Number(b.dataset.year) === taxState.year) return;
   taxState.data = null;
+  taxState.showHidden = false;
   loadTaxTab(Number(b.dataset.year));
 });
 x.profileSummary.addEventListener('click', openTaxProfile);
+x.sgList.addEventListener('click', handleSuggestionAction);
+x.sgToggle.addEventListener('click', () => { taxState.showHidden = !taxState.showHidden; renderTaxSuggestions(); });
 x.addIncome.addEventListener('click', () => openTaxIncomeModal(null));
 x.incomes.addEventListener('click', (e) => {
   const b = e.target.closest('[data-income]');

@@ -394,3 +394,23 @@ Booklet numbering is used in the UI; the decree number is stored for citation.
   - "How it's worked out" walks from income through each step and tax band to pay or refund, with the effective and top rate.
 - **Tests:** `api/tax_math` (70), `api/tax_api` (40), `liff/tax_tab` (35).
 - **Next (Phase 3, auto-fill):** suggest incomes and deductions from transactions, recurring salary, the portfolio's dividends and RMF/ThaiESG lots.
+
+## 10. Phase 3 built (2026-11-20): auto-fill
+
+- **Engine** `services/tax/taxSuggest.js` (pure). It reads one calendar year (tax year minus 543, Bangkok dates) and never counts transfers.
+  - **Income transactions,** by keyword:
+    - Salary: the current year is projected to December from the monthly average once 2+ months are seen.
+    - Interest: with the note that savings interest up to 20k is exempt.
+    - Dividend deposits: grossed up from the net 10%, and only when the portfolio has none.
+    - Rent.
+    - Everything else: "other income", shown as freelance with low confidence, with the note that refunds and gifts aren't taxable.
+  - **Expense transactions** become life, health, parents' health and pension insurance, social security, donations, home-loan interest and political party. Each comes with the certificate it needs.
+  - **Portfolio lots:** RMF and ThaiESG buys in the year, including fees (ESGX only as 2568 new money). RMF/ThaiESG units sold less than 5 years after purchase (FIFO) are flagged as income with the payback warning, even at a loss.
+  - **Portfolio dividends** received (ex-date in the year): Thai shares get 10% withheld and a 20% credit; Thai ETFs are distributions; foreign dividends come with the remittance note.
+- **API:**
+  - `GET /api/tax/:u/:year/suggestions` gives each suggestion a status (new, added, changed, entered or dismissed) and an `impact`, the change in pay/refund if it were applied.
+  - `accept` adds the income line (or updates the one it added before) or sets the claim. `dismiss` and `restore` hide and unhide.
+  - Accepted and dismissed ids live in `tax_profiles.profile._suggestions`, which is never returned as part of the profile.
+- **LIFF:** a "Found in your data" section with a beautifului-style working state while it checks. Each card shows the amount, confidence ("From your portfolio", "Likely", "Check first"), the effect on your tax, the reason and note, and an expandable list of the items it's based on. Buttons: Add / Update to / Use / Dismiss, and "Show N added or dismissed".
+- **Tests:** `api/tax_suggest` (26), `api/tax_suggestions_api` (18), `liff/tax_suggestions` (11).
+- **Next (Phase 4):** planner ("put ฿X more into ThaiESG to save ฿Y") and the filing guide with LINE reminders.

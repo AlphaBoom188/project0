@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#06c755" />
   <title>Expense Tracker</title>
-  <link rel="stylesheet" href="style.css?v=20261120b" />
+  <link rel="stylesheet" href="style.css?v=20261120c" />
   <script>
     // Set data-theme before first paint to avoid a flash of the wrong theme.
     (function () {
@@ -404,6 +404,13 @@
           <span class="tax-profile-text" id="tax-profile-text"></span>
           <span class="tasks-summary-chevron"><span class="icon"><svg class="lucide lucide-chevron-right" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg></span></span>
         </button>
+
+        <div class="section-header-row" id="tax-sg-header" hidden>
+          <h2 class="section-title">Found in your data</h2>
+          <button type="button" id="tax-sg-toggle" class="link-button" hidden></button>
+        </div>
+        <p id="tax-sg-status" class="scan-status tasks-status" hidden></p>
+        <ul id="tax-suggestions" class="tax-suggestions" hidden></ul>
 
         <div class="section-header-row">
           <h2 class="section-title">Income</h2>
@@ -1351,8 +1358,8 @@
   <script src="/liff-config.js"></script>
   <!-- Chart.js for the Net Worth performance chart; app.js renders everything else without it if this is blocked. -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-  <script src="app.js?v=20261120b"></script>
-  <script src="tasks.js?v=20261120b"></script>
-  <script src="tax.js?v=20261120b"></script>
+  <script src="app.js?v=20261120c"></script>
+  <script src="tasks.js?v=20261120c"></script>
+  <script src="tax.js?v=20261120c"></script>
 </body>
 </html>

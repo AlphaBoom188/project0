@@ -10,10 +10,18 @@ router.param('year', (req, res, next, value) => {
   if (!YEARS.includes(Number(value))) return res.status(404).json({ error: `No tax rules for ${value}. Available: ${YEARS.join(', ')}` });
   next();
 });
+router.param('suggestion_id', (req, res, next, value) => {
+  if (!/^[0-9a-f]{12}$/.test(value)) return res.status(400).json({ error: 'Invalid suggestion id' });
+  next();
+});
 const c = require('../controllers/taxController');
 
 // GET /api/tax/:line_user_id/:year - Rules for the app, profile, claims, incomes and the computed result
 router.get('/:line_user_id/:year', c.get);
+// GET /api/tax/:line_user_id/:year/suggestions - From transactions and the portfolio
+router.get('/:line_user_id/:year/suggestions', c.suggestions);
+// POST /api/tax/:line_user_id/:year/suggestions/:suggestion_id/accept|dismiss|restore
+router.post('/:line_user_id/:year/suggestions/:suggestion_id/:action', c.suggestionAction);
 // PUT /api/tax/:line_user_id/:year/profile - Marital status, spouse income, 65+/disabled, children
 router.put('/:line_user_id/:year/profile', c.updateProfile);
 // PUT /api/tax/:line_user_id/:year/claims - Deduction amounts (merged; null removes)
