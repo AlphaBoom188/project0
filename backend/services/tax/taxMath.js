@@ -149,7 +149,11 @@ function applyAllowances(rules, profile, claims, { assessable, wages }) {
       allowed = toS(d.fixed);
     } else if (d.key === 'children') {
       // 30,000 each; the 2nd and later child born 2561 or later gets 60,000.
-      profile.children.forEach((c, i) => { allowed += toS(i >= 1 && c.birthYear >= 2561 ? 60000 : 30000); });
+      // childBase each; the 2nd and later child born 2561 or later adds childBonus
+      // (annual 30,000 + 30,000; PND 94 15,000 + 30,000 per the Ins94 booklet).
+      const base = d.childBase ?? 30000;
+      const bonus = d.childBonus ?? 30000;
+      profile.children.forEach((c, i) => { allowed += toS(base + (i >= 1 && c.birthYear >= 2561 ? bonus : 0)); });
       row.count = profile.children.length;
     } else if (d.input === 'count') {
       const n = Math.max(0, Math.min(Math.floor(Number(raw) || 0), d.maxUnits || 99));
@@ -278,7 +282,8 @@ function computeTax(rules, input = {}) {
   const taxDue = minApplies ? minRaw : prog.tax;
 
   const withheld = incomes.reduce((s, l) => s + l.withheld, 0);
-  const balance = taxDue - withheld - dividendCredit; // + pay, - refund
+  const prepaid = clamp0(toS(input.prepaid)); // tax already paid with the half-year PND 94
+  const balance = taxDue - withheld - dividendCredit - prepaid; // + pay, - refund
 
   // The most each deduction can give on its own (before shared caps), for
   // the checklist's "X of Y"; null = no limit of its own.
@@ -335,6 +340,7 @@ function computeTax(rules, input = {}) {
     taxDue: toB(taxDue),
     withheld: toB(withheld),
     dividendCredit: toB(dividendCredit),
+    prepaid: toB(prepaid),
     balance: toB(balance),
     result: balance > 0 ? 'pay' : balance < 0 ? 'refund' : 'none',
     effectiveRate: gross ? Math.round((taxDue / gross) * 10000) / 10000 : 0,

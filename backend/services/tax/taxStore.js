@@ -144,6 +144,7 @@ async function deleteIncome(lineUserId, year, id) {
 const toCalcInput = (state) => ({
   profile: state.profile,
   claims: state.claims,
+  prepaid: (state.profile._pnd94 && state.profile._pnd94.prepaid) || 0,
   incomes: state.incomes.map((r) => ({ kind: r.kind, amount: r.amount, withheld: r.withheld, expenseMethod: r.expense_method, actualExpenses: r.actual_expenses, creditRate: r.credit_rate })),
 });
 

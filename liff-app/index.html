@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#06c755" />
   <title>Expense Tracker</title>
-  <link rel="stylesheet" href="style.css?v=20261120e" />
+  <link rel="stylesheet" href="style.css?v=20261120f" />
   <script>
     // Set data-theme before first paint to avoid a flash of the wrong theme.
     (function () {
@@ -438,6 +438,23 @@
         </div>
         <div class="tax-breakdown" id="tax-breakdown"></div>
         <ul id="tax-warnings" class="tax-warnings" hidden></ul>
+
+        <div class="section-header-row" id="tax-half-header" hidden>
+          <h2 class="section-title">Half-year return (PND 94)</h2>
+          <span class="transaction-date" id="tax-half-when"></span>
+        </div>
+        <div class="tax-filing" id="tax-half" hidden>
+          <p class="tax-filing-summary" id="tax-half-summary"></p>
+          <h3 class="tax-group-title tax-filing-sub">Income January-June</h3>
+          <div id="tax-half-lines"></div>
+          <div class="tax-line is-strong"><span>Estimated PND 94 tax</span><span id="tax-half-tax"></span></div>
+          <p class="group-hint" id="tax-half-note"></p>
+          <label class="field">Tax you paid with PND 94 (THB)
+            <input type="text" id="tax-half-prepaid" inputmode="decimal" autocomplete="off" placeholder="0" />
+          </label>
+          <button type="button" id="tax-half-save" class="secondary-button tax-remind">Save</button>
+          <p id="tax-half-status" class="scan-status" hidden></p>
+        </div>
 
         <div class="section-header-row">
           <h2 class="section-title">Filing</h2>
@@ -1403,8 +1420,8 @@
   <script src="/liff-config.js"></script>
   <!-- Chart.js for the Net Worth performance chart; app.js renders everything else without it if this is blocked. -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-  <script src="app.js?v=20261120e"></script>
-  <script src="tasks.js?v=20261120e"></script>
-  <script src="tax.js?v=20261120e"></script>
+  <script src="app.js?v=20261120f"></script>
+  <script src="tasks.js?v=20261120f"></script>
+  <script src="tax.js?v=20261120f"></script>
 </body>
 </html>

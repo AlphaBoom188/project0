@@ -60,6 +60,16 @@ const x = {
   docs: document.getElementById('tax-docs'),
   steps: document.getElementById('tax-steps'),
   enter: document.getElementById('tax-enter'),
+  halfHeader: document.getElementById('tax-half-header'),
+  halfWhen: document.getElementById('tax-half-when'),
+  half: document.getElementById('tax-half'),
+  halfSummary: document.getElementById('tax-half-summary'),
+  halfLines: document.getElementById('tax-half-lines'),
+  halfTax: document.getElementById('tax-half-tax'),
+  halfNote: document.getElementById('tax-half-note'),
+  halfPrepaid: document.getElementById('tax-half-prepaid'),
+  halfSave: document.getElementById('tax-half-save'),
+  halfStatus: document.getElementById('tax-half-status'),
   sgHeader: document.getElementById('tax-sg-header'),
   sgToggle: document.getElementById('tax-sg-toggle'),
   sgStatus: document.getElementById('tax-sg-status'),
@@ -286,6 +296,7 @@ function renderTax() {
   renderBreakdown(d.result);
   renderPlan(d.plan);
   renderFiling(d);
+  renderHalfYear(d.halfYear);
   const warnings = d.result.warnings;
   x.warnings.hidden = warnings.length === 0;
   x.warnings.innerHTML = warnings.map((w) => `<li>${escapeHtml(w)}</li>`).join('');
@@ -304,6 +315,7 @@ function renderHero(d, rules) {
     const parts = [`Tax ${taxBaht(r.taxDue)}`];
     if (r.withheld) parts.push(`withheld ${taxBaht(r.withheld)}`);
     if (r.dividendCredit) parts.push(`dividend credit ${taxBaht(r.dividendCredit)}`);
+    if (r.prepaid) parts.push(`paid with PND 94 ${taxBaht(r.prepaid)}`);
     x.heroSub.textContent = parts.join(' · ');
   }
   const f = r.filing;
@@ -398,9 +410,54 @@ function renderBreakdown(r) {
   lines.push(row('Tax', taxBaht(r.taxDue), 'is-strong'));
   if (r.withheld) lines.push(row('Tax withheld', minus(r.withheld)));
   if (r.dividendCredit) lines.push(row('Dividend tax credit', minus(r.dividendCredit)));
+  if (r.prepaid) lines.push(row('Paid with PND 94', minus(r.prepaid)));
   lines.push(row(r.result === 'refund' ? 'Refund' : 'To pay', taxBaht(Math.abs(r.balance)), 'is-total'));
   const rates = r.totals.gross ? `Effective rate ${(r.effectiveRate * 100).toFixed(2)}%${r.marginalRate != null ? ` · top rate ${Math.round(r.marginalRate * 100)}%` : ''}` : '';
   x.breakdown.innerHTML = lines.join('') + (rates ? `<p class="tax-rates">${rates}</p>` : '');
+}
+
+// ---- Half-year return, PND 94 (Phase 6) ----
+const beDate = (ce) => thaiDate(`${Number(ce.slice(0, 4)) + 543}${ce.slice(4)}`);
+function renderHalfYear(h) {
+  const show = !!(h && h.applicable);
+  x.halfHeader.hidden = !show;
+  x.half.hidden = !show;
+  if (!show) return;
+  x.halfWhen.textContent = h.status === 'open' ? 'Filing now' : h.status === 'closed' ? 'Window closed' : 'Opens 1 July';
+  const window = `${beDate(h.opens)} to ${beDate(h.deadline)}`;
+  x.halfSummary.textContent = !h.mustFile
+    ? `Your January-June income from rent, work or business is ${taxBaht(h.income)}, under ${taxBaht(h.threshold)}, so you don't need PND 94.`
+    : h.status === 'closed'
+      ? `The PND 94 window (${window}) has closed. If you filed it, enter the tax you paid below so it's taken off your PND 90.`
+      : `Rent, professional, contracting and business income from January to June goes on PND 94, filed ${window}. What you pay is taken off your PND 90.`;
+  x.halfLines.innerHTML = h.lines.map((l) => `<label class="field tax-half-line">
+      <span>${escapeHtml(l.type)} ${escapeHtml(l.label)} <span class="transaction-date">(year ${taxBaht(l.yearAmount)})</span>${l.estimated ? ' <span class="tax-sg-tag conf-low">Estimate: half the year</span>' : ''}</span>
+      <input type="text" inputmode="decimal" data-half="${l.incomeId}" value="${l.estimated ? '' : l.halfAmount}" placeholder="${l.halfAmount}" autocomplete="off" />
+    </label>`).join('');
+  x.halfTax.textContent = taxBaht(h.tax);
+  x.halfNote.textContent = `Counts half of the family allowances${h.allowances.some((a) => a.key === 'social_security') ? ' and half your social security' : ''}${h.minimumTaxApplies ? '; the 0.5% method applies' : ''}. Add other deductions paid January-June when you file.`;
+  x.halfPrepaid.value = h.prepaid ? h.prepaid : '';
+}
+
+async function saveHalfYear() {
+  const amounts = {};
+  let bad = false;
+  x.halfLines.querySelectorAll('[data-half]').forEach((input) => {
+    const v = parseMoney(input.value);
+    if (v != null && !Number.isFinite(v)) bad = true;
+    amounts[input.dataset.half] = v;
+  });
+  const prepaid = parseMoney(x.halfPrepaid.value);
+  if (bad || (prepaid != null && !Number.isFinite(prepaid))) { setAiStatus(x.halfStatus, 'error', 'Amounts must be numbers.'); return; }
+  x.halfSave.disabled = true;
+  try {
+    applyTaxState(await apiRequest(`${taxBase()}/half-year`, { method: 'PUT', body: JSON.stringify({ amounts, prepaid }) }));
+    setAiStatus(x.halfStatus, 'done', 'Saved.');
+  } catch (error) {
+    setAiStatus(x.halfStatus, 'error', plainError(error));
+  } finally {
+    x.halfSave.disabled = false;
+  }
 }
 
 // ---- Planner (Phase 4) ----
@@ -790,6 +847,7 @@ x.deductions.addEventListener('click', (e) => {
   if (b && !b.disabled) openTaxDeduction(b.dataset.deduction);
 });
 x.marital.addEventListener('change', syncSpouseRow);
+x.halfSave.addEventListener('click', saveHalfYear);
 x.scanInput.addEventListener('change', handleScan50Tawi);
 const incomeDocPred = () => (d) => taxState.editingIncome && d.income_id === taxState.editingIncome.id;
 const dedDocPred = () => (d) => taxState.deduction && d.claim_key === taxState.deduction.key;

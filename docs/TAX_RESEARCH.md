@@ -454,3 +454,21 @@ Booklet numbering is used in the UI; the decree number is stored for citation.
   - **The filing checklist** ticks and labels "Attached" for documents already attached.
 - **Tests:** `api/tax_documents` (31: storage, validation, links, signed URLs, deletion), `liff/tax_documents` (16, scan mocked), `openai/tax_50tawi` (7, paid, on a synthetic certificate from `tests/fixtures/tawi50.js`).
 - **Next (Phase 6):** a mid-year check (projection from year-to-date income, PND 94 guidance for 40(5)-(8)) and the yearly rules refresh routine.
+
+## 13. Phase 6 built (2026-11-20): half-year return and the yearly refresh
+
+- **PND 94** (`services/tax/taxHalfYear.js`, checked against RD Ins94 2568):
+  - **Who and when:** 40(5)-(8) income received January-June; file 1 July - 30 September when it's over 60k single / 120k married.
+  - **Expenses:** same rules as the annual return.
+  - **Allowances:** halved family allowances (personal 30k, spouse 30k, child 15k plus 30k for the 2nd+ child born 2561 or later, as the booklet words it; parents 15k; disabled 30k) and half the social security. Other January-June deductions are left for the user to add when filing.
+  - **Tax:** 0.5% of all of that income when it's over 5,000, otherwise progressive.
+  - **January-June amount:** each line's defaults to half its yearly amount, shown as an estimate until the user enters it.
+  - **Credit:** the tax paid with PND 94 (`prepaid`) is credited on the annual return (`taxMath` `input.prepaid`, a "Paid with PND 94" line).
+  - **Storage:** amounts and prepaid live in `tax_profiles.profile._pnd94` (hidden from the profile).
+- **The calculator's child amounts** are now per rule (`childBase`, `childBonus`) so PND 94 can halve them without forking the code.
+- **Yearly refresh:**
+  - `docs/TAX_RULES_REFRESH.md` is the routine: which booklets, when, and what to change.
+  - `services/tax/rulesCheck.js` (pure) lists what's out of date: no rules for the new current year; the filing year still carried over, without an online deadline, or with unverified rules.
+  - `jobs/taxRulesCheck.js` sends that list to the owner on LINE on 10 January and 1 March (runOnce per day; quiet when current).
+- **Tests:** `api/tax_halfyear` (15), `api/tax_rules_check` (8), `liff/tax_halfyear` (11).
+- **The Tax section's planned phases (1-6) are complete.** Next is whatever the owner prioritizes. Candidates: a professional review of the rules, Easy E-Receipt detection from transactions, joint filing for married couples, and the 2570 rules when the RD publishes them.

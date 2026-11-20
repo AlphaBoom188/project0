@@ -33,6 +33,8 @@ router.post('/:line_user_id/:year/documents/scan-50tawi', rateLimit('ocr', LIMIT
 router.post('/:line_user_id/:year/documents', rateLimit('taxdoc', 60, 10 * 60 * 1000), c.uploadDocument);
 router.put('/:line_user_id/:year/documents/:document_id', c.updateDocument);
 router.delete('/:line_user_id/:year/documents/:document_id', c.deleteDocument);
+// PUT /api/tax/:line_user_id/:year/half-year - PND 94: Jan-Jun amounts and the tax paid with it
+router.put('/:line_user_id/:year/half-year', c.updateHalfYear);
 // PUT /api/tax/:line_user_id/:year/profile - Marital status, spouse income, 65+/disabled, children
 router.put('/:line_user_id/:year/profile', c.updateProfile);
 // PUT /api/tax/:line_user_id/:year/claims - Deduction amounts (merged; null removes)

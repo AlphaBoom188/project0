@@ -6,6 +6,7 @@ const { computeTax } = require('../services/tax/taxMath');
 const store = require('../services/tax/taxStore');
 const { buildSuggestions } = require('../services/tax/taxSuggest');
 const { buildPlan, buildGuide } = require('../services/tax/taxPlan');
+const { buildHalfYear } = require('../services/tax/taxHalfYear');
 const reminderStore = require('../services/reminderStore');
 const docs = require('../services/tax/taxDocuments');
 const { isUuid } = require('../services/uuid');
@@ -35,7 +36,7 @@ function rulesForApp(rules) {
 
 // `_suggestions` (accepted / dismissed suggestion ids) lives in the profile
 // JSON but isn't part of the profile the app edits.
-const publicProfile = (p) => { const { _suggestions, _reminders, ...rest } = p || {}; return rest; };
+const publicProfile = (p) => { const { _suggestions, _reminders, _pnd94, ...rest } = p || {}; return rest; };
 const suggestionMemo = (p) => ({ accepted: {}, dismissed: [], ...((p && p._suggestions) || {}) });
 
 // Everything the suggestion engine reads for one tax year.
@@ -126,6 +127,7 @@ async function stateResponse(lineUserId, rules, { withRules = false } = {}) {
     result,
     plan: buildPlan(rules, input, { today }),
     guide,
+    halfYear: buildHalfYear(rules, state, { today }),
     documents,
     reminders: await filingReminders(lineUserId, state.profile),
   };
@@ -290,6 +292,35 @@ taxController.clearReminders = handle('clearReminders', async (req, res, rules) 
     if (r && r.line_user_id === u) await reminderStore.deleteReminder(id);
   }
   await store.saveProfileRow(u, rules.year, { profile: { ...state.profile, _reminders: [] }, claims: state.claims });
+  res.json(await stateResponse(u, rules));
+});
+
+// PUT /api/tax/:u/:year/half-year { amounts?: { <income id>: Jan-Jun amount | null }, prepaid?: tax paid with PND 94 | null }
+taxController.updateHalfYear = handle('updateHalfYear', async (req, res, rules) => {
+  const u = req.params.line_user_id;
+  const state = await store.loadState(u, rules.year);
+  const memo = { amounts: {}, prepaid: 0, ...(state.profile._pnd94 || {}) };
+  const body = req.body || {};
+  const money = (v) => { const n = Number(v); return Number.isFinite(n) && n >= 0 && n <= 1e9 ? Math.round(n * 100) / 100 : NaN; };
+  if (body.amounts !== undefined) {
+    if (!body.amounts || typeof body.amounts !== 'object' || Array.isArray(body.amounts)) return bad(res, 'amounts must be an object');
+    const ids = new Set(state.incomes.map((i) => i.id));
+    for (const [id, v] of Object.entries(body.amounts)) {
+      if (!ids.has(id)) return bad(res, 'Income not found');
+      if (v === null || v === '') { delete memo.amounts[id]; continue; }
+      const n = money(v);
+      const line = state.incomes.find((i) => i.id === id);
+      if (Number.isNaN(n)) return bad(res, 'Enter an amount of 0 or more');
+      if (n > line.amount) return bad(res, "January-June income can't be more than the year's");
+      memo.amounts[id] = n;
+    }
+  }
+  if (body.prepaid !== undefined) {
+    const n = body.prepaid === null || body.prepaid === '' ? 0 : money(body.prepaid);
+    if (Number.isNaN(n)) return bad(res, 'Enter the PND 94 tax paid (0 or more)');
+    memo.prepaid = n;
+  }
+  await store.saveProfileRow(u, rules.year, { profile: { ...state.profile, _pnd94: memo }, claims: state.claims });
   res.json(await stateResponse(u, rules));
 });
 
