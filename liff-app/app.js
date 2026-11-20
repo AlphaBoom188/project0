@@ -1532,10 +1532,14 @@ async function renderHomeInvestments() {
 // ---- Add Expense modal ----
 
 async function renderAddExpenseCategoryOptions() {
-  const response = await cachedGet(`/categories/${lineUserId}?type=expense`);
-  const autoOption = '<option value="">Auto-Categorize</option>';
-  const categoryOptions = response.categories.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
-  el.fieldCategory.innerHTML = autoOption + categoryOptions;
+  const response = await cachedGet(`/categories/${lineUserId}?type=${entryType}`);
+  entryCategories = response.categories;
+  const autoOption = entryType === 'expense' ? '<option value="">Auto-Categorize</option>' : '<option value="">Choose a category</option>';
+  const keep = el.fieldCategory.value;
+  el.fieldCategory.innerHTML = autoOption + entryCategories.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+  el.fieldCategory.value = entryCategories.some((c) => c.id === keep) ? keep : '';
+  el.fieldCategory.hidden = true;
+  renderEntryCategoryChips();
 }
 
 // ---- AI states (owner's UI rules, after beautifului.dev) ----
@@ -1557,6 +1561,12 @@ function setAiStatus(node, state, text) {
   node.setAttribute('aria-busy', state === 'working' ? 'true' : 'false');
   delete node.dataset.elapsed;
   if (state !== 'working') return;
+  // Pixel loader (spec 5): empty spans, so textContent stays the sentence.
+  const loader = document.createElement('span');
+  loader.className = 'pixel-loader';
+  loader.setAttribute('aria-hidden', 'true');
+  loader.innerHTML = '<i></i>'.repeat(9);
+  node.prepend(loader);
   const started = Date.now();
   aiStatusTimers.set(node, setInterval(() => {
     if (node.hidden || node.dataset.state !== 'working') { clearInterval(aiStatusTimers.get(node)); return; }
@@ -1581,13 +1591,14 @@ function setFieldsLoading(inputs, on) {
 // Tags each AI-filled field "AI"; the first edit flips it to "Edited".
 function markAiFilled(inputs) {
   inputs.forEach((input) => {
-    const label = input.closest('label.field');
+    const label = input.closest('.field');
     if (!label) return;
     let tag = label.querySelector('.ai-tag');
     if (!tag) {
       tag = document.createElement('span');
       tag.className = 'ai-tag';
-      label.insertBefore(tag, input);
+      const anchor = label.querySelector('.field-label');
+      if (anchor) anchor.after(tag); else if (input.parentElement === label) label.insertBefore(tag, input); else label.insertBefore(tag, label.firstElementChild.nextSibling);
     }
     tag.textContent = 'AI';
     tag.classList.remove('is-edited');
@@ -1601,6 +1612,7 @@ function clearAiMarks(root) {
 }
 
 function resetReceiptScanState() {
+  hideAiBlock();
   el.fieldReceiptImage.value = '';
   el.receiptPreview.hidden = true;
   el.receiptPreview.removeAttribute('src');
@@ -1610,22 +1622,90 @@ function resetReceiptScanState() {
   scannedThumbnailPath = null;
 }
 
-async function openAddExpenseModal() {
+// ---- Add entry sheet (spec 6.1) ----
+let entryType = 'expense';
+
+async function openAddExpenseModal(type = 'expense') {
   el.fieldAmount.value = '';
   el.fieldDescription.value = '';
   el.fieldDate.value = bangkokYmd();
-  el.fieldCategory.value = ''; // defaults to "Auto-Categorize", not whatever was left selected last time
+  el.fieldCategory.value = ''; // defaults to Auto, not whatever was left selected last time
+  setAmountError(false);
   clearModalError(el.modalError);
   resetReceiptScanState();
   setVoiceButton(false);
   el.voiceButton.hidden = !voiceSupported();
   el.addExpenseModal.hidden = false;
   try {
-    await renderAddExpenseCategoryOptions();
+    await setEntryType(type);
+    await renderAccountOptions();
   } catch (error) {
     showModalError(el.modalError, error.message);
   }
 }
+
+async function setEntryType(type) {
+  entryType = type;
+  for (const b of document.querySelectorAll('[data-entry-type]')) b.setAttribute('aria-selected', String(b.dataset.entryType === type));
+  document.getElementById('add-entry-save').textContent = type === 'income' ? 'Save income' : 'Save expense';
+  // Scan and Speak read expenses; income is typed.
+  document.querySelector('#add-expense-form .receipt-scan-row').hidden = type === 'income';
+  await renderAddExpenseCategoryOptions();
+}
+
+function setAmountError(on) {
+  document.getElementById('amount-error').hidden = !on;
+  el.fieldAmount.closest('.amount-field').classList.toggle('is-invalid', on);
+}
+
+async function renderAccountOptions() {
+  const select = document.getElementById('field-account');
+  const keep = select.value;
+  const { accounts } = await cachedGet(`/accounts/${lineUserId}`);
+  select.innerHTML = '<option value="">No account</option>' + accounts.map((a) => `<option value="${a.id}">${escapeHtml(a.account_name)}</option>`).join('');
+  select.value = accounts.some((a) => a.id === keep) ? keep : '';
+  select.closest('.field').hidden = accounts.length === 0;
+}
+
+// Category chips: Auto (expenses), the most-used categories, then More
+// (the full list). The hidden select stays the value the form submits.
+let entryCategories = [];
+function renderEntryCategoryChips() {
+  const wrap = document.getElementById('category-chips');
+  const counts = new Map();
+  for (const t of homeTxns) if (t.category_id) counts.set(t.category_id, (counts.get(t.category_id) || 0) + 1);
+  const top = entryCategories.slice().sort((a, b) => (counts.get(b.id) || 0) - (counts.get(a.id) || 0)).slice(0, 5);
+  const current = el.fieldCategory.value;
+  if (current && !top.some((c) => c.id === current)) {
+    const extra = entryCategories.find((c) => c.id === current);
+    if (extra) top.push(extra);
+  }
+  const chip = (value, label, icon = '') => `<button type="button" class="chip" data-cat="${value}" aria-pressed="${String(current === value)}">${icon}${escapeHtml(label)}</button>`;
+  const sparkle = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>';
+  wrap.innerHTML = (entryType === 'expense' ? chip('', 'Auto', sparkle) : '')
+    + top.map((c) => chip(c.id, c.name)).join('')
+    + (entryCategories.length > top.length ? '<button type="button" class="chip" data-cat-more aria-pressed="false">More</button>' : '');
+}
+
+function pickCategory(value) {
+  el.fieldCategory.value = value;
+  el.fieldCategory.dispatchEvent(new Event('change')); // flips an AI tag to Edited
+  renderEntryCategoryChips();
+}
+
+// The AI block under the status line: tool chips + "How I read this".
+function hideAiBlock() {
+  const block = document.getElementById('ai-block');
+  if (block) block.hidden = true;
+}
+function showAiBlock(chips, steps, seconds) {
+  document.getElementById('ai-chips').innerHTML = chips.map((c) => `<span class="tool-chip"><span class="tool-dot" aria-hidden="true"></span>${escapeHtml(c)}</span>`).join('');
+  document.getElementById('ai-trace-meta').textContent = `${steps.length} step${steps.length === 1 ? '' : 's'} · ${seconds}s`;
+  document.getElementById('ai-trace-steps').innerHTML = steps.map((st) => `<li><span class="trace-check" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><span><strong>${escapeHtml(st.label)}</strong> <span class="trace-detail">${escapeHtml(st.detail)}</span></span></li>`).join('');
+  document.getElementById('ai-trace').open = false;
+  document.getElementById('ai-block').hidden = false;
+}
+const categoryNameById = (id) => entryCategories.find((c) => c.id === id)?.name || '';
 
 function closeAddExpenseModal() {
   cancelVoiceRecording();
@@ -1704,6 +1784,7 @@ async function finishVoiceRecording(rec, mimeType) {
     return;
   }
   setScanStatus('Working it out…', 'working');
+  const voiceStarted = Date.now();
   setFieldsLoading([el.fieldAmount, el.fieldDescription, el.fieldCategory], true);
   el.voiceButton.disabled = true;
   try {
@@ -1722,7 +1803,18 @@ async function finishVoiceRecording(rec, mimeType) {
     if (e.description) el.fieldDescription.value = e.description;
     if (e.category_id) el.fieldCategory.value = e.category_id;
     markAiFilled([el.fieldAmount, e.description && el.fieldDescription, e.category_id && el.fieldCategory].filter(Boolean));
+    renderEntryCategoryChips();
     setScanStatus(`Heard: "${result.transcript}". Review the details below before saving.`, 'done');
+    showAiBlock(
+      ['Thai speech to text', 'Parsed amount', ...(e.category_id ? ['Category match'] : [])],
+      [
+        { label: 'Heard', detail: `"${result.transcript}"` },
+        { label: 'Amount', detail: formatBaht(e.amount) },
+        e.description && { label: 'Description', detail: e.description },
+        e.category_id && { label: 'Category', detail: categoryNameById(e.category_id) },
+      ].filter(Boolean),
+      Math.max(1, Math.round((Date.now() - voiceStarted) / 1000)),
+    );
   } catch (error) {
     setScanStatus(String(error.message).replace(/^\[\d+\]\s*/, ''), 'error');
   } finally {
@@ -1773,8 +1865,10 @@ async function handleReceiptFileChange(event) {
   if (!file) return;
 
   clearModalError(el.modalError);
+  hideAiBlock();
   setAiStatus(el.scanStatus, 'working', 'Scanning receipt…');
   setFieldsLoading(aiFormFields(), true);
+  const scanStarted = Date.now();
 
   try {
     const resizedBlob = await resizeImageToJpegBlob(file);
@@ -1799,7 +1893,18 @@ async function handleReceiptFileChange(event) {
       data.date && el.fieldDate, data.suggested_category_id && el.fieldCategory,
     ].filter(Boolean));
 
+    renderEntryCategoryChips();
     setAiStatus(el.scanStatus, 'done', 'Scanned — review the details below before saving.');
+    showAiBlock(
+      ['Receipt OCR', 'Duplicate check: none', ...(data.suggested_category_id ? ['Category match'] : [])],
+      [
+        data.amount != null && { label: 'Total', detail: formatBaht(data.amount) },
+        data.merchant && { label: 'Shop', detail: data.merchant },
+        data.date && { label: 'Date', detail: data.date },
+        data.suggested_category_id && { label: 'Category', detail: data.suggested_category_name || categoryNameById(data.suggested_category_id) },
+      ].filter(Boolean),
+      Math.max(1, Math.round((Date.now() - scanStarted) / 1000)),
+    );
   } catch (error) {
     setAiStatus(el.scanStatus, 'error', error.message);
   } finally {
@@ -1809,38 +1914,71 @@ async function handleReceiptFileChange(event) {
 
 async function handleAddExpenseSubmit(event) {
   event.preventDefault();
-  const submitButton = event.submitter;
-  submitButton.disabled = true;
+  const submitButton = document.getElementById('add-entry-save');
   clearModalError(el.modalError);
-
+  const amount = parseFloat(el.fieldAmount.value);
+  if (!(amount > 0)) { setAmountError(true); el.fieldAmount.focus(); return; }
+  setAmountError(false);
+  if (entryType === 'income' && !el.fieldCategory.value) { showModalError(el.modalError, 'Choose a category for this income.'); return; }
+  const accountId = document.getElementById('field-account').value;
+  submitButton.disabled = true;
   try {
     const response = await apiRequest(`/transactions/${lineUserId}`, {
       method: 'POST',
       body: JSON.stringify({
-        // Left empty ("Auto-Categorize"), this key is dropped entirely by
-        // JSON.stringify rather than sent as category_id: "" -- the backend
-        // infers it from the description via services/autoCategorize.js.
+        // Left on Auto, category_id is dropped and the backend infers it from
+        // the description (services/autoCategorize.js).
         category_id: el.fieldCategory.value || undefined,
-        amount: parseFloat(el.fieldAmount.value),
-        type: 'expense',
+        amount,
+        type: entryType,
         description: el.fieldDescription.value || undefined,
         thumbnail_url: scannedThumbnailPath || undefined,
         transaction_date: new Date(`${el.fieldDate.value}T12:00:00Z`).toISOString(),
-        // Tells the backend to skip its own LINE push for this budget crossing
-        // and hand the alert back here instead -- see transactionCreate.js.
+        from_account_id: entryType === 'expense' && accountId ? accountId : undefined,
+        to_account_id: entryType === 'income' && accountId ? accountId : undefined,
+        // The backend skips its LINE push for a budget crossing and hands the
+        // alert back here instead (transactionCreate.js).
         channel: 'liff',
       }),
     });
     closeAddExpenseModal();
-    await loadHomeTab();
-    showBudgetAlerts(response.budget_alert, response.event_budget_alerts);
+    TAB_LOADERS[currentTab]().catch(() => {});
+    if (currentTab !== 'home') loadHomeTab().catch(() => {});
+    toastSavedEntry(response.transaction, response.budget_alert, response.event_budget_alerts || []);
   } catch (error) {
-    // Shown inside the modal, not the top-level banner -- the modal overlay would
-    // otherwise hide the banner from view while still open.
     showModalError(el.modalError, error.message);
   } finally {
     submitButton.disabled = false;
   }
+}
+
+// "Saved ฿x to {category}" with Undo; a budget crossing shows the warn/bad
+// toast instead (spec 6.1). Undo deletes the entry and puts back the
+// account balance it moved (a delete alone doesn't).
+function toastSavedEntry(t, budgetAlert, eventAlerts) {
+  const category = t.categories?.name || 'Uncategorized';
+  const account = t.from_account?.account_name || t.to_account?.account_name || '';
+  const undo = async () => {
+    await apiRequest(`/transactions/${lineUserId}/${t.id}`, { method: 'DELETE' });
+    const accountId = t.from_account_id || t.to_account_id;
+    if (accountId) {
+      const { accounts } = await apiRequest(`/accounts/${lineUserId}`);
+      const acc = accounts.find((a) => a.id === accountId);
+      const delta = t.type === 'income' ? -Number(t.amount) : Number(t.amount);
+      if (acc) await apiRequest(`/accounts/${lineUserId}/${accountId}`, { method: 'PUT', body: JSON.stringify({ balance: Number(acc.balance) + delta }) });
+    }
+    showToast({ title: 'Entry removed', description: t.description || category });
+    TAB_LOADERS[currentTab]().catch(() => {});
+  };
+  const messages = [];
+  if (budgetAlert) messages.push(`Your ${budgetAlert.budgetPeriod} ${budgetAlert.categoryName} budget of ${formatBaht(budgetAlert.budgetAmount)} is used up: ${formatBaht(budgetAlert.totalSpent)} spent.`);
+  for (const a of eventAlerts) messages.push(a.message); // wording from services/eventBudgetAlert.js
+  if (messages.length) {
+    const warnOnly = !budgetAlert && eventAlerts.every((a) => a.level === 'warning');
+    showToast({ title: warnOnly ? 'Close to a budget' : 'Over budget', description: messages.join(' '), kind: warnOnly ? 'warn' : 'bad', undo });
+    return;
+  }
+  showToast({ title: `Saved ${formatBaht(t.amount)} to ${category}`, description: [t.description, account].filter(Boolean).join(' · '), undo });
 }
 
 // ---- Shared Bills ----
@@ -4572,6 +4710,20 @@ el.fabAdd.addEventListener('click', () => {
   else openAddExpenseModal();
 });
 el.cancelAddExpense.addEventListener('click', closeAddExpenseModal);
+for (const b of document.querySelectorAll('[data-entry-type]')) {
+  b.addEventListener('click', () => {
+    if (b.dataset.entryType === 'transfer') { closeAddExpenseModal(); openTransferModal().catch((error) => showError(error.message)); return; }
+    setEntryType(b.dataset.entryType).catch((error) => showModalError(el.modalError, error.message));
+  });
+}
+document.getElementById('category-chips').addEventListener('click', (event) => {
+  const b = event.target.closest('.chip');
+  if (!b) return;
+  if (b.hasAttribute('data-cat-more')) { el.fieldCategory.hidden = false; el.fieldCategory.focus(); return; }
+  pickCategory(b.dataset.cat);
+});
+el.fieldCategory.addEventListener('change', renderEntryCategoryChips);
+el.fieldAmount.addEventListener('input', () => { if (parseFloat(el.fieldAmount.value) > 0) setAmountError(false); });
 document.getElementById('delete-category').addEventListener('click', () => {
   const category = editingCategory;
   if (!category) return;

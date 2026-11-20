@@ -39,26 +39,31 @@ async function cleanup() {
   const addExpense = async (amount) => {
     await page.click('#fab-add');
     await page.waitForSelector('#add-expense-modal:not([hidden])');
-    await page.selectOption('#field-category', food.id);
+    // v5: category chips; a category outside the top chips is under More.
+    await page.waitForSelector('#category-chips .chip');
+    const chip = page.locator(`#category-chips [data-cat="${food.id}"]`);
+    if (await chip.count()) await chip.click();
+    else { await page.click('#category-chips [data-cat-more]'); await page.selectOption('#field-category', food.id); }
     await page.fill('#field-amount', String(amount));
     await page.click('#add-expense-form button[type="submit"]');
     await page.waitForSelector('#add-expense-modal', { state: 'hidden', timeout: 10000 });
   };
 
   await addExpense(150); // 700 -> 850 of 1000
-  await page.waitForSelector('#budget-alert-banner:not([hidden])', { timeout: 8000 }).catch(() => {});
-  let text = await page.textContent('#budget-alert-banner');
-  let cls = await page.getAttribute('#budget-alert-banner', 'class');
-  assert(text.includes('85% of event budget "Songkran Trip"'), `heads-up shown in the banner (got "${text}")`);
-  assert(cls.includes('warning'), `heads-up banner is amber (class "${cls}")`);
+  // v5: the crossing shows as a warn/bad toast with Undo (spec 6.1)
+  await page.waitForSelector('#toast:not([hidden])', { timeout: 8000 }).catch(() => {});
+  let text = await page.textContent('#toast');
+  let cls = await page.getAttribute('#toast', 'class');
+  assert(text.includes('85% of event budget "Songkran Trip"') && text.includes('Undo'), `heads-up shown in a toast with Undo (got "${text}")`);
+  assert(cls.includes('toast-warn'), `heads-up toast is a warning (class "${cls}")`);
   await page.screenshot({ path: `${OUTPUT}/event_alert_warning.png` });
 
   await addExpense(200); // 850 -> 1050
-  await page.waitForFunction(() => document.querySelector('#budget-alert-banner').textContent.includes('used up'), null, { timeout: 8000 }).catch(() => {});
-  text = await page.textContent('#budget-alert-banner');
-  cls = await page.getAttribute('#budget-alert-banner', 'class');
+  await page.waitForFunction(() => document.querySelector('#toast').textContent.includes('used up'), null, { timeout: 8000 }).catch(() => {});
+  text = await page.textContent('#toast .toast-desc');
+  cls = await page.getAttribute('#toast', 'class');
   assert(text === 'Event budget "Songkran Trip" is used up: 1050.00 of 1000.00 spent.', `used-up message shown (got "${text}")`);
-  assert(!cls.includes('warning'), `used-up banner is red, not amber (class "${cls}")`);
+  assert(cls.includes('toast-bad'), `used-up toast is red, not amber (class "${cls}")`);
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.screenshot({ path: `${OUTPUT}/event_alert_over_dark.png` });
 

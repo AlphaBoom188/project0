@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#06c755" />
   <title>Expense Tracker</title>
-  <link rel="stylesheet" href="style.css?v=20261121k" />
+  <link rel="stylesheet" href="style.css?v=20261121l" />
   <script>
     // Set data-theme before first paint to avoid a flash of the wrong theme.
     (function () {
@@ -829,42 +829,63 @@
 
   <div id="add-expense-modal" class="modal" hidden>
     <div class="modal-content">
-      <h2 class="section-title">Add Expense</h2>
-      <form id="add-expense-form">
+      <h2 class="sheet-title" id="add-entry-title">Add entry</h2>
+      <form id="add-expense-form" novalidate>
+        <div class="seg entry-type-seg" role="tablist" aria-label="Entry type">
+          <button type="button" role="tab" data-entry-type="expense" aria-selected="true">Expense</button>
+          <button type="button" role="tab" data-entry-type="income" aria-selected="false">Income</button>
+          <button type="button" role="tab" data-entry-type="transfer" aria-selected="false">Transfer</button>
+        </div>
+
+        <p id="scan-status" class="scan-status" hidden></p>
+        <div class="ai-block" id="ai-block" hidden>
+          <div class="tool-chips" id="ai-chips"></div>
+          <details class="ai-trace" id="ai-trace">
+            <summary><span>How I read this</span><span class="ai-trace-meta" id="ai-trace-meta"></span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
+            <ol class="ai-trace-steps" id="ai-trace-steps"></ol>
+          </details>
+        </div>
+
+        <label class="field amount-field">
+          <span class="sr-only">Amount</span>
+          <span class="amount-wrap"><span class="amount-prefix" aria-hidden="true">฿</span><input id="field-amount" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0" aria-describedby="amount-error" /></span>
+        </label>
+        <p class="field-error" id="amount-error" hidden>Enter an amount above ฿0.</p>
+
         <div class="receipt-scan-row">
           <img id="receipt-preview" class="receipt-preview" alt="" hidden />
-          <label class="secondary-button receipt-scan-label">
-            <span id="receipt-scan-label-text">Scan Receipt</span>
+          <label class="btn btn-secondary receipt-scan-label">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg><span id="receipt-scan-label-text">Scan receipt</span>
             <input type="file" id="field-receipt-image" accept="image/*" capture="environment" hidden />
           </label>
-          <button type="button" id="voice-button" class="secondary-button receipt-scan-label voice-button" aria-pressed="false" hidden>
+          <button type="button" id="voice-button" class="btn btn-secondary receipt-scan-label voice-button" aria-pressed="false" hidden>
             <span class="icon"><svg class="lucide lucide-mic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" x2="12" y1="19" y2="22" /></svg></span>
             <span id="voice-button-text">Speak</span>
           </button>
         </div>
-        <p id="scan-status" class="scan-status" hidden></p>
 
-        <label class="field">
-          Category
-          <select id="field-category"></select>
-        </label>
-        <label class="field">
-          Amount
-          <input id="field-amount" type="number" inputmode="decimal" step="0.01" min="0.01" required />
-        </label>
+        <div class="field category-field">
+          <span class="field-label">Category</span>
+          <div class="chip-wrap" id="category-chips" role="group" aria-label="Category"></div>
+          <select id="field-category" class="category-more-select" aria-label="All categories" hidden></select>
+        </div>
         <label class="field">
           Description
           <input id="field-description" type="text" maxlength="200" />
         </label>
-        <label class="field">
-          Date
-          <input id="field-date" type="date" required />
-        </label>
-        <p id="modal-error" class="modal-error" hidden></p>
-        <div class="modal-actions">
-          <button type="button" id="cancel-add-expense" class="secondary-button">Cancel</button>
-          <button type="submit" class="primary-button">Save</button>
+        <div class="field-pair">
+          <label class="field">
+            Date
+            <input id="field-date" type="date" required />
+          </label>
+          <label class="field">
+            Account
+            <select id="field-account"><option value="">No account</option></select>
+          </label>
         </div>
+        <p id="modal-error" class="modal-error" hidden></p>
+        <button type="submit" class="btn btn-lg" id="add-entry-save">Save expense</button>
+        <button type="button" id="cancel-add-expense" class="btn btn-ghost btn-block">Cancel</button>
       </form>
     </div>
   </div>
@@ -1624,10 +1645,10 @@
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script src="/liff-config.js"></script>
   <!-- Chart.js for the Net Worth performance chart; app.js renders everything else without it if this is blocked. -->
-  <script src="app.js?v=20261121k"></script>
-  <script src="tasks.js?v=20261121k"></script>
-  <script src="tax.js?v=20261121k"></script>
-  <script src="insights.js?v=20261121k"></script>
-  <script src="money.js?v=20261121k"></script>
+  <script src="app.js?v=20261121l"></script>
+  <script src="tasks.js?v=20261121l"></script>
+  <script src="tax.js?v=20261121l"></script>
+  <script src="insights.js?v=20261121l"></script>
+  <script src="money.js?v=20261121l"></script>
 </body>
 </html>
