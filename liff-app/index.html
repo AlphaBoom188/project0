@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#06c755" />
   <title>Expense Tracker</title>
-  <link rel="stylesheet" href="style.css?v=20261120f" />
+  <link rel="stylesheet" href="style.css?v=20261120g" />
   <script>
     // Set data-theme before first paint to avoid a flash of the wrong theme.
     (function () {
@@ -470,6 +470,11 @@
           <ul id="tax-docs" class="tax-docs"></ul>
           <h3 class="tax-group-title tax-filing-sub">Steps</h3>
           <ol id="tax-steps" class="tax-steps"></ol>
+          <div class="tax-export-row">
+            <button type="button" id="tax-export-pdf" class="secondary-button">Summary (print or PDF)</button>
+            <button type="button" id="tax-export-csv" class="secondary-button">CSV</button>
+          </div>
+          <p id="tax-export-status" class="scan-status" hidden></p>
           <details class="tax-enter" id="tax-enter-details">
             <summary>Figures to enter</summary>
             <div id="tax-enter"></div>
@@ -500,6 +505,10 @@
           <label class="toggle-row">
             <span>Add my share of LINE group expenses to my transactions</span>
             <input type="checkbox" id="setting-group-copies" />
+          </label>
+          <label class="toggle-row">
+            <span>Morning briefing on LINE at 07:30 (today's reminders, events and to-dos)</span>
+            <input type="checkbox" id="setting-morning-briefing" />
           </label>
         </div>
 
@@ -1420,8 +1429,8 @@
   <script src="/liff-config.js"></script>
   <!-- Chart.js for the Net Worth performance chart; app.js renders everything else without it if this is blocked. -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-  <script src="app.js?v=20261120f"></script>
-  <script src="tasks.js?v=20261120f"></script>
-  <script src="tax.js?v=20261120f"></script>
+  <script src="app.js?v=20261120g"></script>
+  <script src="tasks.js?v=20261120g"></script>
+  <script src="tax.js?v=20261120g"></script>
 </body>
 </html>

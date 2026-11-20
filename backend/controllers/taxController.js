@@ -397,4 +397,31 @@ taxController.deleteDocument = handle('deleteDocument', async (req, res, rules) 
   res.json(await stateResponse(req.params.line_user_id, rules));
 });
 
+// ---- Summary export ----
+// POST /api/tax/:u/:year/export-link { format: 'html'|'csv' } -> a 2-minute
+// signed URL for GET .../export (opened in the phone's browser, which can't
+// send the Authorization header -- same scheme as the CSV transactions export).
+taxController.exportLink = (req, res) => {
+  const { signExportLink } = require('../services/lineAuth');
+  const format = req.body && req.body.format === 'csv' ? 'csv' : 'html';
+  const { line_user_id: u, year } = req.params;
+  res.json({ success: true, url: `/api/tax/${encodeURIComponent(u)}/${year}/export?${signExportLink(u, { kind: 'tax', format })}` });
+};
+
+// GET /api/tax/:u/:year/export?format=html|csv&kind=tax&exp&sig
+taxController.exportSummary = handle('exportSummary', async (req, res, rules) => {
+  const { buildSummaryHtml, buildSummaryCsv } = require('../services/tax/taxSummary');
+  const { signExportLink } = require('../services/lineAuth');
+  const u = req.params.line_user_id;
+  const data = await stateResponse(u, rules, { withRules: true });
+  res.set({ 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' });
+  if (req.query.format === 'csv') {
+    res.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="tax-summary-${rules.year}.csv"` });
+    return res.send(buildSummaryCsv(data));
+  }
+  const { data: user } = await supabase.from('users').select('display_name').eq('line_user_id', u).maybeSingle();
+  const csvHref = `/api/tax/${encodeURIComponent(u)}/${rules.year}/export?${signExportLink(u, { kind: 'tax', format: 'csv' }, 30 * 60)}`;
+  res.type('html').send(buildSummaryHtml(data, { name: user && user.display_name, csvHref }));
+});
+
 module.exports = taxController;

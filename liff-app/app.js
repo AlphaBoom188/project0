@@ -1282,10 +1282,12 @@ function readDeepLink() {
   let params = new URLSearchParams(window.location.search);
   const state = params.get('liff.state');
   if (state) params = new URLSearchParams(state.replace(/^[^?]*\?/, ''));
-  deepLink = { bill: params.get('groupbill'), group: params.get('group') };
+  deepLink = { bill: params.get('groupbill'), group: params.get('group'), tab: params.get('tab') };
 }
 
 function openDeepLink() {
+  if (deepLink.tab && el.tabPanels[deepLink.tab]) switchTab(deepLink.tab); // e.g. the morning briefing's "Open Tasks"
+
   if (deepLink.bill && /^[0-9a-f-]{36}$/i.test(deepLink.bill)) openGroupBill(deepLink.bill);
   else if (deepLink.group && /^[CR][0-9a-f]{32}$/.test(deepLink.group)) openGroupDetail(deepLink.group);
 }

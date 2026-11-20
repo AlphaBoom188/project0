@@ -101,6 +101,7 @@ const t = {
   gcalConnect: document.getElementById('gcal-connect'),
   gcalDisconnect: document.getElementById('gcal-disconnect'),
   gcalStatus: document.getElementById('gcal-status'),
+  morningBriefing: document.getElementById('setting-morning-briefing'),
 };
 
 // ---- Bangkok calendar helpers (dates as 'YYYY-MM-DD') ----
@@ -630,6 +631,7 @@ function selectDay(ymd) {
 // ---- Settings: Google Calendar ----
 let awaitingCalendarReturn = false;
 async function renderCalendarSettings() {
+  if (currentUser) t.morningBriefing.checked = currentUser.morning_briefing === true;
   try {
     const s = await cachedGet(`/calendar/${lineUserId}/status`);
     tasks.calendar = s;
@@ -738,4 +740,5 @@ t.monthToday.addEventListener('click', () => { t.monthModal.hidden = true; selec
 t.monthGrid.addEventListener('click', (e) => { const b = e.target.closest('[data-ymd]'); if (b) { t.monthModal.hidden = true; selectDay(b.dataset.ymd); } });
 t.monthModal.addEventListener('click', (e) => { if (e.target === t.monthModal) t.monthModal.hidden = true; });
 t.gcalConnect.addEventListener('click', handleCalendarConnect);
+t.morningBriefing.addEventListener('change', () => handlePreferenceToggle('morning_briefing', t.morningBriefing));
 t.gcalDisconnect.addEventListener('click', handleCalendarDisconnect);

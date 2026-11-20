@@ -50,6 +50,7 @@ const { startPayWindowReminderJob } = require('./jobs/payWindowReminders');
 const { startGroupBillReminderJob } = require('./jobs/groupBillReminders');
 const { startReminderDispatchJob } = require('./jobs/reminderDispatch');
 const { startTaxRulesCheckJob } = require('./jobs/taxRulesCheck');
+const { startMorningBriefingJob } = require('./jobs/morningBriefing');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -140,6 +141,7 @@ const server = app.listen(PORT, () => {
   startGroupBillReminderJob();
   startReminderDispatchJob();
   startTaxRulesCheckJob();
+  startMorningBriefingJob();
   if (process.env.OPS_AGENT !== 'off') {
     // Watchdog: every 5 minutes, one run per slot.
     cron.schedule('*/5 * * * *', () => {

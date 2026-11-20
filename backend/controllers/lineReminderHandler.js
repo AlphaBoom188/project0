@@ -16,6 +16,7 @@ const { formatWhen, REPEAT_LABEL } = require('../services/reminderMath');
 const { getBangkokYmd } = require('../services/bangkokDay');
 const { isUuid } = require('../services/uuid');
 
+const TODAY_COMMANDS = new Set(['today', 'วันนี้', 'สรุปวันนี้', 'briefing', 'morning']);
 const LIST_COMMANDS = new Set(['reminders', 'reminder', 'todo', 'to-do', 'todos', 'เตือน', 'รายการเตือน', 'เตือนอะไรบ้าง']);
 const NOTE_RE = /^(?:note|notes|จด|จดไว้|โน้ต|บันทึก)\s*[:：]?\s+([\s\S]+)$/i;
 const IMPORTANCE_LABEL = ['Normal', 'Important', 'Must not miss'];
@@ -39,6 +40,12 @@ function listText(reminders, now = new Date(), { heading = 'Coming up' } = {}) {
 // 1:1 text (typed, or a voice transcript). -> true when handled here.
 async function handlePersonalText(event, lineUserId, text, { heard = null, overLimit = () => false } = {}) {
   const trimmed = text.trim();
+  if (TODAY_COMMANDS.has(trimmed.toLowerCase())) {
+    const { loadBriefing } = require('../services/briefing');
+    const { text } = await loadBriefing(lineUserId);
+    await replyText(event.replyToken, text || 'Nothing on today: no reminders, events or open to-dos. Set one with "พรุ่งนี้ 9 โมง เตือนประชุม".');
+    return true;
+  }
   if (LIST_COMMANDS.has(trimmed.toLowerCase())) {
     const now = new Date();
     const all = await store.listForUser(lineUserId, { fromISO: now.toISOString(), toISO: now.toISOString() });

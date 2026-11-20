@@ -60,6 +60,9 @@ const x = {
   docs: document.getElementById('tax-docs'),
   steps: document.getElementById('tax-steps'),
   enter: document.getElementById('tax-enter'),
+  exportPdf: document.getElementById('tax-export-pdf'),
+  exportCsv: document.getElementById('tax-export-csv'),
+  exportStatus: document.getElementById('tax-export-status'),
   halfHeader: document.getElementById('tax-half-header'),
   halfWhen: document.getElementById('tax-half-when'),
   half: document.getElementById('tax-half'),
@@ -522,6 +525,21 @@ function renderFiling(d) {
   ].join('');
 }
 
+// Summary export: a 2-minute signed link opened in the phone's browser
+// (print / save as PDF / download), since a download can't carry the sign-in.
+async function handleTaxExport(format) {
+  setAiStatus(x.exportStatus, 'working', 'Preparing your summary…');
+  try {
+    const { url } = await apiRequest(`${taxBase()}/export-link`, { method: 'POST', body: JSON.stringify({ format }) });
+    const full = `${window.location.origin}${url}`;
+    if (window.liff && liff.openWindow) liff.openWindow({ url: full, external: true });
+    else window.open(full, '_blank');
+    setAiStatus(x.exportStatus, 'done', format === 'csv' ? 'Opening the CSV in your browser.' : 'Opened in your browser: use Print or Share to save it as a PDF.');
+  } catch (error) {
+    setAiStatus(x.exportStatus, 'error', plainError(error));
+  }
+}
+
 async function handleTaxReminders(clear = false) {
   x.remind.disabled = true;
   setAiStatus(x.remindStatus, 'working', clear ? 'Removing…' : 'Setting reminders…');
@@ -847,6 +865,8 @@ x.deductions.addEventListener('click', (e) => {
   if (b && !b.disabled) openTaxDeduction(b.dataset.deduction);
 });
 x.marital.addEventListener('change', syncSpouseRow);
+x.exportPdf.addEventListener('click', () => handleTaxExport('html'));
+x.exportCsv.addEventListener('click', () => handleTaxExport('csv'));
 x.halfSave.addEventListener('click', saveHalfYear);
 x.scanInput.addEventListener('change', handleScan50Tawi);
 const incomeDocPred = () => (d) => taxState.editingIncome && d.income_id === taxState.editingIncome.id;

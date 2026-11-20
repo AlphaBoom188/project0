@@ -3385,3 +3385,17 @@ body {
 .tax-half-line .tax-sg-tag {
   display: inline-block;
 }
+
+.tax-export-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: var(--space-2);
+  margin-top: var(--space-6);
+}
+
+.tax-export-row .secondary-button {
+  min-height: var(--tap-min);
+  padding: var(--space-2) var(--space-4);
+  font-size: 14px;
+  font-weight: 600;
+}

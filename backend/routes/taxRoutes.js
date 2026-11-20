@@ -35,6 +35,9 @@ router.put('/:line_user_id/:year/documents/:document_id', c.updateDocument);
 router.delete('/:line_user_id/:year/documents/:document_id', c.deleteDocument);
 // PUT /api/tax/:line_user_id/:year/half-year - PND 94: Jan-Jun amounts and the tax paid with it
 router.put('/:line_user_id/:year/half-year', c.updateHalfYear);
+// POST /api/tax/:line_user_id/:year/export-link -> signed URL; GET .../export (printable page or CSV)
+router.post('/:line_user_id/:year/export-link', c.exportLink);
+router.get('/:line_user_id/:year/export', c.exportSummary);
 // PUT /api/tax/:line_user_id/:year/profile - Marital status, spouse income, 65+/disabled, children
 router.put('/:line_user_id/:year/profile', c.updateProfile);
 // PUT /api/tax/:line_user_id/:year/claims - Deduction amounts (merged; null removes)

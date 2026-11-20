@@ -108,8 +108,8 @@ const canonical = (params) => [...params.entries()].filter(([k]) => k !== 'sig' 
 const hmac = (lineUserId, exp, params) => crypto.createHmac('sha256', linkSecret()).update(`${lineUserId}|${exp}|${canonical(params)}`).digest('hex');
 
 // -> query string (with exp + sig) for GET /transactions/:u/export
-function signExportLink(lineUserId, params) {
-  const exp = String(Math.floor(Date.now() / 1000) + EXPORT_LINK_TTL_S);
+function signExportLink(lineUserId, params, ttlSeconds = EXPORT_LINK_TTL_S) {
+  const exp = String(Math.floor(Date.now() / 1000) + ttlSeconds);
   const out = new URLSearchParams(params);
   out.delete('sig');
   out.delete('exp');
