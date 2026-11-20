@@ -100,7 +100,7 @@ backend/
   services/             shared logic; pure modules have no DB and have their own tests:
                         billSplit, lotMath, performanceMath, dividendMath, goalMath,
                         groupSplitMath, groupBillMath, groupBillFlex, promptpay, statementParser, payWindow, bangkokDay,
-                        reminderMath
+                        reminderMath, tax/taxMath (+ tax/rules/2568, 2569: rules as data)
   jobs/                 dailyDigest (21:00), recurringTransactions (00:05),
                         activityReminders (12:00, 20:00), payWindowReminders (09:00), groupBillReminders (19:00), all Bangkok time;
                         reminderDispatch (every minute)

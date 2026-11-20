@@ -360,3 +360,23 @@ Booklet numbering is used in the UI; the decree number is stored for citation.
 **Record-keeping:** Notice No. 161 (2549) requires every non-VAT earner of 40(5)-(8) income to keep a daily income/expense record, each entry within 3 working days. Our transaction ledger can serve as this record (feature idea).
 
 **Rate changes:** fine arts (40(6)) moved from 30% to 60% by Decree 803 (2569), effective from tax year 2568.
+
+---
+
+## 8. Phase 1 built (2026-11-20)
+
+- **Rules as data:** `backend/services/tax/rules/` holds `common.js` (brackets, the 0.5% method, the 190k exemption, the income catalogue with every 40(8) item, and the shared allowances), `2568.js` and `2569.js`. Each rule carries `verified` and `source`. 2569 is marked `carriedOver`: it reuses the 2568 rules until the RD publishes 2569's.
+- **Calculator:** `backend/services/tax/taxMath.js` takes `computeTax(rules, { profile, incomes, claims })` and returns:
+  - per-line exemption, expense, dividend credit and net income;
+  - the totals, each allowance and donation (claimed and allowed, with the reason when a shared cap trimmed it), and the bracket breakdown;
+  - progressive tax against the 0.5% method, the tax due, withholding and credits, then **pay or refund**;
+  - the effective and marginal rate, the instalment option, the form (PND 90/91), whether filing is required, and the deadlines;
+  - warnings for unknown items and for rules not yet verified.
+- **Choices made where the sources are silent:**
+  - Actual expenses never take an income line below zero; no loss offset across lines.
+  - The 65+/disabled exemption is placed on the income with the least expense relief first, which is never worse for the filer.
+  - The personal allowance is claimed unless `claims.personal === false` (the iTAX example sets it false to match iTAX).
+  - Pension insurance fills unused life-insurance room first, then 15% of income up to 200k inside the 500k cap.
+  - Shared caps trim later items first, in rule order.
+- **Tests:** `tests/api/tax_math.test.js`, 66 checks. They include the iTAX example (pay 12,500), the 0.5% method winning and being ignored, the dividend credit refund, every expense rule, every shared cap, year-only measures, donations, filing thresholds and a full end-to-end case.
+- **Next (Phase 2):** tables and endpoints, then the Tax tab UI: profile, incomes, the deduction checklist and a live result.
