@@ -129,7 +129,7 @@ async function cleanup() {
     out = await tap(B, doneData);
     assert(out[0] === 'Only the people this reminder is for can do that.', "someone else can't tick it");
     out = await tap(A, push.messages[0].quickReply.items[1].action.data);
-    assert(/^Okay, I'll remind you again at \d{2}:\d{2}\.$/.test(out[0]), `snooze (got ${out[0]})`);
+    assert(/^Okay, I'll remind you again (at|tomorrow at) \d{2}:\d{2}\.$/.test(out[0]), `snooze (got ${out[0]})`);
     out = await tap(A, doneData);
     assert(out[0] === 'Done: ประชุม.' && (await db.from('reminders').select('status').eq('id', meeting.id).single()).data.status === 'done', 'done');
     out = await tap(A, doneData);

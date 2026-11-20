@@ -48,7 +48,12 @@ function actionReply(action, r, now = new Date()) {
   switch (action) {
     case 'done': return `Done: ${r.title}.${next}`;
     case 'stop': return `Okay, no more reminders for "${r.title}" this time.${next}`;
-    case 'snooze': return `Okay, I'll remind you again at ${m.formatWhen(r.next_fire_at, now).replace(/^Today /, '')}.`;
+    case 'snooze': {
+      // "at 09:25", "tomorrow at 00:10" (a snooze late at night), "on Fri 27 Nov at 09:00"
+      const when = m.formatWhen(r.next_fire_at, now);
+      const at = when.replace(/^(Today|Tomorrow) /, '');
+      return `Okay, I'll remind you again ${when.startsWith('Today') ? `at ${at}` : when.startsWith('Tomorrow') ? `tomorrow at ${at}` : `on ${when.replace(/ (\d{2}:\d{2})$/, ' at $1')}`}.`;
+    }
     default: return 'Okay.';
   }
 }

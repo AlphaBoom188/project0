@@ -41,7 +41,12 @@ async function openApp(browser, { blockChart = false, failPortfolio = false } = 
   return { page, errors };
 }
 
-const chartState = (page) => page.evaluate(() => {
+// Chart.js loads on first use (app.js loadChartJs), so wait for the chart.
+const chartState = async (page) => {
+  await page.waitForFunction(() => window.Chart && window.Chart.getChart(document.getElementById('goal-chart')), null, { timeout: 15000 }).catch(() => {});
+  return chartNow(page);
+};
+const chartNow = (page) => page.evaluate(() => {
   const chart = window.Chart && window.Chart.getChart(document.getElementById('goal-chart'));
   return chart ? {
     id: chart.id, type: chart.config.type, labels: chart.data.labels,

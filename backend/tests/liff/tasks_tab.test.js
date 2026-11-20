@@ -27,7 +27,9 @@ const tomorrow = bkkYmd(new Date(Date.now() + 86400000));
     const laterYmd = bkkYmd(later);
     const ins = async (row) => (await db.from('reminders').insert({ line_user_id: U, ...row }).select().single()).data;
     const call = await ins({ title: 'Call the bank', remind_at: later.toISOString(), next_fire_at: later.toISOString(), importance: 1, category: 'finance' });
-    const past = new Date(Date.now() - 3600000);
+    // An hour ago, but never before today's Bangkok midnight (the test may run just after it).
+    const todayStart = new Date(`${today}T00:00:00+07:00`).getTime();
+    const past = new Date(Math.max(Date.now() - 3600000, todayStart + 60000));
     await ins({ title: 'Morning pills', remind_at: past.toISOString(), last_fired_at: past.toISOString(), fire_count: 1, category: 'health' });
     const dailyAt = at(tomorrow, '08:00');
     await ins({ title: 'Stand-up', repeat: 'daily', remind_at: dailyAt, anchor_at: dailyAt, next_fire_at: dailyAt, category: 'work' });
