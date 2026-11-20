@@ -528,6 +528,33 @@ async function cachedGet(path) {
   return result;
 }
 
+// ---- Chart.js on demand ----
+// Only the Wealth tab's charts use Chart.js (205 KB), so it isn't loaded at
+// startup: chartReady() loads it the first time a chart is drawn (and the
+// app warms it up in the background once Home is showing). With the CDN
+// blocked the charts say "Chart unavailable"; everything else still works.
+const CHARTJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js';
+let chartPromise = null;
+let chartFailed = false;
+function loadChartJs() {
+  if (window.Chart) return Promise.resolve(window.Chart);
+  chartPromise ||= new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = CHARTJS_URL;
+    script.onload = () => (window.Chart ? resolve(window.Chart) : reject(new Error('Chart.js missing')));
+    script.onerror = () => { chartFailed = true; chartPromise = null; reject(new Error('Chart.js failed to load')); };
+    document.head.appendChild(script);
+  });
+  return chartPromise;
+}
+// True when charts can be drawn now; otherwise starts loading Chart.js and
+// calls redraw when it's there (or failed, so the caller can say so).
+function chartReady(redraw) {
+  if (window.Chart) return true;
+  if (!chartFailed) loadChartJs().then(redraw, redraw);
+  return false;
+}
+
 // ---- Shared helpers ----
 
 function showError(message) {
@@ -2768,9 +2795,9 @@ function renderPerfChart() {
     perfChart = null;
   }
   if (!perfData || perfData.points.length === 0) return;
-  if (typeof window.Chart === 'undefined') {
+  if (!chartReady(renderPerfChart)) {
     el.perfChartWrap.hidden = true;
-    showPerfNote('Chart unavailable');
+    showPerfNote(chartFailed ? 'Chart unavailable' : 'Loading chart…');
     return;
   }
   el.perfChartWrap.hidden = false;
@@ -2848,7 +2875,7 @@ function divNoteText() {
   const parts = ['Before tax.'];
   if (divData.unsupported_holdings.length > 0) parts.push("Crypto, funds and gold aren't included.");
   if (divData.missing.length > 0) parts.push(`No dividend data for ${divData.missing.map((m) => m.symbol).join(', ')}.`);
-  if (typeof window.Chart === 'undefined') parts.push('Chart unavailable');
+  if (chartFailed) parts.push('Chart unavailable');
   return parts.join(' ');
 }
 
@@ -2892,7 +2919,7 @@ function renderDivChart() {
   }
   if (!divData || el.divCard.hidden) return;
   el.divNote.textContent = divNoteText();
-  if (typeof window.Chart === 'undefined') {
+  if (!chartReady(renderDivChart)) {
     el.divChartWrap.hidden = true;
     return;
   }
@@ -3045,10 +3072,10 @@ function renderGoalChart() {
     goalChart = null;
   }
   if (!goalData || !goalData.goal) return;
-  if (typeof window.Chart === 'undefined') {
+  if (!chartReady(renderGoalChart)) {
     el.goalChartWrap.hidden = true;
     el.goalNote.hidden = false;
-    el.goalNote.textContent = 'Chart unavailable';
+    el.goalNote.textContent = chartFailed ? 'Chart unavailable' : 'Loading chart…';
     return;
   }
   el.goalChartWrap.hidden = false;
@@ -4295,6 +4322,7 @@ async function init() {
     renderProfile(profile);
     await loadHomeTab();
     renderHomeReportCard(); // insights.js; never blocks Home
+    setTimeout(() => loadChartJs().catch(() => {}), 1500); // warm up for the Wealth tab
 
     el.loading.hidden = true;
     el.app.hidden = false;

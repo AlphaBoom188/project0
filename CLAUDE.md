@@ -83,7 +83,8 @@ npm run test:openai       # tests/openai/: real OpenAI calls (a few cents)
   - Inputs at least 16px (stops iOS zoom); tap targets at least `--tap-min` (44px).
   - Reads go through `cachedGet()`; any non-GET `apiRequest()` clears the cache. `apiRequest` errors start with `[status]`.
   - Async renders use a sequence-number stale guard (`txnLoadSeq`, `perfLoadSeq`, ...).
-  - Chart.js 4.4.1 and pdf.js 3.11.174 load from cdnjs. Pages must still work ("Chart unavailable", "Couldn't load the PDF reader") when a CDN is blocked.
+  - Chart.js 4.4.1 and pdf.js 3.11.174 load from cdnjs on first use (`loadChartJs`/`chartReady`, `loadPdfJs`), never at startup. Pages must still work ("Chart unavailable", "Couldn't load the PDF reader") when a CDN is blocked.
+  - **Bump the `?v=` tag in `index.html` whenever any `.js` or `.css` in `liff-app/` changes.** Versioned files are served `Cache-Control: immutable` for a year (and everything is gzipped), so an unchanged tag means phones keep the old file. `tests/api/liff_html.test.js` checks the tags match; `tests/api/perf_headers.test.js` checks compression and caching.
   - Modals stack at z-index 20, the confirm modal at 30, the FAB at 15, the nav at 10.
 - **Legal pages must stay true.** `liff-app/privacy.html` (+ `privacy-th.html`) states what is collected, who it goes to and how long it's kept: error reports 90 days, alerts 180 days, job records 30 days, server logs 30 days (`deploy/macos/logrotate.sh`). When a change sends data somewhere new, stores something new or changes retention, update both languages. Never log message text, transcripts or receipt contents.
 - **Privacy.** Never commit real user data, including from statements the owner shares for testing: names, account numbers, last-4 digits, counterparties. Keep extracted data in the session scratchpad and use the synthetic fixtures in tests. Run a grep sweep before committing.

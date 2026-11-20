@@ -89,7 +89,8 @@ const tomorrow = bkkYmd(new Date(Date.now() + 86400000));
     await page.click('#task-categories [data-category="finance"]');
     await page.click('#task-importance [data-importance="2"]');
     assert((await page.textContent('#task-importance-help')).includes('15, 45, 90 and 180 minutes'), 'importance help text');
-    const optH = await page.$$eval('.importance-option, .preset, .category-chip', (bs) => Math.min(...bs.map((b) => b.getBoundingClientRect().height)));
+    // Visible ones only: "This evening 18:00" hides itself after 17:30.
+    const optH = await page.$$eval('.importance-option, .preset, .category-chip', (bs) => Math.min(...bs.filter((b) => b.offsetParent !== null).map((b) => b.getBoundingClientRect().height)));
     assert(optH >= 36, 'controls are tappable');
     await Promise.all([page.waitForResponse((r) => r.url().includes(`/reminders/${U}`) && r.request().method() === 'POST'), page.click('#task-save')]);
     await page.waitForSelector('#task-modal', { state: 'hidden', timeout: 10000 });

@@ -71,6 +71,9 @@ app.use((req, res, next) => {
   });
   next();
 });
+// gzip for every response (the LIFF scripts and stylesheet shrink ~75%;
+// the ngrok tunnel passes responses through uncompressed).
+app.use(require('compression')());
 const corsOrigins = String(process.env.CORS_ORIGINS || '').split(',').map((o) => o.trim()).filter(Boolean);
 if (corsOrigins.length) app.use(cors({ origin: corsOrigins }));
 
@@ -128,9 +131,15 @@ app.use('/api/goals', goalRoutes);
 // lives in .env like every other credential rather than being hardcoded into a
 // committed static file.
 app.get('/liff-config.js', (req, res) => {
-  res.type('application/javascript').send(`window.LIFF_ID = ${JSON.stringify(process.env.LIFF_ID || '')};`);
+  res.set('Cache-Control', 'no-cache').type('application/javascript').send(`window.LIFF_ID = ${JSON.stringify(process.env.LIFF_ID || '')};`);
 });
-app.use('/liff', express.static(path.join(__dirname, '../liff-app')));
+// Scripts and the stylesheet are referenced with ?v=<version> (index.html),
+// so a versioned URL never changes: cache it for a year. Pages and anything
+// unversioned are revalidated every time (ETag), so a deploy shows at once.
+app.use('/liff', (req, res, next) => {
+  res.set('Cache-Control', req.query.v && /\.(js|css)$/.test(req.path) ? 'public, max-age=31536000, immutable' : 'no-cache');
+  next();
+}, express.static(path.join(__dirname, '../liff-app'), { cacheControl: false }));
 
 const server = app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
