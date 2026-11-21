@@ -32,7 +32,9 @@ async function openApp(browser, { blockChart = false } = {}) {
   await page.goto(`${BASE}/liff/`);
   await page.waitForSelector('#app:not([hidden])', { timeout: 15000 });
   await openTab(page, 'networth');
-  await page.waitForSelector('#div-card:not([hidden])', { timeout: 20000 });
+  await page.waitForSelector('#goals-income-list [data-goal-row="dividends"]', { timeout: 20000 });
+  await page.click('#goals-income-list [data-goal-row="dividends"]');
+  await page.waitForSelector('#div-card', { state: 'visible', timeout: 20000 });
   return { page, errors };
 }
 
@@ -117,6 +119,12 @@ const chartState = (page) => page.evaluate(() => {
   await page.$eval('#div-card', (c) => c.scrollIntoView());
   await page.screenshot({ path: `${OUTPUT}/dividends_dark.png` });
   await page.evaluate(() => setTheme('system'));
+
+  // --- Goals and income row ---
+  const divRow = await page.innerText('#goals-income-list [data-goal-row="dividends"]');
+  assert(divRow.includes('Dividends') && divRow.includes(baht(expected.summary.trailing_12m_thb).replace(/\.\d\d$/, '')) && divRow.includes('Last 12 months'), `Dividends row (got ${divRow.replace(/\s+/g, ' ')})`);
+  await page.click('#div-modal .sheet-close');
+  await page.waitForSelector('#div-modal', { state: 'hidden' });
 
   // --- Holding detail sheet ---
   await page.locator('#holdings-list .holding-row', { hasText: 'AAPL' }).click();

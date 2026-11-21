@@ -494,6 +494,7 @@ body {
 .field select {
   display: block;
   width: 100%;
+  min-height: var(--tap-min);
   margin-top: var(--space-1);
   padding: var(--space-2);
   font-size: 16px;
@@ -1526,12 +1527,16 @@ body {
 
 /* Reused pill/toggle rows sit inside the card, so no page gutter; tap targets at --tap-min. */
 .perf-card .range-pills,
-.perf-card .type-toggle {
+.perf-card .type-toggle,
+.sheet-body .range-pills,
+.sheet-body .type-toggle {
   margin: 0 0 var(--space-4);
 }
 
 .perf-card .range-pill,
-.perf-card .type-toggle-button {
+.perf-card .type-toggle-button,
+.sheet-body .range-pill,
+.sheet-body .type-toggle-button {
   min-height: var(--tap-min);
   min-width: var(--tap-min);
 }
@@ -1717,7 +1722,8 @@ body {
 }
 
 /* The collapsible row sits inside the card, so no page gutter. */
-.perf-card .goal-table-toggle {
+.perf-card .goal-table-toggle,
+.sheet-body .goal-table-toggle {
   min-height: var(--tap-min);
   padding: var(--space-4) 0;
   margin-top: var(--space-2);
@@ -4860,3 +4866,51 @@ input[type="radio"] { accent-color: var(--primary); }
   white-space: nowrap;
 }
 .tasks-filter-chip svg { flex: 0 0 auto; color: var(--muted-foreground); }
+
+/* Sheet header close (B3): top right of every sheet. */
+.modal-content > .sheet-close {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-2);
+  z-index: 1;
+  color: var(--muted-foreground);
+}
+.modal-content > .sheet-close + * { margin-top: 0; }
+.modal-content .sheet-title,
+.modal-content .section-title,
+.modal-content .sheet-head { padding-right: calc(var(--tap-min) + var(--space-2)); }
+.modal-content > .month-head,
+.modal-content > .task-kind { margin-right: calc(var(--tap-min) + var(--space-2)); }
+.modal-content > .section-title:first-of-type { margin-top: 0; }
+.sheet-head { display: flex; align-items: center; min-height: var(--tap-min); margin-bottom: var(--space-2); }
+.sheet-head .sheet-title { margin: 0; padding-right: 0; }
+#cancel-add-expense { width: 100%; background: none; border: 1px solid var(--border); color: var(--foreground); }
+
+/* Goals and income (B1) */
+.goals-income-list { list-style: none; }
+.goals-income-list > li + li { border-top: 1px solid var(--border); }
+.goal-row .bar-thin { margin-top: var(--space-1); }
+.tile-brand { --tile-bg: var(--brand-subtle); --tile-fg: var(--brand-text); }
+.text-brand { color: var(--brand-text); }
+.goal-row .row-value.text-brand { font-size: 14px; }
+.sheet-body { margin-bottom: var(--space-4); }
+.sheet-body .perf-total { font-family: var(--font-serif); }
+.ef-progress { margin-bottom: var(--space-4); }
+.ef-form .btn { margin-top: var(--space-2); }
+
+/* Holdings (B2): value in baht, gain % under it */
+.holding-row .row-end { max-width: 45%; }
+.holding-gain { font-weight: 600; }
+
+/* Home tax row (B4) */
+.home-tax-save .row-value { font-size: 14px; font-weight: 600; color: var(--brand-text); white-space: nowrap; }
+.home-tax-save .row-sub { white-space: nowrap; color: var(--brand-text); }
+
+/* Shared bills (B6) */
+.bill-row { cursor: pointer; }
+.bill-row .bill-status-pill { padding: 0; background: none; font-size: 12px; font-weight: 400; }
+
+/* B7: every text field is at least 44px (chips and segments stay 36px). */
+#txn-search,
+.task-title-input,
+.bill-participant-name { min-height: var(--tap-min); }

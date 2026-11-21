@@ -112,7 +112,7 @@ const descs = (page) => page.$$eval('#txn-full-list .transaction-description', (
 
   // --- Share to LINE ---
   await page.click('.nav-tab[data-tab="home"]');
-  await page.click('#bills-list .category-row');
+  await page.click('#bills-list .bill-row');
   await page.waitForFunction(() => document.querySelector('#bill-progress-outstanding').textContent.length > 0);
   await page.screenshot({ path: `${SHOTS}/b2_bill_share.png` });
   await page.click('#bill-share-line');

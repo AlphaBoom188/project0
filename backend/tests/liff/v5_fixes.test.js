@@ -1,6 +1,8 @@
 // LIFF_V5_FIXES.md: the review fixes on top of the v5 refresh.
 // A1 Recurring rules card + action sheet, A2 hero error states when the
-// monthly report fails, A3 Tasks chips. Real API; /api/reports/** is routed
+// monthly report fails, A3 Tasks chips; B1 Goals and income, B2 holdings
+// in THB, B3 sheet close buttons, B4 Home tax row, B5 Recent meta, B6 Shared
+// bills, B7 field heights. Real API; /api/reports/** is routed
 // to 500 for A2 only.
 const { BASE, OUTPUT, openTab } = require('../lib');
 const { chromium } = require('playwright-core');
@@ -17,7 +19,10 @@ const api = (path, opts = {}) => fetch(`${BASE}/api${path}`, { ...opts, headers:
   .then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
 
 async function cleanup() {
-  for (const t of ['recurring_transactions', 'reminders', 'transactions', 'categories', 'users']) await db.from(t).delete().eq('line_user_id', U);
+  await db.from('tax_incomes').delete().eq('line_user_id', U);
+  await db.from('tax_profiles').delete().eq('line_user_id', U);
+  await db.from('asset_lots').delete().eq('line_user_id', U);
+  for (const t of ['recurring_transactions', 'reminders', 'transactions', 'asset_holdings', 'accounts', 'categories', 'users']) await db.from(t).delete().eq('line_user_id', U);
 }
 
 async function openApp(browser, userId, { colorScheme = 'light', setup } = {}) {
@@ -162,6 +167,136 @@ const shot = (page, name) => page.screenshot({ path: `${OUTPUT}/v5fix_${name}.pn
     assert((await p2.textContent('#home-hero-sub')).startsWith('of ฿5,000 budget'), `Home: Try again recovers (got "${await p2.textContent('#home-hero-sub')}")`);
     assert(e2.length === 0, `no page errors (got ${JSON.stringify(e2)})`);
     await p2.context().close();
+
+    // ---------- B: Wealth, Home, sheets, field sizes ----------
+    // A fresh user for the Goals and income set-up state, then seed for B2/B4/B5.
+    const { page: p3, errors: e3 } = await openApp(browser, U);
+    await openTab(p3, 'networth');
+    await p3.waitForSelector('#goals-income-list [data-goal-row="ef"]', { timeout: 15000 });
+    const goalRows = await p3.$$eval('#goals-income-list [data-goal-row]', (bs) => bs.map((b) => ({ k: b.dataset.goalRow, t: b.innerText.replace(/\s+/g, ' ') })));
+    assert((await p3.$$('#tab-networth .goals-income-list')).length === 1 && goalRows.length === 2 && goalRows[0].k === 'ef' && goalRows[0].t.includes('Set up') && goalRows[1].k === 'investment' && goalRows[1].t.includes('Set up'),
+      `B1: one Goals and income card, Emergency fund + Investment goal in Set up (got ${JSON.stringify(goalRows)})`);
+    assert((await p3.$('#goals-empty')) === null && (await p3.$('#tab-networth #goal-card')) === null && (await p3.$('#tab-networth #div-card')) === null, 'B1: the standalone cards and the dashed empty card are gone');
+    // Add goal -> chooser with all three while unset
+    await p3.click('#add-goal-button');
+    await p3.waitForSelector('#add-goal-modal:not([hidden])');
+    assert((await p3.$$eval('#add-goal-modal [data-add-goal]', (bs) => bs.filter((b) => !b.hidden).map((b) => b.dataset.addGoal))).join() === 'savings,investment,ef', 'B1: Add goal offers Savings, Investment, Emergency fund');
+    await p3.click('#add-goal-modal .sheet-close');
+    // Emergency fund sheet: set it up
+    const acct = (await api(`/accounts/${U}`, { method: 'POST', body: JSON.stringify({ account_name: 'Savings', account_type: 'bank', balance: 84251 }) })).body.account;
+    await p3.evaluate(() => { getCache.clear(); return loadNetWorthTab(); });
+    await p3.click('#goals-income-list [data-goal-row="ef"]');
+    await p3.waitForSelector('#ef-modal:not([hidden])');
+    await p3.fill('#setting-ef-goal', '150000');
+    await p3.selectOption('#setting-ef-account', acct.id);
+    await Promise.all([p3.waitForResponse((r) => r.url().includes('/emergency-fund')), p3.click('#save-emergency-fund')]);
+    await p3.waitForSelector('#ef-modal', { state: 'hidden', timeout: 8000 });
+    const efRow = await p3.innerText('#goals-income-list [data-goal-row="ef"]');
+    assert(efRow.includes('฿84,251 of ฿150,000 · Savings') && efRow.includes('56%') && (await p3.$('#goals-income-list [data-goal-row="ef"] .bar')) !== null, `B1: Emergency fund row after saving (got ${efRow.replace(/\s+/g, ' ')})`);
+    assert((await p3.textContent('#toast .toast-title')) === 'Emergency fund saved', 'B1: saved toast');
+    await p3.click('#add-goal-button');
+    await p3.waitForSelector('#add-goal-modal:not([hidden])');
+    assert(await p3.isHidden('[data-add-goal="ef"]'), 'B1: chooser drops Emergency fund once it is set');
+    await p3.keyboard.press('Escape');
+    await p3.waitForSelector('#add-goal-modal', { state: 'hidden', timeout: 5000 }).catch(() => {});
+    assert(await p3.isHidden('#add-goal-modal'), 'B3: Escape closes a sheet');
+
+    // B2: holdings in THB
+    const voo = (await api(`/portfolio/${U}`, { method: 'POST', body: JSON.stringify({ asset_type: 'mutual_fund', symbol: 'GOLDFUND', name: 'A very long fund name that should never squeeze the value column', quantity: 100, average_cost: 10, current_price: 12, trade_date: '2025-01-02' }) })).body.holding;
+    await p3.evaluate(() => { getCache.clear(); return loadNetWorthTab(); });
+    await p3.waitForSelector('#holdings-list .holding-row', { timeout: 15000 });
+    const hold = await p3.$$eval('#holdings-list .holding-row', (rows) => rows.map((r) => {
+      const end = r.querySelector('.row-end');
+      const lh = parseFloat(getComputedStyle(end.firstElementChild).lineHeight) || 20;
+      return { value: r.querySelector('.holding-value').textContent, lines: end.children.length, h: end.getBoundingClientRect().height, lh, meta: r.querySelector('.row-meta').textContent };
+    }));
+    assert(hold.length >= 1 && hold.every((x) => x.value.startsWith('฿') && x.lines <= 2 && x.h <= 44), `B2: every holding value starts with ฿, right column <= 2 lines (got ${JSON.stringify(hold)})`);
+    assert(voo && hold[0].meta.includes('% of portfolio'), 'B2: meta "{Type} · x% of portfolio"');
+    await p3.locator('#tab-networth').screenshot({ path: `${OUTPUT}/v5fix_wealth_light.png` });
+
+    // B3: every sheet header has a close button
+    const sheets = await p3.$$eval('.modal', (ms) => ms.map((m) => ({ id: m.id, close: !!m.querySelector(':scope > .modal-content > .sheet-close[aria-label="Close"]') })));
+    const missing = sheets.filter((x) => x.id !== 'confirm-modal' && !x.close).map((x) => x.id);
+    assert(missing.length === 0 && sheets.length > 25, `B3: every .modal has a header Close button (missing ${JSON.stringify(missing)})`);
+    await openTab(p3, 'home');
+    await p3.click('#fab-add');
+    await p3.waitForSelector('#add-expense-modal:not([hidden])');
+    await p3.locator('#add-expense-modal .modal-content').screenshot({ path: `${OUTPUT}/v5fix_add_entry_sheet.png` });
+    const close = await p3.$eval('#add-expense-modal .sheet-close', (b) => { const r = b.getBoundingClientRect(); const t = document.getElementById('add-entry-title').getBoundingClientRect(); return { w: r.width, h: r.height, right: window.innerWidth - r.right, sameRow: Math.abs((r.top + r.bottom) / 2 - (t.top + t.bottom) / 2) < 12 }; });
+    assert(close.w === 44 && close.h === 44 && close.sameRow, `B3: Add entry has a 44px close beside the title (got ${JSON.stringify(close)})`);
+    await p3.click('#add-expense-modal .sheet-close');
+    assert(await p3.isHidden('#add-expense-modal'), 'B3: the close button closes it');
+    await p3.click('#fab-add');
+    await p3.waitForSelector('#add-expense-modal:not([hidden])');
+    await p3.mouse.click(195, 10); // backdrop above the sheet
+    await p3.waitForSelector('#add-expense-modal', { state: 'hidden', timeout: 5000 }).catch(() => {});
+    assert(await p3.isHidden('#add-expense-modal'), 'B3: a backdrop tap closes it');
+
+    // B6: Shared bills empty state + New bill
+    assert(await p3.isVisible('#bills-empty-state') && (await p3.getAttribute('#bills-empty-state', 'class')).includes('empty-dashed') && (await p3.textContent('#bills-empty-state')).startsWith('No shared bills yet.'), 'B6: dashed empty state');
+    await p3.click('#new-bill-button');
+    await p3.waitForSelector('#bill-modal:not([hidden])');
+    assert(true, 'B6: New bill opens the bill sheet');
+    await p3.click('#bill-modal .sheet-close');
+
+    // B4 + B5: tax row and Recent meta
+    const taxYear = (() => { const d = new Date(Date.now() + 7 * 3600000); const m = d.getUTCMonth() + 1; return (m >= 10 ? d.getUTCFullYear() : d.getUTCFullYear() - 1) + 543; })();
+    const inSeason = (() => { const m = new Date(Date.now() + 7 * 3600000).getUTCMonth() + 1; return m >= 10 || m <= 3; })();
+    await api(`/tax/${U}/${taxYear}/incomes`, { method: 'POST', body: JSON.stringify({ kind: 'salary', amount: 900000, withheld: 20000, payer: 'Acme' }) });
+    await api(`/transactions/${U}`, { method: 'POST', body: JSON.stringify({ type: 'expense', amount: 120, category_id: food.id, description: 'Lunch on account', from_account_id: acct.id, transaction_date: new Date().toISOString() }) });
+    await p3.evaluate(() => { getCache.clear(); return loadHomeTab(); });
+    await p3.waitForSelector('#transaction-list .transaction-row', { timeout: 15000 });
+    if (inSeason) {
+      await p3.waitForSelector('#home-tax:not([hidden])', { timeout: 15000 });
+      await p3.waitForFunction(() => /^File PND 9[01] by 31 Mar$/.test(document.getElementById('home-tax-meta').textContent), null, { timeout: 15000 }).catch(() => {});
+      const taxRow = await p3.$eval('#home-tax-row', (row) => [...row.querySelectorAll('.row-title, .row-meta, .row-value, .row-sub')].filter((n) => n.offsetParent).map((n) => ({ t: n.textContent, over: n.scrollWidth > n.clientWidth })));
+      assert(taxRow.every((x) => !x.over) && taxRow.some((x) => /^File PND 9[01] by 31 Mar$/.test(x.t)), `B4: nothing in the tax row is cut off (got ${JSON.stringify(taxRow)})`);
+      await p3.locator('#home-tax').screenshot({ path: `${OUTPUT}/v5fix_home_tax.png` });
+      const save = await p3.isVisible('#home-tax-save');
+      assert(!save || ((await p3.textContent('#home-tax-save')) === `Save up to${await p3.textContent('#home-tax-save-amount')}` && /^฿[\d,]+$/.test(await p3.textContent('#home-tax-save-amount'))), 'B4: "Save up to ฿x" sits on the right');
+    } else {
+      assert(true, 'B4: tax row is out of season today (skipped)');
+    }
+    const homeMeta = await p3.$eval('#transaction-list .transaction-row .row-meta', (n) => n.textContent);
+    await openTab(p3, 'transactions');
+    await p3.waitForSelector('#txn-full-list .transaction-row', { timeout: 15000 });
+    const histMeta = await p3.$eval('#txn-full-list .transaction-row .row-meta', (n) => n.textContent);
+    assert(homeMeta === histMeta && homeMeta.includes('Savings'), `B5: Home Recent meta = History meta (got "${homeMeta}" / "${histMeta}")`);
+
+    // B7: field size audit, every tab and every sheet
+    const small = [];
+    for (const tab of ['home', 'tasks', 'transactions', 'budgets', 'networth', 'tax', 'settings', 'more']) {
+      await openTab(p3, tab);
+      await p3.waitForTimeout(400);
+      small.push(...await p3.$$eval(`#tab-${tab} input, #tab-${tab} select`, (els) => els.filter((e) => e.offsetParent && !e.classList.contains('chip') && !['checkbox', 'radio', 'hidden', 'file', 'range'].includes(e.type)).map((e) => ({ id: e.id || e.name || e.className, h: e.getBoundingClientRect().height })).filter((x) => x.h < 44)));
+    }
+    small.push(...await p3.evaluate(() => {
+      const out = [];
+      for (const m of document.querySelectorAll('.modal')) {
+        const was = m.hidden;
+        m.hidden = false;
+        for (const e of m.querySelectorAll('input, select')) {
+          if (!e.offsetParent || e.classList.contains('chip') || ['checkbox', 'radio', 'hidden', 'file', 'range'].includes(e.type)) continue;
+          const h = e.getBoundingClientRect().height;
+          if (h < 44) out.push({ id: `${m.id} ${e.id || e.name || e.className}`, h });
+        }
+        m.hidden = was;
+      }
+      return out;
+    }));
+    assert(small.length === 0, `B7: every visible input/select is >= 44px (under: ${JSON.stringify(small)})`);
+
+    // Screenshots: Budgets, Wealth, Tasks, Home in light and dark
+    for (const scheme of ['light', 'dark']) {
+      await p3.emulateMedia({ colorScheme: scheme });
+      for (const tab of ['home', 'budgets', 'networth', 'tasks']) {
+        await openTab(p3, tab);
+        await p3.waitForTimeout(600);
+        await shot(p3, `${tab}_${scheme}`);
+      }
+    }
+    assert(e3.length === 0, `B: no page errors (got ${JSON.stringify(e3)})`);
+    await p3.context().close();
 
     // Skeletons in the markup, never ฿0
     const html = await (await fetch(`${BASE}/liff/`)).text();

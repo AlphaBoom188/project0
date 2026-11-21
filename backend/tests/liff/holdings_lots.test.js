@@ -43,7 +43,8 @@ async function cleanup() {
   await openTab(page, 'networth');
   await page.waitForSelector('#holdings-list .holding-row', { timeout: 15000 });
   const rowText = await page.textContent('#holdings-list .holding-row');
-  assert(rowText.includes('$300.00') && rowText.includes('+$100.00 (+50.00%)') && rowText.includes('Today +$20.00'), `holding row: market value, total gain, day's gain (got "${rowText.replace(/\s+/g, ' ').trim()}")`);
+  const rowValue = await page.textContent('#holdings-list .holding-row .holding-value');
+  assert(rowValue.startsWith('฿') && rowText.includes('+50.0%') && rowText.includes('· USD') && !rowText.includes('$'), `holding row: THB value, gain %, USD in the meta (got "${rowText.replace(/\s+/g, ' ').trim()}")`);
   const totalLabel = await page.textContent('#portfolio-total-value');
   assert(totalLabel.startsWith('฿'), `portfolio totals labelled in THB (got "${totalLabel}")`);
 
@@ -53,7 +54,7 @@ async function cleanup() {
   await page.waitForSelector('#holding-lots-list .lot-row');
   assert((await stat('day-gain')) === '+$20.00 (+7.14%)', `Day's gain (got "${await stat('day-gain')}")`);
   assert((await stat('total-gain')) === '+$100.00 (+50.00%)', `Total gain (got "${await stat('total-gain')}")`);
-  assert((await stat('shares')) === '2' && (await stat('average-cost')) === '$100.00' && (await stat('market-value')) === '$300.00', 'Shares / Average cost / Market value');
+  assert((await stat('shares')) === '2' && (await stat('average-cost')) === '$100.00' && /^\$300\.00 \(฿[\d,.]+\)$/.test(await stat('market-value')), 'Shares / Average cost / Market value');
   assert((await stat('realized-gain')) === '+$0.00' && (await stat('win-rate')) === '—' && (await stat('lots')) === '1 open / 0 closed', 'Realized / Win rate / Lots before any sell');
 
   const addLot = async ({ side, quantity, price, fee }) => {

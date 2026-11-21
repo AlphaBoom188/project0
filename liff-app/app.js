@@ -796,6 +796,43 @@ function renderProfile(profile) {
   if (greeting) greeting.textContent = `Hi, ${name.trim().split(/\s+/)[0]}`;
 }
 
+// ---- Sheet close (v5): every .modal gets a 44px close button in its header.
+// It does what the sheet's own Cancel/Close does, so each sheet's cleanup runs.
+// Escape and a tap on the backdrop do the same. The confirm modal is a dialog,
+// not a sheet: it keeps its Cancel / Delete pair.
+const SHEET_DISMISS = /^(cancel-|close-)|-(cancel|close)$/;
+function dismissSheet(modal) {
+  const own = [...modal.querySelectorAll('button[id]')].find((b) => SHEET_DISMISS.test(b.id) && b.id !== 'gbill-cancel' && b.offsetParent !== null);
+  if (own) own.click();
+  else modal.hidden = true;
+}
+
+function addSheetCloseButtons() {
+  for (const modal of document.querySelectorAll('.modal')) {
+    if (modal.id === 'confirm-modal') continue;
+    const content = modal.querySelector('.modal-content');
+    if (!content || content.querySelector(':scope > .sheet-close')) continue;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'icon-button sheet-close';
+    btn.setAttribute('aria-label', 'Close');
+    btn.innerHTML = lucide('x', 20);
+    btn.addEventListener('click', () => dismissSheet(modal));
+    content.prepend(btn);
+    modal.addEventListener('click', (e) => { if (e.target === modal) dismissSheet(modal); });
+  }
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  const open = [...document.querySelectorAll('.modal:not([hidden])')];
+  const top = open.sort((a, b) => (Number(getComputedStyle(b).zIndex) || 0) - (Number(getComputedStyle(a).zIndex) || 0))[0];
+  if (!top) return;
+  if (top.id === 'confirm-modal') el.confirmCancel?.click();
+  else dismissSheet(top);
+});
+addSheetCloseButtons();
+
 // Generic yes/no confirmation, used for every destructive action across tabs.
 function confirmAction(message, confirmLabel = 'Delete') {
   return new Promise((resolve) => {
@@ -980,7 +1017,9 @@ function buildTransactionRow(t, showPaymentMethod) {
     ? `<span class="row-title transaction-description">${escapeHtml(t.description)}</span>`
     : `<span class="row-title">${escapeHtml(category)}</span>`;
   const metaBits = [`<span class="transaction-category">${escapeHtml(category)}</span>`];
-  if (showPaymentMethod && sourceLabel) metaBits.push(`<span class="transaction-date">${escapeHtml(sourceLabel)}</span>`);
+  // payment_method alone (no account) is only worth showing once the user tracks accounts.
+  const hasAccount = Boolean(t.from_account?.account_name || t.to_account?.account_name);
+  if (showPaymentMethod && sourceLabel && (hasAccount || userHasAccounts)) metaBits.push(`<span class="transaction-date">${escapeHtml(sourceLabel)}</span>`);
   li.innerHTML = `
     <span class="tile-wrap">${categoryTile(category)}${badge}</span>
     <span class="row-main transaction-details">${title}<span class="row-meta">${metaBits.join(' · ')}</span></span>
@@ -1040,6 +1079,8 @@ function renderStreak(transactions) {
 let homeCycleReport = Promise.resolve(null); // this cycle's report (offset 0)
 let homeTxns = []; // the 6-month window Home loaded, newest first
 let homeLoadSeq = 0;
+let userHasAccounts = false; // set wherever /accounts loads; gates the payment_method fallback in rows
+function noteAccounts(accounts) { userHasAccounts = (accounts || []).length > 0; return accounts; }
 
 // This cycle's report (offset 0): hero, Budgets to watch, first-week checklist.
 // null when it fails, so callers can show an error instead of fake figures.
@@ -1149,6 +1190,9 @@ async function renderHomeTax(seq) {
   const r = d.result;
   const title = document.getElementById('home-tax-title');
   const meta = document.getElementById('home-tax-meta');
+  const saveEl = document.getElementById('home-tax-save');
+  saveEl.hidden = true;
+  document.getElementById('home-tax-row').removeAttribute('aria-label');
   if (!d.incomes.length) {
     title.textContent = `Estimate your ${taxYear} tax`;
     meta.textContent = 'File PND 90/91 by 31 Mar';
@@ -1157,7 +1201,14 @@ async function renderHomeTax(seq) {
     const plan = d.plan && d.plan.applicable ? d.plan.items : [];
     const save = plan.length ? Math.max(...plan.map((it) => it.saves || 0)) : 0;
     const form = d.guide && d.guide.form === 'PND91' ? 'PND 91' : 'PND 90';
-    meta.textContent = `File ${form} by 31 Mar${plan.length && save > 0 ? ` · ${plan.length} tip${plan.length === 1 ? '' : 's'} can save up to ${formatBaht(save)}` : ''}`;
+    meta.textContent = `File ${form} by 31 Mar`;
+    const tips = plan.length && save > 0;
+    saveEl.hidden = !tips;
+    if (tips) {
+      // "Save up to" over the amount: at 390px "Save up to ฿x" on one line squeezes the title.
+      document.getElementById('home-tax-save-amount').textContent = formatBaht(save);
+      document.getElementById('home-tax-row').setAttribute('aria-label', `${title.textContent}. ${meta.textContent}. ${plan.length} tip${plan.length === 1 ? '' : 's'} can save up to ${formatBaht(save)}.`);
+    }
   }
   wrap.hidden = false;
 }
@@ -1181,6 +1232,7 @@ async function loadHomeTab() {
     cachedGet(`/users/${lineUserId}`),
     cachedGet(`/transactions/${lineUserId}?start_date=${encodeURIComponent(sixMonthsAgoISO)}&limit=1000`),
     cachedGet(`/bills/${lineUserId}`),
+    cachedGet(`/accounts/${lineUserId}`).then((r) => noteAccounts(r.accounts)).catch(() => null),
   ]);
 
   currentUser = userResponse.user;
@@ -1204,7 +1256,7 @@ async function loadHomeTab() {
   renderStreak(allTransactions);
   renderTrendChart(allTransactions);
   // allTransactions is newest-first (API default order): the last 3 entries.
-  renderTransactionList(el.transactionList, el.emptyState, allTransactions.slice(0, 3));
+  renderTransactionList(el.transactionList, el.emptyState, allTransactions.slice(0, 3), { showPaymentMethod: true });
   const seq = ++homeLoadSeq;
   renderHomeBudgets(seq, endISO).catch(() => {});
   renderFirstWeek(seq, allTransactions).catch(() => {});
@@ -2031,22 +2083,20 @@ function toastSavedEntry(t, budgetAlert, eventAlerts) {
 function renderBillsList(bills) {
   el.billsList.innerHTML = '';
   el.billsEmptyState.hidden = bills.length > 0;
+  el.billsList.hidden = bills.length === 0;
 
   for (const bill of bills) {
     const participants = bill.shared_bill_participants || [];
     const paidCount = participants.filter((p) => p.is_paid).length;
-    const statusText = bill.status === 'settled' ? 'Settled' : `${paidCount}/${participants.length} paid`;
-
+    const settled = bill.status === 'settled';
     const li = document.createElement('li');
-    li.className = 'category-row';
-    li.innerHTML = `
-      <div class="category-row-top">
-        <span class="category-name">${escapeHtml(bill.title)}</span>
-        <span class="bill-status-pill ${bill.status === 'settled' ? 'paid' : 'unpaid'}">${statusText}</span>
-      </div>
-      <div class="category-bar-label-row"><span>${parseFloat(bill.total_amount).toFixed(2)}</span></div>
-    `;
-    li.addEventListener('click', () => openBillDetail(bill.id));
+    li.className = 'row bill-row';
+    li.setAttribute('role', 'button');
+    li.tabIndex = 0;
+    li.innerHTML = `<span class="cat-tile" aria-hidden="true">${lucide('users', 18)}</span>
+      <span class="row-main"><span class="row-title">${escapeHtml(bill.title)}</span><span class="row-meta">${participants.length} people · ${paidCount} paid</span></span>
+      <span class="row-end"><span class="row-value">${formatBaht(parseFloat(bill.total_amount))}</span><span class="row-sub bill-status-pill ${settled ? 'paid' : 'unpaid'}">${settled ? 'Settled' : `${participants.length - paidCount} to pay`}</span></span>`;
+    onActivate(li, () => openBillDetail(bill.id));
     el.billsList.appendChild(li);
   }
 }
@@ -2474,20 +2524,14 @@ function renderPortfolio(data, surplus) {
 // emergency fund has nothing true to say about progress.
 function renderEmergencyFund(fund, surplus) {
   if (!fund || fund.goal_amount === null || !fund.account_id) {
-    el.emergencyFundCard.hidden = true;
+    el.emergencyFundSuggestion.textContent = '';
     return;
   }
-  el.emergencyFundCard.hidden = false;
-
-  const current = fund.current_amount || 0;
   const pct = fund.percent_funded || 0;
-  el.emergencyFundLabel.textContent = `${current.toFixed(2)} / ${fund.goal_amount.toFixed(2)} (${pct.toFixed(0)}%)`;
-  el.emergencyFundFill.style.width = `${Math.min(100, pct)}%`;
-
   if (pct >= 100) {
-    el.emergencyFundSuggestion.textContent = 'Goal reached — consider directing any surplus toward your portfolio instead.';
+    el.emergencyFundSuggestion.textContent = 'Target reached. Consider putting any surplus toward your portfolio instead.';
   } else if (surplus > 0) {
-    el.emergencyFundSuggestion.textContent = `Surplus this period: ${surplus.toFixed(2)}. Consider adding it to "${fund.account_name}" (${pct.toFixed(0)}% funded) or your portfolio.`;
+    el.emergencyFundSuggestion.textContent = `Surplus this period: ${formatBaht(surplus)}. Consider adding it to ${fund.account_name} (${pct.toFixed(0)}% funded) or your portfolio.`;
   } else {
     el.emergencyFundSuggestion.textContent = '';
   }
@@ -2516,14 +2560,16 @@ function renderHoldingsList(holdings, totalThb = 0) {
     li.tabIndex = 0;
     const closed = holding.quantity === 0;
     const share = totalThb > 0 && holding.market_value_thb != null ? `${((holding.market_value_thb / totalThb) * 100).toFixed(1)}% of portfolio` : closed ? 'Closed position' : `${formatShares(holding.quantity)} shares`;
+    const foreign = holding.currency && holding.currency !== 'THB' ? ` · ${holding.currency}` : '';
     const gain = holding.current_price === null && !closed
       ? '<span class="row-sub">No price yet</span>'
-      : `<span class="row-sub" style="color:${gainColor(holding.total_gain)}">${formatSignedMoney(holding.total_gain, holding.currency)} (${formatSignedPercent(holding.total_gain_percent)})</span>`;
-    const today = holding.day_gain !== null && !closed ? ` · <span style="color:${gainColor(holding.day_gain)}">Today ${formatSignedMoney(holding.day_gain, holding.currency)}</span>` : '';
+      : holding.total_gain_percent === null || holding.total_gain_percent === undefined ? ''
+        : `<span class="row-sub holding-gain" style="color:${gainColor(holding.total_gain)}">${formatSignedPercent(holding.total_gain_percent).replace(/(\.\d)\d%$/, '$1%')}</span>`;
+    const value = holding.market_value_thb === null || holding.market_value_thb === undefined ? '—' : formatBaht(holding.market_value_thb);
     li.innerHTML = `<span class="cat-tile symbol-tile" aria-hidden="true">${escapeHtml(String(holding.symbol).slice(0, 4))}</span>
       <span class="row-main"><span class="row-title category-name">${escapeHtml(holding.symbol)}${holding.name ? ` <span class="holding-name">${escapeHtml(holding.name)}</span>` : ''}</span>
-        <span class="row-meta">${escapeHtml(ASSET_TYPE_LABELS[holding.asset_type] || holding.asset_type)} · ${share}${today}</span></span>
-      <span class="row-end"><span class="row-value">${formatMoney(holding.market_value, holding.currency)}</span>${gain}</span>`;
+        <span class="row-meta">${escapeHtml(ASSET_TYPE_LABELS[holding.asset_type] || holding.asset_type)} · ${share}${foreign}</span></span>
+      <span class="row-end"><span class="row-value holding-value">${value}</span>${gain}</span>`;
     onActivate(li, () => openHoldingDetail(holding));
     el.holdingsList.appendChild(li);
   }
@@ -2565,7 +2611,7 @@ function renderHoldingDetail(holding, lots) {
   setGain(el.holdingStatRealizedGain, holding.realized_gain, null);
   el.holdingStatShares.textContent = formatShares(holding.quantity);
   el.holdingStatAverageCost.textContent = holding.quantity > 0 ? formatMoney(holding.average_cost, cur, 4) : '—';
-  el.holdingStatMarketValue.textContent = formatMoney(holding.market_value, cur);
+  el.holdingStatMarketValue.textContent = `${formatMoney(holding.market_value, cur)}${cur !== 'THB' && holding.market_value_thb != null ? ` (${formatBaht(holding.market_value_thb)})` : ''}`;
   el.holdingStatWinRate.textContent = holding.win_rate === null ? '—' : `${holding.win_rate.toFixed(2)}%`;
   el.holdingStatLots.textContent = `${holding.lots_open} open / ${holding.lots_closed} closed`;
   renderHoldingDividends(holding);
@@ -3232,6 +3278,8 @@ async function loadDividends() {
   const data = await cachedGet(`/portfolio/${lineUserId}/dividends?mode=${divMode}`);
   if (seq !== divLoadSeq) return;
   divData = data;
+  wealthState.divError = null;
+  renderGoalsIncome();
   // Nothing that could pay a dividend (no stock/ETF at all) -> no card.
   el.divCard.hidden = data.holdings.length === 0 && data.missing.length === 0;
   if (detailHolding && !el.holdingDetailModal.hidden) renderHoldingDividends(detailHolding);
@@ -3249,6 +3297,8 @@ async function loadDividends() {
 }
 
 function showDivError(error) {
+  wealthState.divError = error.message;
+  renderGoalsIncome();
   el.divCard.hidden = false;
   el.divChartWrap.hidden = true;
   el.divNote.textContent = `Dividends unavailable: ${error.message}`;
@@ -3357,6 +3407,7 @@ async function loadGoal() {
 }
 
 function showGoalError(error) {
+  console.error('[wealth] investment goal failed:', error.message);
   el.goalCard.hidden = false;
   el.goalNote.hidden = false;
   el.goalNote.textContent = `Goal unavailable: ${error.message}`;
@@ -3371,6 +3422,7 @@ function goalStatusText(p) {
 
 function renderGoal(data) {
   goalData = data;
+  renderGoalsIncome();
   el.goalCard.hidden = false;
   el.goalNote.hidden = true;
   el.goalEmpty.hidden = !!data.goal;
@@ -3550,6 +3602,7 @@ async function handleDeleteGoal() {
   try {
     await apiRequest(`/portfolio/${lineUserId}/goal`, { method: 'DELETE' });
     closeGoalModal();
+    document.getElementById('inv-goal-modal').hidden = true;
     renderGoal({ goal: null, projection: null });
   } catch (error) {
     showModalError(el.goalModalError, error.message);
@@ -4040,10 +4093,105 @@ async function handleStatementImport() {
 }
 
 // ---- Net Worth tab: accounts/savings, investments, emergency fund ----
+// ---- Goals and income (Wealth, spec 4.4.5): one list ----
+// Emergency fund, investment goal, savings goals (money.js), dividends. Each
+// row opens its existing editor or card in a sheet.
+const wealthState = { accounts: null, holdings: 0, divError: null };
+function goalRow(key, { icon, title, meta, value, sub = '', subColor = '', pct = null, setUp = false }) {
+  const bar = pct === null ? '' : `<span class="bar bar-thin"><span style="width:${Math.max(0, Math.min(100, pct))}%"></span></span>`;
+  return `<li><button type="button" class="row goal-row" data-goal-row="${key}">
+    <span class="cat-tile tile-brand" aria-hidden="true">${lucide(icon, 18)}</span>
+    <span class="row-main"><span class="row-title">${escapeHtml(title)}</span><span class="row-meta">${escapeHtml(meta)}</span>${bar}</span>
+    <span class="row-end"><span class="row-value${setUp ? ' text-brand' : ''}">${escapeHtml(value)}</span>${sub ? `<span class="row-sub"${subColor ? ` style="color:${subColor}"` : ''}>${escapeHtml(sub)}</span>` : ''}</span>
+  </button></li>`;
+}
+
+function emergencyFundState() {
+  const goal = currentUser && currentUser.emergency_fund_goal_amount ? Number(currentUser.emergency_fund_goal_amount) : null;
+  const account = currentUser && wealthState.accounts ? wealthState.accounts.find((a) => a.id === currentUser.emergency_fund_account_id) : null;
+  if (!goal || !account) return null;
+  const balance = parseFloat(account.balance) || 0;
+  return { goal, balance, account: account.account_name, pct: Math.round((balance / goal) * 100) };
+}
+
+function renderGoalsIncome() {
+  const list = document.getElementById('goals-income-list');
+  if (!list || !wealthState.accounts) return;
+  const rows = [];
+  const ef = emergencyFundState();
+  rows.push(ef
+    ? goalRow('ef', { icon: 'shield', title: 'Emergency fund', meta: `${formatBaht(ef.balance)} of ${formatBaht(ef.goal)} · ${ef.account}`, value: `${ef.pct}%`, pct: ef.pct })
+    : goalRow('ef', { icon: 'shield', title: 'Emergency fund', meta: 'Set a target and an account', value: 'Set up', setUp: true }));
+  const g = goalData && goalData.goal ? goalData.projection : null;
+  if (g) {
+    const status = g.status === 'behind' ? ['Behind', 'var(--warning-foreground)'] : g.status === 'ahead' ? ['Ahead', 'var(--income)'] : g.status === 'on_track' ? ['On track', 'var(--income)'] : ['—', ''];
+    const pct = g.progress_pct === null ? null : Math.round(g.progress_pct);
+    rows.push(goalRow('investment', { icon: 'trending-up', title: 'Investment goal', meta: `${formatBaht(g.target_value)} by ${new Date(`${g.end_date}T00:00:00Z`).getUTCFullYear()}`, value: status[0], sub: pct === null ? '' : `${pct}%`, pct, subColor: '' }).replace('<span class="row-value">', `<span class="row-value" style="color:${status[1]}">`));
+  } else {
+    rows.push(goalRow('investment', { icon: 'trending-up', title: 'Investment goal', meta: 'See if your portfolio is on track', value: 'Set up', setUp: true }));
+  }
+  const goals = typeof moState !== 'undefined' ? moState.goals || [] : [];
+  for (const sg of goals) {
+    const st = sg.status;
+    const perMonth = !st.achieved && !st.overdue && st.perMonth ? ` · ${formatBaht(Math.ceil(st.perMonth))} a month` : '';
+    rows.push(goalRow(`savings:${sg.id}`, { icon: 'target', title: sg.name, meta: `${formatBaht(st.saved)} of ${formatBaht(sg.target_amount)}${perMonth}`, value: st.achieved ? 'Reached' : `${st.pct}%`, pct: st.pct }).replace('<li>', `<li data-goal="${sg.id}">`));
+  }
+  if (wealthState.holdings > 0 && (wealthState.divError || (divData && !(divData.holdings.length === 0 && divData.missing.length === 0)))) {
+    if (wealthState.divError) {
+      rows.push(goalRow('dividends', { icon: 'banknote', title: 'Dividends', meta: "Couldn't load dividends", value: '—' }));
+    } else {
+      const sm = divData.summary;
+      rows.push(goalRow('dividends', { icon: 'banknote', title: 'Dividends', meta: `Last 12 months${sm.portfolio_yield_pct === null ? '' : ` · yield ${formatPct(sm.portfolio_yield_pct)}`}`, value: formatBaht(sm.trailing_12m_thb), sub: sm.yoy_pct === null ? '' : formatSignedPercent(sm.yoy_pct), subColor: sm.yoy_pct === null ? '' : gainColor(sm.yoy_pct) }));
+    }
+  }
+  list.innerHTML = rows.join('');
+}
+
+function openWealthSheet(id) {
+  document.getElementById(id).hidden = false;
+}
+
+function openGoalRow(key) {
+  if (key === 'ef') { renderEmergencyFundSheet(); openWealthSheet('ef-modal'); return; }
+  if (key === 'investment') {
+    if (!goalData || !goalData.goal) { openGoalModal(); return; }
+    openWealthSheet('inv-goal-modal');
+    renderGoalChart();
+    return;
+  }
+  if (key === 'dividends') { openWealthSheet('div-modal'); renderDivChart(); return; }
+  if (key.startsWith('savings:')) {
+    const goal = (moState.goals || []).find((x) => x.id === key.slice(8));
+    if (goal) openSavingsGoalModal(goal);
+  }
+}
+
+function openAddGoalChooser() {
+  const invSet = Boolean(goalData && goalData.goal);
+  const efSet = Boolean(emergencyFundState());
+  if (invSet && efSet) { openSavingsGoalModal(null); return; }
+  const sheet = document.getElementById('add-goal-modal');
+  sheet.querySelector('[data-add-goal="investment"]').hidden = invSet;
+  sheet.querySelector('[data-add-goal="ef"]').hidden = efSet;
+  sheet.hidden = false;
+}
+
+// The sheet's progress block (the old emergency fund card), from the user's
+// own settings and account balance.
+function renderEmergencyFundSheet() {
+  const ef = emergencyFundState();
+  el.emergencyFundCard.hidden = !ef;
+  if (!ef) return;
+  el.emergencyFundLabel.textContent = `${formatBaht(ef.balance)} of ${formatBaht(ef.goal)} (${ef.pct}%)`;
+  el.emergencyFundFill.style.width = `${Math.min(100, ef.pct)}%`;
+}
+
 async function loadNetWorthTab() {
   // Independent of the portfolio fetch below, so a portfolio failure (e.g. a
   // USD->THB 502) doesn't take the goal card down with it.
   loadGoal().catch(showGoalError);
+  // Goals and income needs only accounts + the user, so it renders even if the portfolio fails.
+  cachedGet(`/accounts/${lineUserId}`).then((r) => { wealthState.accounts = noteAccounts(r.accounts); renderGoalsIncome(); }).catch(() => {});
   portfolioPromise = cachedGet(`/portfolio/${lineUserId}`);
   portfolioPromise.catch(() => {}); // surfaced by the Promise.all below
   const [accountsResponse, portfolioResponse, { surplus }] = await Promise.all([
@@ -4052,12 +4200,16 @@ async function loadNetWorthTab() {
     computeCurrentPeriodSurplus(),
   ]);
 
+  noteAccounts(accountsResponse.accounts);
+  wealthState.accounts = accountsResponse.accounts;
+  wealthState.holdings = portfolioResponse.holdings.length;
   renderAccountsList(accountsResponse.accounts);
   renderPortfolio(portfolioResponse, surplus);
   renderNetWorthHero(accountsResponse.accounts, portfolioResponse);
   if (portfolioResponse.holdings.length === 0) {
     el.perfCard.hidden = true;
-    el.divCard.hidden = true;
+    divData = null;
+    wealthState.divError = null;
   } else {
     loadPerformance().catch(showPerfError);
     loadDividends().catch(showDivError);
@@ -4069,6 +4221,7 @@ async function loadNetWorthTab() {
     '<option value="">None</option>' +
     accountsResponse.accounts.map((a) => `<option value="${a.id}">${escapeHtml(a.account_name)}</option>`).join('');
   el.settingEfAccount.value = currentUser.emergency_fund_account_id || '';
+  renderGoalsIncome();
 }
 
 async function populateAccountSelects() {
@@ -4428,7 +4581,10 @@ async function loadTransactionsTab() {
     if (investments) { errorBox.hidden = true; return await loadInvestmentLots(seq, buildTransactionFilterQuery()); }
     const params = buildTransactionFilterQuery();
     params.set('limit', '200');
-    const response = await cachedGet(`/transactions/${lineUserId}?${params.toString()}`);
+    const [response] = await Promise.all([
+      cachedGet(`/transactions/${lineUserId}?${params.toString()}`),
+      cachedGet(`/accounts/${lineUserId}`).then((r) => noteAccounts(r.accounts)).catch(() => null),
+    ]);
     if (seq !== txnLoadSeq) return;
     errorBox.hidden = true;
     const txns = response.transactions;
@@ -4595,9 +4751,11 @@ async function handleSaveEmergencyFund() {
       }),
     });
     currentUser = response.user;
-    showNetWorthStatus('Saved.');
+    document.getElementById('ef-modal').hidden = true;
+    renderGoalsIncome();
+    showToast({ title: 'Emergency fund saved' });
   } catch (error) {
-    showNetWorthStatus(error.message);
+    showToast({ title: "Couldn't save", description: plainError(error), kind: 'bad' });
   } finally {
     el.saveEmergencyFund.disabled = false;
   }
@@ -5032,6 +5190,19 @@ el.addExpenseForm.addEventListener('submit', handleAddExpenseSubmit);
 el.fieldReceiptImage.addEventListener('change', handleReceiptFileChange);
 
 el.addBillButton.addEventListener('click', openBillModal);
+document.getElementById('new-bill-button').addEventListener('click', openBillModal);
+document.getElementById('goals-income-list').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-goal-row]');
+  if (b) openGoalRow(b.dataset.goalRow);
+});
+document.getElementById('add-goal-modal').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-add-goal]');
+  if (!b) return;
+  document.getElementById('add-goal-modal').hidden = true;
+  if (b.dataset.addGoal === 'savings') openSavingsGoalModal(null);
+  else if (b.dataset.addGoal === 'investment') openGoalModal();
+  else openGoalRow('ef');
+});
 document.getElementById('recurring-active-switch').addEventListener('change', (e) => {
   if (recurringSheetRule) handleToggleRecurringActive(recurringSheetRule.id, e.target.checked);
 });

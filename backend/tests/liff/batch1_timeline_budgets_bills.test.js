@@ -128,7 +128,7 @@ async function cleanup() {
 
   // Bill detail progress
   await page.click('.nav-tab[data-tab="home"]');
-  await page.click('#bills-list .category-row');
+  await page.click('#bills-list .bill-row');
   await page.waitForFunction(() => document.querySelector('#bill-progress-count').textContent.length > 0);
   const count = await page.textContent('#bill-progress-count');
   const outstanding = await page.textContent('#bill-progress-outstanding');

@@ -37,8 +37,15 @@ async function openApp(browser, { blockChart = false, failPortfolio = false } = 
   await page.goto(`${BASE}/liff/`);
   await page.waitForSelector('#app:not([hidden])', { timeout: 15000 });
   await openTab(page, 'networth');
-  await page.waitForSelector('#goal-card:not([hidden])', { timeout: 20000 });
+  await page.waitForSelector('#goals-income-list [data-goal-row="investment"]', { timeout: 20000 });
   return { page, errors };
+}
+// The investment goal row: "Set up" opens the editor; with a goal it opens the card's sheet.
+const invRow = '#goals-income-list [data-goal-row="investment"]';
+async function openGoalSheet(page) {
+  await page.waitForFunction((sel) => !document.querySelector(sel).textContent.includes('Set up'), invRow, { timeout: 15000 });
+  await page.click(invRow);
+  await page.waitForSelector('#goal-body', { state: 'visible', timeout: 15000 });
 }
 
 // Chart.js loads on first use (app.js loadChartJs), so wait for the chart.
@@ -74,12 +81,12 @@ async function saveGoal(page) {
   const { page, errors } = await openApp(browser);
 
   // --- Empty state ---
-  await page.waitForSelector('#goal-empty:not([hidden])', { timeout: 15000 });
-  assert((await page.textContent('#goal-empty')).includes('Set a target and see if your portfolio is on track') && (await page.isHidden('#goal-body')), 'no goal -> the empty line and Set up goal');
-  assert((await height(page, '#goal-setup-button')) >= 44, 'Set up goal button >= 44px tall');
+  await page.waitForFunction((sel) => document.querySelector(sel).textContent.includes('Set up'), invRow, { timeout: 15000 });
+  assert((await page.textContent(invRow)).includes('See if your portfolio is on track'), 'no goal -> the row says "See if your portfolio is on track" / Set up');
+  assert((await height(page, invRow)) >= 56, 'the row is >= 56px tall');
 
   // --- Set up through the sheet ---
-  await page.click('#goal-setup-button');
+  await page.click(invRow);
   await page.waitForSelector('#goal-modal:not([hidden])');
   assert((await page.inputValue('#goal-field-start-date')) === today && (await page.inputValue('#goal-field-start-value')) === '42000', 'defaults: start date = today (Bangkok), start value = portfolio value in whole baht');
   assert(await page.isHidden('#goal-delete'), 'no Delete goal when setting up');
@@ -90,8 +97,10 @@ async function saveGoal(page) {
   await fillGoal(page, { years: 10, return: 8, contribution: 1000, growth: 5 });
   const created = await saveGoal(page);
   assert(created.status() === 200, `Save -> PUT 200 (got ${created.status()})`);
-  await page.waitForSelector('#goal-body:not([hidden])');
   assert(await page.isHidden('#goal-modal'), 'the sheet closes after saving');
+  await page.waitForFunction((sel) => document.querySelector(sel).textContent.includes('On track'), invRow, { timeout: 15000 }).catch(() => {});
+  assert((await page.innerText(invRow)).includes('On track') && (await page.innerText(invRow)).includes(' by '), `row: target by year, On track (got ${(await page.innerText(invRow)).replace(/\s+/g, ' ')})`);
+  await openGoalSheet(page);
 
   // --- Card ---
   let expected = (await api(`/portfolio/${U}/goal`)).body.projection;
@@ -172,8 +181,8 @@ async function saveGoal(page) {
   await page.waitForSelector('#confirm-modal:not([hidden])');
   assert((await page.textContent('#confirm-message')).includes('Delete this goal'), 'Delete goal asks through the confirm modal');
   await Promise.all([page.waitForResponse((r) => r.url().endsWith('/goal') && r.request().method() === 'DELETE', { timeout: 20000 }), page.click('#confirm-ok')]);
-  await page.waitForSelector('#goal-empty:not([hidden])');
-  assert((await page.isHidden('#goal-body')) && (await page.isHidden('#goal-modal')), 'after delete -> the empty state again');
+  await page.waitForFunction((sel) => document.querySelector(sel).textContent.includes('Set up'), invRow, { timeout: 15000 }).catch(() => {});
+  assert((await page.isHidden('#inv-goal-modal')) && (await page.isHidden('#goal-modal')) && (await page.textContent(invRow)).includes('Set up'), 'after delete -> sheets close, the row is back to Set up');
   assert((await db.from('investment_goals').select('*').eq('line_user_id', U)).data.length === 0, 'goal row deleted');
 
   assert(errors.length === 0, `no page JS errors (got ${JSON.stringify(errors)})`);
@@ -182,7 +191,7 @@ async function saveGoal(page) {
   // --- Chart.js blocked: everything but the chart ---
   await api(`/portfolio/${U}/goal`, { method: 'PUT', body: JSON.stringify({ start_date: today, start_value: 42000, years: 5, expected_annual_return: 6, target_value: 84000 }) });
   const blocked = await openApp(browser, { blockChart: true });
-  await blocked.page.waitForSelector('#goal-body:not([hidden])', { timeout: 15000 });
+  await openGoalSheet(blocked.page);
   assert((await blocked.page.textContent('#goal-note')).includes('Chart unavailable') && (await blocked.page.isHidden('#goal-chart-wrap')), 'CDN blocked -> "Chart unavailable", no canvas');
   assert((await blocked.page.textContent('#goal-target')) === '฿84,000.00' && (await blocked.page.textContent('#goal-progress-pct')) === '50.0%' && (await blocked.page.textContent('#goal-status')) === 'On track',
     'target, progress and status still render without Chart.js');
@@ -194,7 +203,7 @@ async function saveGoal(page) {
 
   // --- Explicit target: drawn as a flat line ---
   const withTarget = await openApp(browser);
-  await withTarget.page.waitForSelector('#goal-body:not([hidden])', { timeout: 15000 });
+  await openGoalSheet(withTarget.page);
   const tChart = await chartState(withTarget.page);
   const target = tChart.datasets.find((d) => d.label === 'Target');
   assert(target && target.data.length === tChart.labels.length && target.data.every((v) => v === 84000) && target.dash && target.color === (await token(withTarget.page, '--foreground')),
@@ -204,8 +213,8 @@ async function saveGoal(page) {
 
   // --- Portfolio fetch fails: the goal card still loads ---
   const failed = await openApp(browser, { failPortfolio: true });
-  await failed.page.waitForSelector('#goal-body:not([hidden])', { timeout: 15000 }).catch(() => {});
-  assert(!(await failed.page.isHidden('#goal-body')) && (await failed.page.textContent('#goal-target')) === '฿84,000.00',
+  await openGoalSheet(failed.page);
+  assert((await failed.page.textContent('#goal-target')) === '฿84,000.00',
     'GET /portfolio/:u 502 -> the goal card still renders its target');
   assert(failed.errors.length === 0, `no page JS errors when the portfolio fetch fails (got ${JSON.stringify(failed.errors)})`);
   await failed.page.context().close();

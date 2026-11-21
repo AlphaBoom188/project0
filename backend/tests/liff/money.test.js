@@ -52,8 +52,10 @@ fs.writeFileSync(CSV, 'Date;Category;Amount;Note\n25/10/2026;Food;-120;Coffee\n2
 
     // --- Savings goals ---
     await openTab(page, 'networth');
-    await page.waitForSelector('#goals-empty:not([hidden])', { timeout: 10000 });
+    await page.waitForSelector('#goals-income-list [data-goal-row="ef"]', { timeout: 10000 });
     await page.click('#add-goal-button');
+    await page.waitForSelector('#add-goal-modal:not([hidden])');
+    await page.click('[data-add-goal="savings"]');
     await page.waitForSelector('#sgoal-modal:not([hidden])');
     await page.fill('#sgoal-name', 'Japan trip');
     await page.fill('#sgoal-target', '50,000');
@@ -61,16 +63,16 @@ fs.writeFileSync(CSV, 'Date;Category;Amount;Note\n25/10/2026;Food;-120;Coffee\n2
     await page.fill('#sgoal-saved', '10000');
     await page.selectOption('#sgoal-remind', '25');
     await Promise.all([page.waitForResponse((r) => r.url().includes('/goals/') && r.request().method() === 'POST'), page.click('#sgoal-save')]);
-    await page.waitForSelector('#goals-list [data-goal]', { timeout: 10000 });
-    const card = await page.innerText('#goals-list [data-goal]');
-    assert(card.includes('Japan trip') && card.includes('฿10,000') && card.includes('of ฿50,000') && card.includes('20%') && card.includes('Put aside') && card.includes('Monthly reminder'), `goal card (got ${card.replace(/\s+/g, ' ')})`);
-    await page.click('[data-goal-open]');
+    await page.waitForSelector('#goals-income-list [data-goal]', { timeout: 10000 });
+    const card = await page.innerText('#goals-income-list [data-goal]');
+    assert(card.includes('Japan trip') && card.includes('฿10,000 of ฿50,000') && card.includes('a month') && card.includes('20%'), `goal row (got ${card.replace(/\s+/g, ' ')})`);
+    await page.click('#goals-income-list [data-goal] .goal-row');
     await page.waitForSelector('#sgoal-add-row:not([hidden])');
     assert((await page.inputValue('#sgoal-remind')) === 'keep', 'edit keeps the reminder by default');
     await page.fill('#sgoal-add-amount', '5000');
     await Promise.all([page.waitForResponse((r) => r.url().endsWith('/add')), page.click('#sgoal-add')]);
-    await page.waitForFunction(() => document.getElementById('goals-list').textContent.includes('฿15,000'), null, { timeout: 10000 });
-    assert((await page.innerText('#goals-list')).includes('30%'), 'add money updates progress');
+    await page.waitForFunction(() => document.getElementById('goals-income-list').textContent.includes('฿15,000'), null, { timeout: 10000 });
+    assert((await page.innerText('#goals-income-list')).includes('30%'), 'add money updates progress');
     await page.screenshot({ path: `${OUTPUT}/savings_goals.png` });
 
     // --- Subscriptions ---

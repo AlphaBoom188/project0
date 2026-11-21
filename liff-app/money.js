@@ -20,8 +20,6 @@ const mo = {
   csvCancel: document.getElementById('csv-cancel'),
   csvImport: document.getElementById('csv-import'),
   csvClose: document.getElementById('csv-close'),
-  goalsList: document.getElementById('goals-list'),
-  goalsEmpty: document.getElementById('goals-empty'),
   addGoal: document.getElementById('add-goal-button'),
   goalModal: document.getElementById('sgoal-modal'),
   goalTitle: document.getElementById('sgoal-title'),
@@ -131,25 +129,9 @@ async function loadGoals() {
   }
 }
 
+// The rows live in Wealth's Goals and income list (app.js renderGoalsIncome).
 function renderGoals() {
-  const goals = moState.goals;
-  mo.goalsEmpty.hidden = goals.length > 0;
-  mo.goalsList.hidden = goals.length === 0;
-  mo.goalsList.innerHTML = goals.map((g) => {
-    const st = g.status;
-    const plan = st.achieved ? 'Reached. Well done.'
-      : st.overdue ? `The date passed with ${thb(st.remaining)} to go.`
-        : st.perMonth ? `Put aside ${thb(Math.ceil(st.perMonth))} a month to reach it by ${escapeHtml(g.target_date)}.`
-          : `${thb(st.remaining)} to go.`;
-    return `<li class="tax-sg goal-card${st.achieved ? ' is-achieved' : ''}" data-goal="${g.id}">
-      <button type="button" class="goal-main" data-goal-open="${g.id}">
-        <div class="tax-sg-top"><span class="tax-sg-title">${escapeHtml(g.name)}</span><span class="tax-sg-amount">${thb(st.saved)} <span class="transaction-date">of ${thb(g.target_amount)}</span></span></div>
-        <span class="tax-bar goal-bar" aria-hidden="true"><span style="width:${st.pct}%"></span></span>
-        <p class="tax-sg-reason">${plan}</p>
-        <div class="tax-sg-tags"><span class="tax-sg-tag">${st.pct}%</span><span class="tax-sg-tag">${g.account_name ? `Follows ${escapeHtml(g.account_name)}` : 'Added by hand'}</span>${g.reminder_id ? '<span class="tax-sg-tag">Monthly reminder</span>' : ''}</div>
-      </button>
-    </li>`;
-  }).join('');
+  renderGoalsIncome();
 }
 
 async function openSavingsGoalModal(goal = null) {
@@ -269,8 +251,7 @@ mo.csvMapping.addEventListener('change', (e) => {
 mo.csvImport.addEventListener('click', importCsv);
 mo.csvCancel.addEventListener('click', () => { mo.csvModal.hidden = true; });
 mo.csvClose.addEventListener('click', () => { mo.csvModal.hidden = true; });
-mo.addGoal.addEventListener('click', () => openSavingsGoalModal(null));
-mo.goalsList.addEventListener('click', (e) => { const b = e.target.closest('[data-goal-open]'); if (b) openSavingsGoalModal(moState.goals.find((g) => g.id === b.dataset.goalOpen)); });
+mo.addGoal.addEventListener('click', openAddGoalChooser);
 mo.goalAccount.addEventListener('change', syncGoalAccount);
 mo.goalForm.addEventListener('submit', saveGoal);
 mo.goalCancel.addEventListener('click', () => { mo.goalModal.hidden = true; });
