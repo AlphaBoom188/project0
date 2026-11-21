@@ -134,7 +134,7 @@ const tomorrow = bkkYmd(new Date(Date.now() + 86400000));
     assert(await page.isVisible('#tasks-notes >> text=Bring the passport'), 'pinned note shows');
 
     // --- Everything you've set ---
-    await page.click('#tasks-summary');
+    await page.click('#tasks-summary-next');
     await page.waitForSelector('#tasks-list-modal:not([hidden])');
     const counts = await page.$$eval('#tasks-list-tabs [data-count]', (s) => s.map((x) => `${x.dataset.count}:${x.textContent}`));
     assert(counts.join() === 'next:3,repeat:2,todo:0', `list counts (got ${counts})`);

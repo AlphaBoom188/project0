@@ -301,85 +301,6 @@ body {
   font-weight: 600;
 }
 
-.recurring-list {
-  list-style: none;
-  margin: 0 0 var(--space-4);
-  padding: 0;
-}
-
-.recurring-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.recurring-row:last-child {
-  border-bottom: none;
-}
-
-.recurring-row.inactive {
-  opacity: 0.5;
-}
-
-.recurring-row {
-  flex-wrap: wrap;
-}
-
-/* Pay window status: its own full-width line under the rule */
-.recurring-pay-row {
-  flex: 0 0 100%;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-size: 14px;
-  color: var(--muted-foreground);
-}
-
-.recurring-pay-row .recurring-paid-toggle {
-  margin-left: auto;
-}
-
-.recurring-details {
-  flex: 1;
-  min-width: 0;
-}
-
-.recurring-description {
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.recurring-meta {
-  font-size: 12px;
-  color: var(--muted-foreground);
-}
-
-.recurring-amount {
-  font-size: 14px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.recurring-amount.income {
-  color: var(--income);
-}
-
-.recurring-amount.expense {
-  color: var(--destructive);
-}
-
-.recurring-delete {
-  min-height: var(--tap-min);
-  min-width: var(--tap-min);
-  background: none;
-  border: none;
-  font-size: 18px;
-  padding: var(--space-1);
-  color: var(--destructive);
-}
-
 .recurring-add-button {
   width: 100%;
   margin: 0;
@@ -2008,7 +1929,6 @@ body {
    Every list row is at least --row-h (56px) tall with 8px vertical padding,
    so lists line up across tabs; two-line rows fit inside the same height. */
 .transaction-row,
-.recurring-row,
 .holding-row,
 .lot-row,
 .group-row {
@@ -3604,8 +3524,7 @@ body {
 .perf-card,
 .streak-card,
 .tasks-summary,
-.week-day,
-.recurring-list {
+.week-day {
   box-shadow: var(--shadow-card);
 }
 
@@ -4541,7 +4460,6 @@ select.chip-select:not([value=""]):has(option:checked:not([value=""])) {
 .subs-foot .row-title { font-size: 14px; }
 
 /* Recurring rules */
-.recurring-list { box-shadow: var(--shadow-card); }
 .recurring-amount.transaction-amount { font-size: 15px; font-weight: 600; }
 
 /* Wealth */
@@ -4887,3 +4805,58 @@ input[type="radio"] { accent-color: var(--primary); }
 .toggle-sub { font-size: 12px; color: var(--muted-foreground); font-weight: 400; }
 .settings-jump.chip-row { padding: 0 var(--space-page); margin: 0 0 var(--space-4); }
 .settings-jump.chip-row a { flex: 0 0 auto; display: inline-flex; align-items: center; min-height: 36px; padding: 0 var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-full); background: var(--card); color: var(--foreground); font-size: 14px; font-weight: 500; text-decoration: none; }
+
+/* ---- v5 review fixes ---- */
+
+/* Recurring rules (A1): standard rows in a card; actions live in a sheet. */
+.recurring-row { gap: var(--space-2); padding-right: var(--space-1); }
+.recurring-row > .cat-tile { margin-right: var(--space-2); }
+.recurring-row.inactive { opacity: 0.5; }
+.recurring-row .transaction-amount.expense { color: var(--foreground); }
+.recurring-row .transaction-amount.income { color: var(--income); }
+.text-action {
+  min-height: var(--tap-min);
+  margin: -12px 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--brand-text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+}
+.recurring-more { color: var(--muted-foreground); }
+.sheet-card { margin: 0 0 var(--space-4); }
+.sheet-card > .row + .row { border-top: 1px solid var(--border); }
+.sheet-card .switch-row { margin: 0; padding: var(--space-2) var(--space-4); }
+.row-destructive .row-title { color: var(--destructive); }
+.tile-destructive { --tile-bg: var(--destructive-subtle); --tile-fg: var(--destructive); }
+
+/* Hero skeletons (A2): never a literal ฿0 before the data arrives. */
+.skeleton {
+  display: inline-block;
+  vertical-align: middle;
+  border-radius: var(--radius-md);
+  background: linear-gradient(90deg, var(--muted) 0%, var(--card) 50%, var(--muted) 100%) 0 0 / 200% 100%;
+  animation: ai-shimmer 1.4s ease-in-out infinite;
+}
+.skeleton-amount { width: 160px; height: 32px; }
+.skeleton-line { width: 200px; height: 14px; }
+.skeleton-stat { width: 72px; height: 14px; }
+.hero-amount.is-unknown { color: var(--muted-foreground); }
+.hero-sub .text-action { font-size: 14px; }
+
+/* Tasks summary (A3): a plain row of chips, no outer card. */
+.tasks-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0 var(--space-page) var(--space-6);
+}
+.tasks-filter-chip {
+  height: 36px;
+  min-height: 36px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.tasks-filter-chip svg { flex: 0 0 auto; color: var(--muted-foreground); }

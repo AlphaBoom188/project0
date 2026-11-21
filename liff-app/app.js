@@ -707,6 +707,14 @@ const LUCIDE_PATHS = {
   'arrow-left-right': '<path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/>',
   house: '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
   users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  ellipsis: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+  trash: '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  shield: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>',
+  'trending-up': '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
+  target: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+  banknote: '<rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/>',
+  'rotate-ccw': '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
   tag: '<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/>',
 };
 const lucide = (name, size = 18) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${LUCIDE_PATHS[name] || LUCIDE_PATHS.tag}</svg>`;
@@ -1033,13 +1041,44 @@ let homeCycleReport = Promise.resolve(null); // this cycle's report (offset 0)
 let homeTxns = []; // the 6-month window Home loaded, newest first
 let homeLoadSeq = 0;
 
+// This cycle's report (offset 0): hero, Budgets to watch, first-week checklist.
+// null when it fails, so callers can show an error instead of fake figures.
+const CYCLE_REPORT_PATH = () => `/reports/${lineUserId}/monthly?offset=0`;
+function fetchCycleReport() {
+  return cachedGet(CYCLE_REPORT_PATH()).then((r) => r.report || null).catch((error) => {
+    console.error('[report] this cycle\'s report failed:', error.message);
+    return null;
+  });
+}
+
+const HERO_SKELETON_AMOUNT = '<span class="skeleton skeleton-amount" aria-label="Loading"></span>';
+const HERO_SKELETON_LINE = '<span class="skeleton skeleton-line"></span>';
+// "Couldn't load …" + a Try again that drops the cached report and re-renders.
+function heroError(sub, message, retry) {
+  sub.innerHTML = `<span>${escapeHtml(message)}</span> <button type="button" class="text-action hero-retry">Try again</button>`;
+  sub.querySelector('.hero-retry').addEventListener('click', () => {
+    getCache.delete(CYCLE_REPORT_PATH());
+    sub.innerHTML = HERO_SKELETON_LINE;
+    retry();
+  }, { once: true });
+}
+
 // Hero sub line + bar, and Budgets to watch, from this cycle's report.
 async function renderHomeBudgets(seq, endISO) {
   const report = await homeCycleReport;
   if (seq !== homeLoadSeq) return;
   const sub = document.getElementById('home-hero-sub');
   const bar = document.getElementById('home-hero-bar');
-  const rows = (report && report.categories) || [];
+  if (!report) {
+    bar.hidden = true;
+    document.getElementById('home-watch').hidden = true;
+    heroError(sub, "Couldn't load your budget.", () => {
+      homeCycleReport = fetchCycleReport();
+      renderHomeBudgets(homeLoadSeq, endISO).catch(() => {});
+    });
+    return;
+  }
+  const rows = report.categories || [];
   const budget = rows.reduce((sum, r) => sum + (r.budget || 0), 0);
   const daysLeft = Math.max(0, Math.ceil((new Date(endISO) - Date.now()) / 86400000));
   if (!budget) {
@@ -1137,7 +1176,7 @@ async function loadHomeTab() {
   const sixMonthsAgoISO = bangkokMidnight(nowYear, nowMonth - 5, 1).toISOString();
   // This cycle's per-category budgets and spend (hero, Budgets to watch,
   // insights). Shared with insights.js; never blocks Home.
-  homeCycleReport = cachedGet(`/reports/${lineUserId}/monthly?offset=0`).then((r) => r.report).catch(() => null);
+  homeCycleReport = fetchCycleReport();
   const [userResponse, transactionsResponse, billsResponse] = await Promise.all([
     cachedGet(`/users/${lineUserId}`),
     cachedGet(`/transactions/${lineUserId}?start_date=${encodeURIComponent(sixMonthsAgoISO)}&limit=1000`),
@@ -2835,12 +2874,25 @@ async function loadBudgetsTab() {
 
 // Hero "Left to spend" (spec 4.3): this cycle's budgets minus spent.
 async function renderBudgetHero(endISO) {
-  const { report } = await cachedGet(`/reports/${lineUserId}/monthly?offset=0`);
-  const budget = report.categories.reduce((sum, r) => sum + (r.budget || 0), 0);
   const label = document.getElementById('budget-hero-label');
   const amount = document.getElementById('budget-hero-amount');
   const sub = document.getElementById('budget-hero-sub');
   const bar = document.getElementById('budget-hero-bar');
+  const report = await fetchCycleReport();
+  if (!report) {
+    label.textContent = 'Left to spend';
+    amount.textContent = '—';
+    amount.classList.remove('amount-over');
+    amount.classList.add('is-unknown');
+    bar.hidden = true;
+    heroError(sub, "Couldn't load this cycle's totals.", () => {
+      amount.innerHTML = HERO_SKELETON_AMOUNT;
+      renderBudgetHero(endISO).catch(() => {});
+    });
+    return;
+  }
+  amount.classList.remove('is-unknown');
+  const budget = report.categories.reduce((sum, r) => sum + (r.budget || 0), 0);
   const daysLeft = Math.max(1, Math.ceil((new Date(endISO) - Date.now()) / 86400000));
   if (!budget) {
     label.textContent = 'Spent this cycle';
@@ -4676,30 +4728,81 @@ async function loadRecurringList() {
   renderRecurringList(response.recurring || []);
 }
 
+// v5 rows (spec 4.3): tile, title + "Expense · Monthly · next 1 Dec · pay 1–5 Dec",
+// amount with the pay status under it, and a ⋯ button that opens the action
+// sheet (Active switch, Mark as not paid, Delete). Paused rules are dimmed.
+let recurringRules = [];
+let recurringSheetRule = null;
+function payWindowLabel(status) {
+  const d = (ymdStr) => new Date(`${ymdStr}T00:00:00Z`);
+  const mon = (x) => x.toLocaleDateString(undefined, { month: 'short', timeZone: 'UTC' });
+  const a = d(status.start);
+  const b = d(status.end);
+  return mon(a) === mon(b) ? `${mon(a)} ${a.getUTCDate()}–${b.getUTCDate()}` : `${mon(a)} ${a.getUTCDate()} – ${mon(b)} ${b.getUTCDate()}`;
+}
+
+function recurringName(rule) {
+  return rule.description || rule.categories?.name || 'Recurring';
+}
+
 function renderRecurringList(rules) {
+  recurringRules = rules;
   el.recurringList.innerHTML = '';
+  el.recurringList.hidden = rules.length === 0;
   el.recurringEmptyState.hidden = rules.length > 0;
 
   for (const rule of rules) {
     const li = document.createElement('li');
-    li.className = `recurring-row${rule.is_active ? '' : ' inactive'}`;
+    li.className = `row recurring-row${rule.is_active ? '' : ' inactive'}`;
+    li.dataset.recurring = rule.id;
+    const status = rule.pay_status;
+    const meta = [
+      rule.type === 'income' ? 'Income' : 'Expense',
+      FREQUENCY_LABELS[rule.frequency] || rule.frequency,
+      `next ${formatDate(rule.next_run_date)}`,
+      status ? `pay ${payWindowLabel(status)}` : '',
+      status && status.overdue && !status.paid ? 'overdue' : '',
+      rule.is_active ? '' : 'Paused',
+    ].filter(Boolean).join(' · ');
+    const pay = !status ? ''
+      : status.paid ? '<span class="row-sub recurring-paid-label">Paid</span>'
+        : '<button type="button" class="recurring-paid-toggle text-action">Mark paid</button>';
+    const name = recurringName(rule);
     li.innerHTML = `
-      <input type="checkbox" role="switch" class="recurring-active-toggle" aria-label="Active" ${rule.is_active ? 'checked' : ''} />
-      <div class="recurring-details">
-        <div class="recurring-description">${escapeHtml(rule.description || rule.categories?.name || 'Recurring')}</div>
-        <div class="recurring-meta">${FREQUENCY_LABELS[rule.frequency] || rule.frequency} · next ${formatDate(rule.next_run_date)}</div>
-      </div>
-      <div class="recurring-amount transaction-amount ${rule.type}">${entryAmount(rule)}</div>
-      <button type="button" class="recurring-delete">Delete</button>
-      ${payStatusHtml(rule.pay_status)}
+      ${categoryTile(rule.type === 'income' ? 'Income' : rule.categories?.name)}
+      <span class="row-main"><span class="row-title recurring-description">${escapeHtml(name)}</span><span class="row-meta recurring-meta">${escapeHtml(meta)}</span></span>
+      <span class="row-end"><span class="row-value recurring-amount transaction-amount ${rule.type}">${entryAmount(rule)}</span>${pay}</span>
+      <button type="button" class="icon-button recurring-more" aria-label="Actions for ${escapeHtml(name)}">${lucide('ellipsis', 20)}</button>
     `;
-    li.querySelector('.recurring-active-toggle').addEventListener('change', (e) =>
-      handleToggleRecurringActive(rule.id, e.target.checked)
-    );
-    li.querySelector('.recurring-delete').addEventListener('click', () => handleDeleteRecurring(rule.id));
-    li.querySelector('.recurring-paid-toggle')?.addEventListener('click', () => handleSetRecurringPaid(rule.id, !rule.pay_status.paid));
+    li.querySelector('.recurring-more').addEventListener('click', () => openRecurringActions(rule.id));
+    li.querySelector('.recurring-paid-toggle')?.addEventListener('click', () => handleSetRecurringPaid(rule.id, true));
     el.recurringList.appendChild(li);
   }
+  if (recurringSheetRule) {
+    const fresh = rules.find((r) => r.id === recurringSheetRule.id);
+    if (fresh) fillRecurringActions(fresh); else closeRecurringActions();
+  }
+}
+
+function fillRecurringActions(rule) {
+  recurringSheetRule = rule;
+  document.getElementById('recurring-actions-title').textContent = recurringName(rule);
+  const sw = document.getElementById('recurring-active-switch');
+  sw.checked = Boolean(rule.is_active);
+  document.getElementById('recurring-active-meta').textContent = rule.is_active ? 'On. Logged on each due date.' : 'Paused. Nothing is logged.';
+  document.getElementById('recurring-unpaid-button').hidden = !(rule.pay_status && rule.pay_status.paid);
+}
+
+function openRecurringActions(id) {
+  const rule = recurringRules.find((r) => r.id === id);
+  if (!rule) return;
+  fillRecurringActions(rule);
+  document.getElementById('recurring-actions-modal').hidden = false;
+}
+
+function closeRecurringActions() {
+  recurringSheetRule = null;
+  document.getElementById('recurring-actions-modal').hidden = true;
 }
 
 async function populateRecurringCategoryOptions() {
@@ -4760,27 +4863,19 @@ async function handleRecurringSubmit(event) {
   }
 }
 
-// Monthly rules with a pay window get "Due Oct 1 - Oct 5" plus Unpaid / Paid /
-// Overdue for the current period (computed server-side, services/payWindow.js).
-function payStatusHtml(status) {
-  if (!status) return '';
-  const fmt = (ymdStr) => new Date(`${ymdStr}T00:00:00Z`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
-  const label = status.paid ? 'Paid' : status.overdue ? 'Overdue' : 'Unpaid';
-  return `
-    <div class="recurring-pay-row">
-      <span>Due ${fmt(status.start)} – ${fmt(status.end)}</span>
-      <span class="bill-status-pill ${status.paid ? 'paid' : 'unpaid'}">${label}</span>
-      <button type="button" class="bill-participant-toggle recurring-paid-toggle">${status.paid ? 'Undo' : 'Mark Paid'}</button>
-    </div>
-  `;
-}
-
 async function handleSetRecurringPaid(recurringId, paid) {
   try {
     await apiRequest(`/recurring/${lineUserId}/${recurringId}/paid`, { method: 'PATCH', body: JSON.stringify({ paid }) });
     await loadRecurringList();
+    showToast({
+      title: paid ? 'Marked paid' : 'Marked as not paid',
+      undo: async () => {
+        await apiRequest(`/recurring/${lineUserId}/${recurringId}/paid`, { method: 'PATCH', body: JSON.stringify({ paid: !paid }) });
+        await loadRecurringList();
+      },
+    });
   } catch (error) {
-    showBudgetsStatus(error.message);
+    showToast({ title: "Couldn't update the payment", description: plainError(error), kind: 'bad' });
   }
 }
 
@@ -4791,22 +4886,45 @@ async function handleToggleRecurringActive(recurringId, isActive) {
       body: JSON.stringify({ is_active: isActive }),
     });
     await loadRecurringList();
+    showToast({ title: isActive ? 'Rule turned on' : 'Rule paused' });
   } catch (error) {
-    showBudgetsStatus(error.message);
-    await loadRecurringList(); // revert the optimistic checkbox state on failure
+    showToast({ title: "Couldn't update the rule", description: plainError(error), kind: 'bad' });
+    await loadRecurringList(); // puts the switch back
   }
 }
 
-async function handleDeleteRecurring(recurringId) {
-  const confirmed = await confirmAction('Delete this recurring expense? This cannot be undone.', 'Delete');
+async function handleDeleteRecurring(rule) {
+  const confirmed = await confirmAction(`Delete "${recurringName(rule)}"? Entries it already logged stay.`, 'Delete');
   if (!confirmed) return;
 
   try {
-    await apiRequest(`/recurring/${lineUserId}/${recurringId}`, { method: 'DELETE' });
+    await apiRequest(`/recurring/${lineUserId}/${rule.id}`, { method: 'DELETE' });
+    closeRecurringActions();
     await loadRecurringList();
-    showBudgetsStatus('Recurring expense deleted.');
+    showToast({
+      title: 'Rule deleted',
+      undo: async () => {
+        const { recurring } = await apiRequest(`/recurring/${lineUserId}`, {
+          method: 'POST',
+          body: JSON.stringify({
+            category_id: rule.category_id,
+            amount: parseFloat(rule.amount),
+            type: rule.type,
+            description: rule.description || undefined,
+            frequency: rule.frequency,
+            start_date: rule.next_run_date,
+            pay_start_day: rule.pay_start_day || undefined,
+            pay_end_day: rule.pay_end_day || undefined,
+          }),
+        });
+        if (!rule.is_active && recurring) {
+          await apiRequest(`/recurring/${lineUserId}/${recurring.id}`, { method: 'PUT', body: JSON.stringify({ is_active: false }) });
+        }
+        await loadRecurringList();
+      },
+    });
   } catch (error) {
-    showBudgetsStatus(error.message);
+    showToast({ title: "Couldn't delete the rule", description: plainError(error), kind: 'bad' });
   }
 }
 
@@ -4914,6 +5032,15 @@ el.addExpenseForm.addEventListener('submit', handleAddExpenseSubmit);
 el.fieldReceiptImage.addEventListener('change', handleReceiptFileChange);
 
 el.addBillButton.addEventListener('click', openBillModal);
+document.getElementById('recurring-active-switch').addEventListener('change', (e) => {
+  if (recurringSheetRule) handleToggleRecurringActive(recurringSheetRule.id, e.target.checked);
+});
+document.getElementById('recurring-unpaid-button').addEventListener('click', () => {
+  if (recurringSheetRule) handleSetRecurringPaid(recurringSheetRule.id, false);
+});
+document.getElementById('recurring-delete-button').addEventListener('click', () => {
+  if (recurringSheetRule) handleDeleteRecurring(recurringSheetRule);
+});
 document.getElementById('home-scan').addEventListener('click', () => {
   openAddExpenseModal().catch((error) => showError(error.message));
   el.fieldReceiptImage.click(); // same tick as the tap (see txnScanButton)

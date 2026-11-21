@@ -574,12 +574,17 @@ function renderListSheet() {
   t.doneList.innerHTML = g.done.map((r) => reminderRow(r, null, { showDate: true })).join('');
 }
 
-function openListSheet() {
+// list: 'next' | 'repeat' | 'todo' opens that tab; 'done' opens Upcoming with
+// the Done recently list expanded.
+function openListSheet(list = tasks.listTab) {
   if (!tasks.data) return;
+  const showDone = list === 'done';
+  if (!showDone && list) tasks.listTab = list;
   renderListSheet();
-  t.doneList.hidden = true;
-  t.doneToggle.setAttribute('aria-expanded', 'false');
+  t.doneList.hidden = !showDone;
+  t.doneToggle.setAttribute('aria-expanded', String(showDone));
   t.listModal.hidden = false;
+  if (showDone) t.doneToggle.scrollIntoView({ block: 'nearest' });
 }
 
 // ---- Month calendar sheet ----
@@ -700,7 +705,7 @@ t.timeline.addEventListener('click', handleTaskListClick);
 t.todos.addEventListener('click', handleTaskListClick);
 t.notes.addEventListener('click', handleTaskListClick);
 t.addNote.addEventListener('click', () => openNoteModal(null));
-t.summary.addEventListener('click', openListSheet);
+t.summary.addEventListener('click', (e) => { const b = e.target.closest('[data-open-list]'); if (b) openListSheet(b.dataset.openList); });
 t.monthButton.addEventListener('click', openMonthSheet);
 t.kind.addEventListener('click', (e) => {
   const b = e.target.closest('[data-kind]');

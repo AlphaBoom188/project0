@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#06c755" />
   <title>Expense Tracker</title>
-  <link rel="stylesheet" href="style.css?v=20261121q" />
+  <link rel="stylesheet" href="style.css?v=20261122a" />
   <script>
     // Set data-theme before first paint to avoid a flash of the wrong theme.
     (function () {
@@ -38,12 +38,12 @@
 
         <section class="hero" id="home-hero" aria-label="Spent this cycle">
           <p class="hero-label">Spent this cycle</p>
-          <p class="hero-amount" id="summary-expense">฿0</p>
-          <p class="hero-sub" id="home-hero-sub"></p>
+          <p class="hero-amount" id="summary-expense"><span class="skeleton skeleton-amount" aria-label="Loading"></span></p>
+          <p class="hero-sub" id="home-hero-sub"><span class="skeleton skeleton-line"></span></p>
           <span class="bar" id="home-hero-bar" hidden><span></span></span>
           <div class="hero-stats">
-            <div><span class="hero-stat-label">Income</span><span class="hero-stat-value amount-income" id="summary-income">฿0</span></div>
-            <div><span class="hero-stat-label">Net</span><span class="hero-stat-value" id="summary-net">฿0</span></div>
+            <div><span class="hero-stat-label">Income</span><span class="hero-stat-value amount-income" id="summary-income"><span class="skeleton skeleton-stat"></span></span></div>
+            <div><span class="hero-stat-label">Net</span><span class="hero-stat-value" id="summary-net"><span class="skeleton skeleton-stat"></span></span></div>
           </div>
         </section>
 
@@ -79,7 +79,7 @@
         </div>
 
         <div class="card card-flush" id="home-investments-wrap">
-          <button type="button" class="row" id="home-investments-card" hidden><span class="cat-tile" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg></span><span class="row-main"><span class="row-title">Investments</span><span class="row-meta">Today <span id="home-investments-today">—</span></span></span><span class="row-end"><span class="row-value" id="home-investments-value">฿0</span></span></button>
+          <button type="button" class="row" id="home-investments-card" hidden><span class="cat-tile" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg></span><span class="row-main"><span class="row-title">Investments</span><span class="row-meta">Today <span id="home-investments-today">—</span></span></span><span class="row-end"><span class="row-value" id="home-investments-value"></span></span></button>
         </div>
 
         <section id="home-pulse">
@@ -115,13 +115,11 @@
           <button type="button" id="tasks-month-button" class="icon-button" aria-label="Open calendar"><span class="icon"><svg class="lucide lucide-calendar-days" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v4" /><path d="M16 2v4" /><rect width="18" height="18" x="3" y="4" rx="2" /><path d="M3 10h18" /><path d="M8 14h.01" /><path d="M12 14h.01" /><path d="M16 14h.01" /><path d="M8 18h.01" /><path d="M12 18h.01" /><path d="M16 18h.01" /></svg></span></button>
         </div>
         <div class="week-strip" id="week-strip"></div>
-        <button type="button" id="tasks-summary" class="tasks-summary">
-          <span class="tasks-summary-label">Set</span>
-          <span class="tasks-chip" id="tasks-summary-repeat"></span>
-          <span class="tasks-chip" id="tasks-summary-next"></span>
-          <span class="tasks-chip" id="tasks-summary-done"></span>
-          <span class="tasks-summary-chevron"><span class="icon"><svg class="lucide lucide-chevron-right" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg></span></span>
-        </button>
+        <div id="tasks-summary" class="tasks-chips" role="group" aria-label="Everything you've set">
+          <button type="button" class="chip tasks-filter-chip" id="tasks-summary-repeat" data-open-list="repeat"></button>
+          <button type="button" class="chip tasks-filter-chip" id="tasks-summary-next" data-open-list="next"></button>
+          <button type="button" class="chip tasks-filter-chip" id="tasks-summary-done" data-open-list="done"></button>
+        </div>
         <div class="section-header-row">
           <h2 class="section-title" id="tasks-day-title">Today</h2>
           <span class="transaction-date" id="tasks-day-count"></span>
@@ -221,8 +219,8 @@
         </div>
         <section class="hero" id="budget-hero" aria-label="Left to spend">
           <p class="hero-label" id="budget-hero-label">Left to spend</p>
-          <p class="hero-amount" id="budget-hero-amount">฿0</p>
-          <p class="hero-sub" id="budget-hero-sub"></p>
+          <p class="hero-amount" id="budget-hero-amount"><span class="skeleton skeleton-amount" aria-label="Loading"></span></p>
+          <p class="hero-sub" id="budget-hero-sub"><span class="skeleton skeleton-line"></span></p>
           <span class="bar" id="budget-hero-bar" hidden><span></span></span>
         </section>
 
@@ -245,7 +243,7 @@
         <ul id="subs-list" class="card card-flush row-list" hidden></ul>
 
         <div class="section-head"><h2>Recurring rules</h2><button type="button" id="add-recurring-button" class="section-action">Add rule</button></div>
-        <ul id="recurring-list" class="recurring-list"></ul>
+        <ul id="recurring-list" class="card card-flush row-list recurring-list" hidden></ul>
         <p id="recurring-empty-state" class="empty-dashed" hidden>No recurring rules yet. Salary, rent and subscriptions can log themselves.</p>
 
         <div class="section-head"><h2>Event budgets</h2><button type="button" id="add-event-button" class="section-action">Add event</button></div>
@@ -268,11 +266,11 @@
         </div>
         <section class="hero" id="networth-hero" aria-label="Net worth">
           <p class="hero-label">Net worth</p>
-          <p class="hero-amount" id="networth-total">฿0</p>
+          <p class="hero-amount" id="networth-total"><span class="skeleton skeleton-amount" aria-label="Loading"></span></p>
           <p class="hero-sub" id="networth-sub">Accounts plus investments</p>
           <div class="hero-stats">
-            <div><span class="hero-stat-label">Cash &amp; accounts</span><span class="hero-stat-value" id="networth-accounts">฿0</span></div>
-            <div><span class="hero-stat-label">Investments</span><span class="hero-stat-value" id="networth-investments">฿0</span></div>
+            <div><span class="hero-stat-label">Cash &amp; accounts</span><span class="hero-stat-value" id="networth-accounts"><span class="skeleton skeleton-stat"></span></span></div>
+            <div><span class="hero-stat-label">Investments</span><span class="hero-stat-value" id="networth-investments"><span class="skeleton skeleton-stat"></span></span></div>
           </div>
         </section>
 
@@ -301,7 +299,7 @@
         <!-- Performance: value vs invested, or TWR vs S&P 500 / SET (Portseido Home & Benchmark) -->
         <section class="perf-card" id="perf-card" hidden>
           <span class="summary-label">Portfolio value</span>
-          <div class="perf-total" id="perf-total-value">฿0.00</div>
+          <div class="perf-total" id="perf-total-value">—</div>
           <div class="perf-gain-row">
             <div class="perf-gain"><span class="perf-gain-value" id="perf-gain-today">—</span><span class="summary-label">Today</span></div>
             <div class="perf-gain"><span class="perf-gain-value" id="perf-gain-yesterday">—</span><span class="summary-label">Yesterday</span></div>
@@ -352,7 +350,7 @@
           </div>
           <div id="goal-body" hidden>
             <span class="summary-label" id="goal-target-label">Goal target</span>
-            <div class="perf-total" id="goal-target">฿0.00</div>
+            <div class="perf-total" id="goal-target">—</div>
             <div class="category-row-top">
               <span class="category-name" id="goal-progress-pct">0%</span>
               <span class="category-budget-label" id="goal-progress-detail"></span>
@@ -379,7 +377,7 @@
         <!-- Dividends: received (solid) vs projected (light) bars (Portseido Dividend Insights) -->
         <section class="perf-card" id="div-card" hidden>
           <span class="summary-label">Dividend income, last 12 months</span>
-          <div class="perf-total" id="div-trailing">฿0.00</div>
+          <div class="perf-total" id="div-trailing">—</div>
           <p class="div-yoy" id="div-yoy"></p>
           <dl class="holding-stats div-metrics">
             <div><dt>Portfolio yield</dt><dd id="div-portfolio-yield">—</dd></div>
@@ -440,7 +438,7 @@
         </div>
         <section class="tax-hero" id="tax-hero" aria-live="polite">
           <p class="tax-hero-label" id="tax-hero-label">Tax to pay</p>
-          <p class="tax-hero-amount" id="tax-hero-amount">฿0</p>
+          <p class="tax-hero-amount" id="tax-hero-amount"><span class="skeleton skeleton-amount" aria-label="Loading"></span></p>
           <p class="tax-hero-sub" id="tax-hero-sub"></p>
           <p class="tax-hero-filing" id="tax-hero-filing"></p>
         </section>
@@ -835,6 +833,17 @@
           <button type="submit" class="primary-button">Save</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <div id="recurring-actions-modal" class="modal" hidden>
+    <div class="modal-content">
+      <div class="sheet-head"><h2 class="sheet-title" id="recurring-actions-title"></h2></div>
+      <div class="card card-flush sheet-card">
+        <label class="row switch-row recurring-active-row"><span class="row-main"><span class="row-title">Log this automatically</span><span class="row-meta" id="recurring-active-meta"></span></span><input type="checkbox" role="switch" id="recurring-active-switch" /></label>
+        <button type="button" class="row" id="recurring-unpaid-button" hidden><span class="cat-tile" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></span><span class="row-main"><span class="row-title">Mark as not paid</span><span class="row-meta">For this pay window</span></span></button>
+        <button type="button" class="row row-destructive" id="recurring-delete-button"><span class="cat-tile tile-destructive" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></span><span class="row-main"><span class="row-title">Delete rule</span></span></button>
+      </div>
     </div>
   </div>
 
@@ -1684,10 +1693,10 @@
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script src="/liff-config.js"></script>
   <!-- Chart.js for the Net Worth performance chart; app.js renders everything else without it if this is blocked. -->
-  <script src="app.js?v=20261121q"></script>
-  <script src="tasks.js?v=20261121q"></script>
-  <script src="tax.js?v=20261121q"></script>
-  <script src="insights.js?v=20261121q"></script>
-  <script src="money.js?v=20261121q"></script>
+  <script src="app.js?v=20261122a"></script>
+  <script src="tasks.js?v=20261122a"></script>
+  <script src="tax.js?v=20261122a"></script>
+  <script src="insights.js?v=20261122a"></script>
+  <script src="money.js?v=20261122a"></script>
 </body>
 </html>

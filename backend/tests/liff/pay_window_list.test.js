@@ -40,24 +40,38 @@ async function cleanup() {
 
   const rentRow = page.locator('.recurring-row', { hasText: 'Rent' });
   const gymRow = page.locator('.recurring-row', { hasText: 'Gym' });
-  const fmt = (ymd) => new Date(`${ymd}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
-  const dueText = await rentRow.locator('.recurring-pay-row span').first().textContent();
-  assert(dueText === `Due ${fmt(status.start)} – ${fmt(status.end)}`, `monthly rule shows its window (got "${dueText}")`);
-  const pill = await rentRow.locator('.bill-status-pill').textContent();
-  assert(pill === (status.overdue ? 'Overdue' : 'Unpaid'), `status pill matches the server (got "${pill}", overdue=${status.overdue})`);
-  assert((await gymRow.locator('.recurring-pay-row').count()) === 0, 'weekly rule shows no pay window');
+  // v5 row: the window sits in the meta line, the status under the amount.
+  const d = (ymd) => new Date(`${ymd}T00:00:00Z`);
+  const mon = (x) => x.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+  const [s0, e0] = [d(status.start), d(status.end)];
+  const win = mon(s0) === mon(e0) ? `${mon(s0)} ${s0.getUTCDate()}–${e0.getUTCDate()}` : `${mon(s0)} ${s0.getUTCDate()} – ${mon(e0)} ${e0.getUTCDate()}`;
+  const meta = await rentRow.locator('.recurring-meta').textContent();
+  assert(meta.includes(`pay ${win}`) && meta.includes('overdue') === Boolean(status.overdue), `monthly rule shows its window (got "${meta}", overdue=${status.overdue})`);
+  assert((await rentRow.locator('.recurring-paid-toggle').textContent()) === 'Mark paid', 'unpaid -> "Mark paid" under the amount');
+  assert(!(await gymRow.locator('.recurring-meta').textContent()).includes('pay ') && (await gymRow.locator('.recurring-paid-toggle').count()) === 0, 'weekly rule shows no pay window');
   await page.locator('#recurring-list').screenshot({ path: `${OUTPUT}/pay_window_unpaid.png` });
 
   await rentRow.locator('.recurring-paid-toggle').click();
-  await page.waitForFunction(() => [...document.querySelectorAll('.recurring-row')].some((r) => r.textContent.includes('Rent') && r.querySelector('.bill-status-pill')?.textContent === 'Paid'), null, { timeout: 8000 }).catch(() => {});
-  assert((await rentRow.locator('.bill-status-pill').textContent()) === 'Paid' && (await rentRow.locator('.recurring-paid-toggle').textContent()) === 'Undo', 'Mark Paid -> Paid, button becomes Undo');
+  await page.waitForFunction(() => [...document.querySelectorAll('.recurring-row')].some((r) => r.textContent.includes('Rent') && r.querySelector('.recurring-paid-label')), null, { timeout: 8000 }).catch(() => {});
+  assert((await rentRow.locator('.recurring-paid-label').textContent()) === 'Paid' && (await rentRow.locator('.recurring-paid-toggle').count()) === 0, 'Mark paid -> "Paid"');
+  assert((await page.textContent('#toast .toast-title')) === 'Marked paid', 'toast after Mark paid');
   const { data: stored } = await db.from('recurring_transactions').select('paid_period').eq('line_user_id', U).eq('description', 'Rent').single();
   assert(stored.paid_period === status.period, `paid_period saved for the current month (got ${stored.paid_period})`);
   await page.locator('#recurring-list').screenshot({ path: `${OUTPUT}/pay_window_paid.png` });
 
+  // Toast Undo -> unpaid again
+  await page.click('#toast .toast-undo');
+  await page.waitForSelector('.recurring-row >> text=Mark paid', { timeout: 8000 }).catch(() => {});
+  assert((await rentRow.locator('.recurring-paid-toggle').count()) === 1, 'Undo -> back to Mark paid');
+
+  // The action sheet's "Mark as not paid" undoes it later too
   await rentRow.locator('.recurring-paid-toggle').click();
-  await page.waitForFunction(() => [...document.querySelectorAll('.recurring-row')].some((r) => r.textContent.includes('Rent') && r.querySelector('.bill-status-pill')?.textContent !== 'Paid'), null, { timeout: 8000 }).catch(() => {});
-  assert((await rentRow.locator('.recurring-paid-toggle').textContent()) === 'Mark Paid', 'Undo -> back to Mark Paid');
+  await page.waitForSelector('.recurring-paid-label', { timeout: 8000 });
+  await rentRow.locator('.recurring-more').click();
+  await page.waitForSelector('#recurring-actions-modal:not([hidden])');
+  await page.click('#recurring-unpaid-button');
+  await page.waitForFunction(() => [...document.querySelectorAll('.recurring-row')].some((r) => r.textContent.includes('Rent') && r.querySelector('.recurring-paid-toggle')), null, { timeout: 8000 }).catch(() => {});
+  assert((await rentRow.locator('.recurring-paid-toggle').count()) === 1 && (await page.isHidden('#recurring-unpaid-button')), 'sheet: Mark as not paid');
 
   assert(errors.length === 0, `no page JS errors (got ${JSON.stringify(errors)})`);
   await browser.close();
