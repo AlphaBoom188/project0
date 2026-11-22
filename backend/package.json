@@ -9,7 +9,11 @@
     "test": "node tests/run.js",
     "test:openai": "node tests/run.js --group=openai",
     "backup": "node scripts/backup.js",
-    "restore": "node scripts/restore.js"
+    "restore": "node scripts/restore.js",
+    "qa:serve": "DISABLE_CRON=1 DEV_LIFF_STUB=1 PORT=3100 node index.js",
+    "qa:seed": "node scripts/qa-seed.js",
+    "qa:reset": "node scripts/qa-seed.js --reset",
+    "qa:smoke": "node tests/run.js qa_smoke"
   },
   "keywords": [],
   "author": "",
