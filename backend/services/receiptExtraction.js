@@ -76,4 +76,36 @@ Do not include any explanation or markdown, only the raw JSON object.`;
   };
 }
 
-module.exports = { findDuplicateBySlipHash, extractReceiptFromImage };
+// Reads a Thai bank e-slip (transfer / payment confirmation). No thumbnail,
+// no category: the bulk slip import works those out itself. Never log the
+// result (names, account numbers, amounts).
+async function extractSlipFromImage(imageBase64) {
+  const prompt = `This image should be a Thai bank or e-wallet transfer slip (e-slip). Return ONLY a JSON object with these keys:
+"is_slip" (boolean: true only for a bank/e-wallet transfer or payment confirmation; false for shop receipts, invoices, chats, photos),
+"amount" (number in baht, or null),
+"date" (YYYY-MM-DD in the Gregorian calendar; slips often use the Buddhist year, e.g. 2569 or "69" = 2026; or null),
+"time" (HH:mm 24-hour, or null),
+"from_name", "from_bank", "from_account" (the payer's name, bank or wallet, and account number exactly as shown, masked digits included; null when not shown),
+"to_name", "to_bank", "to_account" (the same for the receiver; for a bill payment or shop, to_name is the biller or shop),
+"memo" (the note/memo if any, else null),
+"ref" (the transaction reference number, or null).
+No explanation or markdown, only the raw JSON object.`;
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    response_format: { type: 'json_object' },
+    messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${imageBase64}` } }] }],
+  });
+  const x = JSON.parse(completion.choices[0].message.content);
+  const str = (v) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 120) : null);
+  return {
+    is_slip: x.is_slip === true,
+    amount: typeof x.amount === 'number' && x.amount > 0 ? Math.round(x.amount * 100) / 100 : null,
+    date: /^\d{4}-\d{2}-\d{2}$/.test(x.date || '') ? x.date : null,
+    time: /^\d{2}:\d{2}$/.test(x.time || '') ? x.time : null,
+    from_name: str(x.from_name), from_bank: str(x.from_bank), from_account: str(x.from_account),
+    to_name: str(x.to_name), to_bank: str(x.to_bank), to_account: str(x.to_account),
+    memo: str(x.memo), ref: str(x.ref),
+  };
+}
+
+module.exports = { findDuplicateBySlipHash, extractReceiptFromImage, extractSlipFromImage };

@@ -4927,3 +4927,26 @@ input[type="radio"] { accent-color: var(--primary); }
 #txn-search,
 .task-title-input,
 .bill-participant-name { min-height: var(--tap-min); }
+
+/* ---- Bulk slip import (slips.js) ---- */
+#slip-working[hidden], #slip-review[hidden], #slip-look-sec[hidden], #slip-ready-sec[hidden], #slip-skipped-sec[hidden] { display: none; }
+.slip-thumb { flex: 0 0 36px; width: 36px; height: 48px; border-radius: var(--radius-md); object-fit: cover; background: var(--muted); }
+.slip-task .task-icon { margin-left: auto; }
+.slip-stop { min-height: var(--tap-min); }
+.slip-row { display: block; padding-top: var(--space-2); padding-bottom: var(--space-2); }
+.slip-row-head { display: flex; align-items: center; gap: var(--space-2); min-height: var(--tap-min); }
+.slip-row-head .cat-tile { flex: 0 0 auto; }
+.slip-check { flex: 0 0 24px; width: 24px; height: 24px; margin: 0; }
+.slip-row-main { flex: 1; min-width: 0; min-height: var(--tap-min); display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.slip-row-main .row-title, .slip-row-main .row-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slip-amount { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.slip-card { padding: var(--space-4); }
+.slip-reason { margin: var(--space-2) 0; white-space: normal; }
+.slip-type { margin-top: var(--space-2); }
+.slip-type > button { min-height: var(--tap-min); }
+.slip-editor { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-2); }
+.slip-edit-done { min-height: var(--tap-min); }
+.slip-retry { min-height: var(--tap-min); }
+#slip-ready { margin-left: 0; margin-right: 0; }
+#slip-skipped { margin: 0; padding: 0; }
+#slip-skipped .row { padding-left: 0; padding-right: 0; }

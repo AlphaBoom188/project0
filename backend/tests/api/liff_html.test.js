@@ -18,7 +18,7 @@ assert(local.length >= 6 && new Set(local.map((m) => m[2])).size === 1, `one ver
 assert(local.every((m) => fs.existsSync(path.join(dir, m[1]))), 'every referenced file exists');
 // Scripts in the expected order (each relies on the globals of the ones before).
 const order = local.map((m) => m[1]).filter((f) => f.endsWith('.js'));
-assert(order.join() === 'app.js,tasks.js,tax.js,insights.js,money.js', `script order (got ${order})`);
+assert(order.join() === 'app.js,tasks.js,tax.js,insights.js,money.js,slips.js', `script order (got ${order})`);
 
 // Feature files share app.js's globals: a second top-level declaration of
 // the same name silently replaces the first (function) or throws (const/let).

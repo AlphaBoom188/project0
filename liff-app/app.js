@@ -418,6 +418,7 @@ const el = {
 let lineUserId = null;
 let currentUser = null;
 let scannedThumbnailPath = null;
+let scannedSlipKey = null; // slip_hash for a scanned entry: the slip QR key, else the image key (ocrController)
 let categoriesTabType = 'expense';
 let editingCategoryId = null;
 let billSplitType = 'equal';
@@ -500,7 +501,10 @@ async function apiRequest(path, options = {}) {
     if (response.status === 401 && body.code === 'auth_invalid' && reauthenticate()) {
       throw new Error('Signing you in again…');
     }
-    throw new Error(`[${response.status}] ${body.error || body.message || response.statusText || 'Request failed'}`);
+    const err = new Error(`[${response.status}] ${body.error || body.message || response.statusText || 'Request failed'}`);
+    err.status = response.status;
+    err.retryAfter = Number(response.headers.get('Retry-After')) || null; // seconds, on a 429
+    throw err;
   }
 
   const method = (options.method || 'GET').toUpperCase();
@@ -544,6 +548,73 @@ function chartReady(redraw) {
   return false;
 }
 
+// ---- Slip QR (bank e-slips' verification QR) ----
+// Only a dedupe key: no amount in it. BarcodeDetector where it exists
+// (Android Chrome), else jsQR on first use. If both fail (CDN blocked, no QR)
+// the caller falls back to the image hash, with no error shown.
+const JSQR_URL = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js';
+let jsQrPromise = null;
+function loadJsQr() {
+  if (window.jsQR) return Promise.resolve(window.jsQR);
+  jsQrPromise ||= new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = JSQR_URL;
+    script.onload = () => (window.jsQR ? resolve(window.jsQR) : reject(new Error('jsQR missing')));
+    script.onerror = () => { jsQrPromise = null; reject(new Error('jsQR failed to load')); };
+    document.head.appendChild(script);
+  });
+  return jsQrPromise;
+}
+
+// EMV-style TLV: 00 { 00 "000001", 01 bank (3 digits), 02 reference }, 51 TH, 91 CRC.
+// Mirrors backend/services/slipQr.js parseSlipQr (the server re-validates).
+function parseSlipQrText(text) {
+  const tlv = (s) => {
+    const out = {};
+    for (let i = 0; i < s.length;) {
+      const id = s.slice(i, i + 2);
+      const len = s.slice(i + 2, i + 4);
+      if (!/^\d{2}$/.test(id) || !/^\d{2}$/.test(len)) return null;
+      const v = s.slice(i + 4, i + 4 + Number(len));
+      if (v.length !== Number(len)) return null;
+      out[id] = v;
+      i += 4 + Number(len);
+    }
+    return out;
+  };
+  const s = String(text || '').trim();
+  if (!s || s.length > 512 || s.startsWith('000201')) return null; // PromptPay / EMV merchant QR
+  const top = tlv(s);
+  const inner = top && top['00'] && tlv(top['00']);
+  if (!inner || inner['00'] !== '000001' || !/^\d{3}$/.test(inner['01'] || '') || !/^[A-Za-z0-9]{6,40}$/.test(inner['02'] || '')) return null;
+  return { bank: inner['01'], ref: inner['02'] };
+}
+
+// blob (the original photo) -> { bank, ref } | null. Never throws.
+async function decodeSlipQr(blob) {
+  try {
+    const bitmap = await createImageBitmap(blob);
+    if ('BarcodeDetector' in window) {
+      try {
+        const codes = await new window.BarcodeDetector({ formats: ['qr_code'] }).detect(bitmap);
+        for (const c of codes) { const p = parseSlipQrText(c.rawValue); if (p) return p; }
+      } catch { /* fall through to jsQR */ }
+    }
+    const jsQR = await loadJsQr().catch(() => null);
+    if (!jsQR) return null;
+    const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const code = jsQR(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height, { inversionAttempts: 'dontInvert' });
+    return code ? parseSlipQrText(code.data) : null;
+  } catch {
+    return null;
+  }
+}
+
 // ---- Shared helpers ----
 
 function showError(message) {
@@ -562,14 +633,15 @@ let budgetAlertTimer = null;
 // only a heads-up, red as soon as anything is over.
 function showBudgetAlerts(budgetAlert, eventAlerts = []) {
   const messages = [];
-  if (budgetAlert) {
-    messages.push(`Budget alert: your "${budgetAlert.categoryName}" ${budgetAlert.budgetPeriod} budget of ${budgetAlert.budgetAmount.toFixed(2)} has been reached (${budgetAlert.totalSpent.toFixed(2)} spent).`);
+  const budgetAlerts = (Array.isArray(budgetAlert) ? budgetAlert : [budgetAlert]).filter(Boolean); // a list from the bulk slip import
+  for (const b of budgetAlerts) {
+    messages.push(`Budget alert: your "${b.categoryName}" ${b.budgetPeriod} budget of ${b.budgetAmount.toFixed(2)} has been reached (${b.totalSpent.toFixed(2)} spent).`);
   }
   for (const a of eventAlerts) messages.push(a.message); // wording comes from services/eventBudgetAlert.js
   if (messages.length === 0) return;
   clearTimeout(budgetAlertTimer);
   el.budgetAlertBanner.textContent = messages.join(' ');
-  el.budgetAlertBanner.classList.toggle('warning', !budgetAlert && eventAlerts.every((a) => a.level === 'warning'));
+  el.budgetAlertBanner.classList.toggle('warning', !budgetAlerts.length && eventAlerts.every((a) => a.level === 'warning'));
   el.budgetAlertBanner.hidden = false;
   budgetAlertTimer = setTimeout(() => {
     el.budgetAlertBanner.hidden = true;
@@ -1712,6 +1784,7 @@ function resetReceiptScanState() {
   setFieldsLoading(aiFormFields(), false);
   clearAiMarks(el.addExpenseForm);
   scannedThumbnailPath = null;
+  scannedSlipKey = null;
 }
 
 // ---- Add entry sheet (spec 6.1) ----
@@ -1938,12 +2011,15 @@ function resizeImageToJpegBlob(file, maxDimension = 1280, quality = 0.7) {
   });
 }
 
-async function blobToBase64AndHash(blob) {
-  const buffer = await blob.arrayBuffer();
-  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
-  const hashHex = Array.from(new Uint8Array(hashBuffer))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
+async function sha256Hex(blob) {
+  const hashBuffer = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
+  return Array.from(new Uint8Array(hashBuffer)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+// hashOf: the blob to hash (the original photo, so single scans, bulk slip
+// imports and bot photos of the same file share it); defaults to `blob`.
+async function blobToBase64AndHash(blob, hashOf = blob) {
+  const hashHex = await sha256Hex(hashOf);
   const base64 = await new Promise((resolve) => {
     const reader = new FileReader();
     reader.onloadend = () => resolve(reader.result.split(',')[1]);
@@ -1967,11 +2043,11 @@ async function handleReceiptFileChange(event) {
     el.receiptPreview.src = URL.createObjectURL(resizedBlob);
     el.receiptPreview.hidden = false;
 
-    const { base64, hashHex } = await blobToBase64AndHash(resizedBlob);
+    const [{ base64, hashHex }, qr] = await Promise.all([blobToBase64AndHash(resizedBlob, file), decodeSlipQr(file)]);
 
     const response = await apiRequest(`/ocr/scan/${lineUserId}`, {
       method: 'POST',
-      body: JSON.stringify({ image_base64: base64, slip_hash: hashHex }),
+      body: JSON.stringify({ image_base64: base64, slip_hash: hashHex, qr }),
     });
 
     const data = response.data;
@@ -1980,6 +2056,7 @@ async function handleReceiptFileChange(event) {
     if (data.date) el.fieldDate.value = data.date;
     if (data.suggested_category_id) el.fieldCategory.value = data.suggested_category_id;
     scannedThumbnailPath = data.thumbnail_path || null;
+    scannedSlipKey = data.slip_key || null;
     markAiFilled([
       data.amount != null && el.fieldAmount, data.merchant && el.fieldDescription,
       data.date && el.fieldDate, data.suggested_category_id && el.fieldCategory,
@@ -2025,6 +2102,7 @@ async function handleAddExpenseSubmit(event) {
         type: entryType,
         description: el.fieldDescription.value || undefined,
         thumbnail_url: scannedThumbnailPath || undefined,
+        slip_hash: scannedSlipKey || undefined, // the same slip can't be recorded twice (bulk import shares the key)
         transaction_date: new Date(`${el.fieldDate.value}T12:00:00Z`).toISOString(),
         from_account_id: entryType === 'expense' && accountId ? accountId : undefined,
         to_account_id: entryType === 'income' && accountId ? accountId : undefined,
@@ -5241,9 +5319,9 @@ document.getElementById('recurring-edit-button').addEventListener('click', () =>
 document.getElementById('recurring-delete-button').addEventListener('click', () => {
   if (recurringSheetRule) handleDeleteRecurring(recurringSheetRule);
 });
+// Scan opens a chooser: one receipt (the entry sheet) or several slips (slips.js).
 document.getElementById('home-scan').addEventListener('click', () => {
-  openAddExpenseModal().catch((error) => showError(error.message));
-  el.fieldReceiptImage.click(); // same tick as the tap (see txnScanButton)
+  document.getElementById('scan-choice-modal').hidden = false;
 });
 document.getElementById('home-speak').addEventListener('click', () => {
   openAddExpenseModal().then(() => el.voiceButton.click()).catch((error) => showError(error.message));

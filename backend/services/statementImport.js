@@ -268,4 +268,4 @@ async function buildPreview(lineUserId, parsed, holderName) {
   };
 }
 
-module.exports = { buildPreview, isOwnTransfer, rowKey, bareName };
+module.exports = { buildPreview, isOwnTransfer, rowKey, bareName, ruleMatch, categorizeKeys };

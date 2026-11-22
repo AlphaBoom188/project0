@@ -36,6 +36,8 @@ const LIMITS = {
   voice: { max: 30, windowMs: TEN_MIN },      // transcriptions (LIFF mic, bot voice messages)
   text: { max: 60, windowMs: TEN_MIN },       // bot free-text parsing
   statement: { max: 30, windowMs: TEN_MIN },  // statement previews (LLM categories)
+  slipRead: { max: 120, windowMs: TEN_MIN },  // bulk slip reads (Vision); duplicates count too
+  slipImport: { max: 20, windowMs: TEN_MIN }, // bulk slip imports
 };
 
 module.exports = { allow, rateLimit, LIMITS, _buckets: buckets };
