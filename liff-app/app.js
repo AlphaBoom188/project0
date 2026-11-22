@@ -1147,7 +1147,7 @@ async function renderHomeBudgets(seq, endISO) {
 // First week (fewer than 7 days with entries): the Get set up checklist,
 // Scan / Speak / Import tiles, and a note instead of the pulse.
 async function renderFirstWeek(seq, txns) {
-  const days = new Set(txns.map((t) => getBangkokYmd(new Date(t.transaction_date))));
+  const days = new Set(txns.map((t) => bangkokYmd(new Date(t.transaction_date))));
   const firstWeek = days.size < 7;
   document.getElementById('home-setup').hidden = !firstWeek;
   document.getElementById('add-bill-button').hidden = firstWeek;
@@ -4970,18 +4970,28 @@ async function populateRecurringCategoryOptions() {
     .join('');
 }
 
-async function openRecurringModal() {
-  el.recurringFieldType.value = 'expense';
-  el.recurringFieldAmount.value = '';
-  el.recurringFieldDescription.value = '';
-  el.recurringFieldFrequency.value = 'monthly';
-  el.recurringFieldStartDate.value = bangkokYmd();
-  el.recurringFieldPayStartDay.value = '';
-  el.recurringFieldPayEndDay.value = '';
+// Add rule, or Edit rule (from the action sheet) with the rule's fields filled in.
+// Type can't change on an existing rule; the date is its next run.
+let editingRecurring = null;
+async function openRecurringModal(rule = null) {
+  editingRecurring = rule && rule.id ? rule : null;
+  const r = editingRecurring;
+  document.getElementById('recurring-modal-title').textContent = r ? 'Edit rule' : 'Add rule';
+  document.getElementById('recurring-date-label').textContent = r ? 'Next date' : 'Start date';
+  el.recurringFieldType.value = r ? r.type : 'expense';
+  el.recurringFieldType.disabled = Boolean(r);
+  el.recurringFieldAmount.value = r ? parseFloat(r.amount) : '';
+  el.recurringFieldDescription.value = r ? r.description || '' : '';
+  el.recurringFieldFrequency.value = r ? r.frequency : 'monthly';
+  el.recurringFieldStartDate.value = r ? bangkokYmd(new Date(r.next_run_date)) : bangkokYmd();
+  el.recurringFieldPayStartDay.value = r && r.pay_start_day ? r.pay_start_day : '';
+  el.recurringFieldPayEndDay.value = r && r.pay_end_day ? r.pay_end_day : '';
   clearModalError(el.recurringModalError);
+  if (r) closeRecurringActions();
   el.recurringModal.hidden = false;
   try {
     await populateRecurringCategoryOptions();
+    if (r && r.category_id) el.recurringFieldCategory.value = r.category_id;
   } catch (error) {
     showModalError(el.recurringModalError, error.message);
   }
@@ -4989,6 +4999,7 @@ async function openRecurringModal() {
 
 function closeRecurringModal() {
   el.recurringModal.hidden = true;
+  editingRecurring = null;
 }
 
 async function handleRecurringSubmit(event) {
@@ -4996,26 +5007,38 @@ async function handleRecurringSubmit(event) {
   const submitButton = event.submitter;
   submitButton.disabled = true;
   clearModalError(el.recurringModalError);
+  const day = (input) => (input.value ? parseInt(input.value, 10) : null);
+  const fields = {
+    category_id: el.recurringFieldCategory.value,
+    amount: parseFloat(el.recurringFieldAmount.value),
+    description: el.recurringFieldDescription.value || (editingRecurring ? null : undefined),
+    frequency: el.recurringFieldFrequency.value,
+  };
 
   try {
-    await apiRequest(`/recurring/${lineUserId}`, {
-      method: 'POST',
-      body: JSON.stringify({
-        category_id: el.recurringFieldCategory.value,
-        amount: parseFloat(el.recurringFieldAmount.value),
-        type: el.recurringFieldType.value,
-        description: el.recurringFieldDescription.value || undefined,
-        frequency: el.recurringFieldFrequency.value,
-        start_date: new Date(`${el.recurringFieldStartDate.value}T12:00:00Z`).toISOString(),
-        pay_start_day: el.recurringFieldPayStartDay.value ? parseInt(el.recurringFieldPayStartDay.value, 10) : undefined,
-        pay_end_day: el.recurringFieldPayEndDay.value ? parseInt(el.recurringFieldPayEndDay.value, 10) : undefined,
-      }),
-    });
+    if (editingRecurring) {
+      await apiRequest(`/recurring/${lineUserId}/${editingRecurring.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ ...fields, next_run_date: el.recurringFieldStartDate.value, pay_start_day: day(el.recurringFieldPayStartDay), pay_end_day: day(el.recurringFieldPayEndDay) }),
+      });
+    } else {
+      await apiRequest(`/recurring/${lineUserId}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          ...fields,
+          type: el.recurringFieldType.value,
+          start_date: new Date(`${el.recurringFieldStartDate.value}T12:00:00Z`).toISOString(),
+          pay_start_day: day(el.recurringFieldPayStartDay) || undefined,
+          pay_end_day: day(el.recurringFieldPayEndDay) || undefined,
+        }),
+      });
+    }
+    const edited = Boolean(editingRecurring);
     closeRecurringModal();
     await loadRecurringList();
-    showBudgetsStatus('Recurring expense added.');
+    showToast({ title: edited ? 'Rule updated' : 'Rule added' });
   } catch (error) {
-    showModalError(el.recurringModalError, error.message);
+    showModalError(el.recurringModalError, plainError(error));
   } finally {
     submitButton.disabled = false;
   }
@@ -5209,6 +5232,9 @@ document.getElementById('recurring-active-switch').addEventListener('change', (e
 document.getElementById('recurring-unpaid-button').addEventListener('click', () => {
   if (recurringSheetRule) handleSetRecurringPaid(recurringSheetRule.id, false);
 });
+document.getElementById('recurring-edit-button').addEventListener('click', () => {
+  if (recurringSheetRule) openRecurringModal(recurringSheetRule);
+});
 document.getElementById('recurring-delete-button').addEventListener('click', () => {
   if (recurringSheetRule) handleDeleteRecurring(recurringSheetRule);
 });
@@ -5348,7 +5374,7 @@ el.lotForm.addEventListener('submit', handleLotSubmit);
 el.cancelLot.addEventListener('click', closeLotModal);
 el.lotDelete.addEventListener('click', handleDeleteLot);
 
-el.addRecurringButton.addEventListener('click', openRecurringModal);
+el.addRecurringButton.addEventListener('click', () => openRecurringModal());
 el.cancelRecurring.addEventListener('click', closeRecurringModal);
 el.recurringForm.addEventListener('submit', handleRecurringSubmit);
 el.recurringFieldType.addEventListener('change', () =>

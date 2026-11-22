@@ -108,6 +108,20 @@ async function main() {
     .eq('description', 'Recurring Test Rule');
   assert((txAfterPause || []).length === 1, 'a paused (is_active=false) rule is not processed even when due');
 
+  // --- Edit a rule (PUT): fields, next date, ownership checks ---
+  const edit = await api(`/recurring/${lineUserId}/${recurringId}`, { method: 'PUT', body: JSON.stringify({ amount: 55, description: 'Recurring Test Rule', frequency: 'weekly', next_run_date: '2031-03-15', pay_start_day: null, pay_end_day: null }) });
+  assert(edit.status === 200 && Number(edit.body.recurring.amount) === 55 && edit.body.recurring.frequency === 'weekly' && edit.body.recurring.next_run_date.startsWith('2031-03-15'), `PUT edits amount, frequency and next date (got ${edit.status} ${JSON.stringify(edit.body.recurring && edit.body.recurring.next_run_date)})`);
+  const badAmount = await api(`/recurring/${lineUserId}/${recurringId}`, { method: 'PUT', body: JSON.stringify({ amount: -5 }) });
+  assert(badAmount.status === 400, `PUT rejects a negative amount (got ${badAmount.status})`);
+  const badDate = await api(`/recurring/${lineUserId}/${recurringId}`, { method: 'PUT', body: JSON.stringify({ next_run_date: 'soon' }) });
+  assert(badDate.status === 400, `PUT rejects a bad date (got ${badDate.status})`);
+  await api('/users', { method: 'POST', body: JSON.stringify({ line_user_id: 'test_phase5_other', display_name: 'Other' }) });
+  const otherCat = (await api('/categories/test_phase5_other?type=expense')).body.categories[0];
+  const foreign = await api(`/recurring/${lineUserId}/${recurringId}`, { method: 'PUT', body: JSON.stringify({ category_id: otherCat.id }) });
+  assert(foreign.status === 400, `PUT refuses another user's category (got ${foreign.status})`);
+  await serviceClient.from('categories').delete().eq('line_user_id', 'test_phase5_other');
+  await serviceClient.from('users').delete().eq('line_user_id', 'test_phase5_other');
+
   // --- CSV export with filters ---
   const exportRes = await fetch(`${BASE}/api/transactions/${lineUserId}/export?type=expense`);
   // fetch().text() silently strips a leading BOM per the WHATWG decoding spec

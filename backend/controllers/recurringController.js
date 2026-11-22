@@ -134,11 +134,25 @@ const recurringController = {
   async updateRecurring(req, res) {
     try {
       const { line_user_id, recurring_id } = req.params;
-      const { category_id, amount, description, frequency, is_active, pay_start_day, pay_end_day } = req.body;
+      const { category_id, amount, description, frequency, is_active, pay_start_day, pay_end_day, next_run_date } = req.body;
 
       const updateData = {};
-      if (category_id !== undefined) updateData.category_id = category_id;
-      if (amount !== undefined) updateData.amount = amount;
+      if (category_id !== undefined) {
+        // Only one of the user's own categories (the bare id would otherwise attach someone else's).
+        const { data: category } = await supabase.from('categories').select('id').eq('id', category_id).eq('line_user_id', line_user_id).maybeSingle();
+        if (!category) return res.status(400).json({ error: 'Invalid category or category does not belong to user' });
+        updateData.category_id = category_id;
+      }
+      if (amount !== undefined) {
+        const n = Number(amount);
+        if (!Number.isFinite(n) || n <= 0) return res.status(400).json({ error: 'amount must be a number above 0' });
+        updateData.amount = n;
+      }
+      if (next_run_date !== undefined) {
+        const d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(String(next_run_date)) ? `${next_run_date}T12:00:00Z` : next_run_date);
+        if (Number.isNaN(d.getTime())) return res.status(400).json({ error: 'next_run_date must be a date' });
+        updateData.next_run_date = d.toISOString();
+      }
       if (description !== undefined) updateData.description = description;
       if (frequency !== undefined) {
         if (!FREQUENCIES.includes(frequency)) {
