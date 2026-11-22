@@ -131,7 +131,7 @@ const descs = (page) => page.$$eval('#txn-full-list .transaction-description', (
   await page.click('#close-bill-detail');
 
   // --- Tap-to-assign chips (itemized split) ---
-  await page.click('#add-bill-button');
+  await page.click('#new-bill-button');
   await page.click('#bill-split-itemized');
   const nameInputs = () => page.$$('#bill-participants-list .bill-participant-name');
   if ((await nameInputs()).length === 0) await page.click('#bill-add-participant');
