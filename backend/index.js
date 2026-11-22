@@ -130,6 +130,9 @@ app.use('/api/goals', goalRoutes);
 // LIFF (LINE MINI App) -- static files, plus a tiny dynamic script so the LIFF ID
 // lives in .env like every other credential rather than being hardcoded into a
 // committed static file.
+// Local QA stub (DEV_LIFF_STUB=1, loopback, test_ users only); falls through otherwise.
+const devLiffStub = require('./services/devLiffStub');
+app.use(devLiffStub.router);
 app.get('/liff-config.js', (req, res) => {
   res.set('Cache-Control', 'no-cache').type('application/javascript').send(`window.LIFF_ID = ${JSON.stringify(process.env.LIFF_ID || '')};`);
 });
@@ -143,6 +146,7 @@ app.use('/liff', (req, res, next) => {
 
 const server = app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
+  devLiffStub.logBoot();
   // DISABLE_CRON=1 is for extra instances (e.g. a test server on another port).
   // Each job slot also runs at most once across processes (job_runs, opsAgent.runOnce).
   if (IS_TEST_INSTANCE) {

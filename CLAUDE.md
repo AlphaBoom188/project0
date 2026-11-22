@@ -21,6 +21,7 @@ npm start              # port 3000; also serves the LIFF app at /liff and runs t
 - Backups: `BACKUP_DIR` (default `~/Backups/expense-tracker`, never inside the repo), `BACKUP_KEEP` (default 14), `BACKUP=off`.
 - `DISABLE_CRON=1` for any extra server instance (below). It also skips the ops agent there.
 - `OWNER_LINE_USER_ID` (who gets production alerts on LINE); optional `ANTHROPIC_API_KEY` (adds a Claude diagnosis to alerts; needs `@anthropic-ai/sdk`); `OPS_AGENT=off`; `CORS_ORIGINS`.
+- `DEV_LIFF_STUB=1` (**local QA only**, never in production): `/liff/?devuser=test_x` swaps the LINE SDK for a stub (`services/devLiffStub.js`) so a plain browser opens the app as that `test_` user; only on direct loopback and only for `test_` ids, otherwise 404 / the untouched page. See `docs/QA.md`.
 - `AUTH_TEST_BYPASS=false` removes the local `test_` bypass, e.g. behind a proxy that doesn't add `X-Forwarded-For`.
 - `AUTH_REQUIRED=false` disables API authentication (default on; see Conventions). `EXPORT_LINK_SECRET` is optional; by default it's derived from the service role key.
 

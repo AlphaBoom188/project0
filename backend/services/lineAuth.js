@@ -91,14 +91,20 @@ const bearer = (req) => {
   return m ? m[1] : null;
 };
 
+// A request made directly on this machine: loopback socket and no proxy
+// headers (the ngrok tunnel adds X-Forwarded-For, so tunnelled traffic is never local).
+function isDirectLoopback(req) {
+  if (req.headers['x-forwarded-for'] || req.headers.forwarded) return false;
+  const addr = (req.socket && req.socket.remoteAddress) || '';
+  return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
+}
+
 function isLocalTestRequest(req, lineUserId) {
   // AUTH_TEST_BYPASS=false removes the bypass entirely, e.g. when deployed
   // behind a proxy that doesn't add X-Forwarded-For.
   if (process.env.AUTH_TEST_BYPASS === 'false') return false;
   if (!String(lineUserId || '').startsWith('test_')) return false;
-  if (req.headers['x-forwarded-for'] || req.headers.forwarded) return false;
-  const addr = (req.socket && req.socket.remoteAddress) || '';
-  return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
+  return isDirectLoopback(req);
 }
 
 // ---- Signed export links ----
@@ -172,4 +178,4 @@ const requireOwnUser = (req, res, next, lineUserId) => checkUser(req, res, next,
 // For routes that take the user in the body (POST /api/users).
 const requireBodyUser = (req, res, next) => checkUser(req, res, next, req.body && req.body.line_user_id);
 
-module.exports = { requireOwnUser, requireBodyUser, userIdForToken, signExportLink, verifyExportLink, signState, verifyState, isLocalTestRequest, channelIds, _cache: cache };
+module.exports = { requireOwnUser, requireBodyUser, userIdForToken, signExportLink, verifyExportLink, signState, verifyState, isLocalTestRequest, isDirectLoopback, channelIds, _cache: cache };
