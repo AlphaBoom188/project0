@@ -88,17 +88,11 @@ const insightsController = {
     res.json({ success: true, mode, created, suggestions: list.filter((x) => x.key !== key) });
   }),
 
-  // GET /api/recurring/:u/overview -> subscriptions and bills: monthly/yearly totals, price rises
+  // GET /api/recurring/:u/overview -> subscriptions and bills: monthly/yearly totals,
+  // price rises, and what's due next (next date, 7 days, left this billing cycle)
   subscriptionsOverview: handle('subscriptionsOverview', async (req, res) => {
-    const u = req.params.line_user_id;
-    const { overview } = require('../services/subscriptions');
-    const since = new Date(Date.now() - 100 * 86400000).toISOString();
-    const [rules, tx] = await Promise.all([
-      supabase.from('recurring_transactions').select('*, categories ( name )').eq('line_user_id', u), // '*': track_only exists only after migration 026
-      supabase.from('transactions').select('description, amount, transaction_date').eq('line_user_id', u).eq('type', 'expense').gte('transaction_date', since).limit(5000),
-    ]);
-    for (const r of [rules, tx]) if (r.error) throw r.error;
-    res.json(overview(rules.data, tx.data.map((t) => ({ description: t.description, amount: Number(t.amount), date: getBangkokYmd(new Date(t.transaction_date)) }))));
+    const { loadOverview } = require('../services/subscriptions');
+    res.json(await loadOverview(req.params.line_user_id));
   }),
 
   // GET /api/reports/:u/monthly?offset=-1 (-24..0; -1 = the last complete billing cycle)

@@ -29,6 +29,8 @@ const at = (h, mi, dayOffset = 0) => { const d = new Date(Date.now() + 7 * 36000
   const text = buildBriefing({ now, timed: [{ at: '2026-11-20T07:00:00Z', title: 'Dentist', importance: 1 }, { at: '2026-11-20T02:00:00Z', title: 'Stand-up', kind: 'event' }], allDay: ['Holiday'], overdue: [{ title: 'Pay rent' }], todos: ['Buy milk', 'Call mum'] });
   assert(text.startsWith('Good morning. Friday 20 Nov:') && text.indexOf('09:00  Stand-up · calendar') < text.indexOf('14:00  Dentist (important)'), `sorted by time, calendar marked (got ${JSON.stringify(text)})`);
   assert(text.includes('- All day  Holiday') && text.includes('Still open\n- Pay rent') && text.includes('To-do (2)\n- Buy milk'), 'all-day, overdue and to-dos');
+  const billsOnly = buildBriefing({ now, bills: ['Netflix ฿419', 'Water ฿300'] });
+  assert(billsOnly && billsOnly.includes('Bills due today\n- Netflix ฿419\n- Water ฿300'), 'bills due today alone make a briefing');
   const many = buildBriefing({ now, todos: Array.from({ length: 8 }, (_, i) => `T${i}`) });
   assert(many.includes('- and 3 more'), 'long lists are capped');
 

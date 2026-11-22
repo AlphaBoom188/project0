@@ -107,9 +107,16 @@ async function handleSummaryCommand(event, lineUserId) {
   );
 
   const net = totals.income - totals.expense;
+  let bills = null;
+  try {
+    const subs = require('../services/subscriptions');
+    bills = subs.due7Line(await subs.loadOverview(lineUserId));
+  } catch (err) {
+    console.warn(`[summary] bills line skipped (${err.message})`); // extra line: never block the summary
+  }
   await replyText(
     event.replyToken,
-    `This period's summary:\nIncome: ${totals.income.toFixed(2)}\nExpense: ${totals.expense.toFixed(2)}\nNet: ${net.toFixed(2)}`
+    `This period's summary:\nIncome: ${totals.income.toFixed(2)}\nExpense: ${totals.expense.toFixed(2)}\nNet: ${net.toFixed(2)}${bills ? `\n${bills}` : ''}`
   );
 }
 

@@ -12,9 +12,9 @@ const WD = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'S
 const MO = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // items: { timed: [{ at, title, importance, kind: 'reminder'|'event' }], allDay: [title],
-//          overdue: [{ title, at }], todos: [title] } -> text, or null when nothing's on.
-function buildBriefing({ now, timed = [], allDay = [], overdue = [], todos = [] }) {
-  if (!timed.length && !allDay.length && !overdue.length && !todos.length) return null;
+//          overdue: [{ title, at }], todos: [title], bills: ['Netflix ฿419'] } -> text, or null when nothing's on.
+function buildBriefing({ now, timed = [], allDay = [], overdue = [], todos = [], bills = [] }) {
+  if (!timed.length && !allDay.length && !overdue.length && !todos.length && !bills.length) return null;
   const { weekday, day, month } = bangkokParts(now);
   const lines = [`Good morning. ${WD[weekday]} ${day} ${MO[month]}:`];
   if (timed.length || allDay.length) {
@@ -22,6 +22,11 @@ function buildBriefing({ now, timed = [], allDay = [], overdue = [], todos = [] 
     allDay.slice(0, 5).forEach((t) => lines.push(`- All day  ${t}`));
     [...timed].sort((a, b) => new Date(a.at) - new Date(b.at)).slice(0, 10)
       .forEach((t) => lines.push(`- ${hm(t.at)}  ${t.title}${t.importance === 2 ? ' (must not miss)' : t.importance === 1 ? ' (important)' : ''}${t.kind === 'event' ? ' · calendar' : ''}`));
+  }
+  if (bills.length) {
+    lines.push('', 'Bills due today');
+    bills.slice(0, 5).forEach((b) => lines.push(`- ${b}`));
+    if (bills.length > 5) lines.push(`- and ${bills.length - 5} more`);
   }
   if (overdue.length) {
     lines.push('', 'Still open');
@@ -59,7 +64,14 @@ async function loadBriefing(lineUserId, now = new Date(), { withCalendar = true 
       console.warn(`[briefing] calendar skipped (${error.message})`);
     }
   }
-  return { text: buildBriefing({ now, timed, allDay, overdue, todos }), counts: { timed: timed.length, allDay: allDay.length, overdue: overdue.length, todos: todos.length } };
+  let bills = [];
+  try {
+    const subs = require('./subscriptions');
+    bills = subs.dueToday(await subs.loadOverview(lineUserId, now));
+  } catch (error) {
+    console.warn(`[briefing] bills skipped (${error.message})`);
+  }
+  return { text: buildBriefing({ now, timed, allDay, overdue, todos, bills }), counts: { timed: timed.length, allDay: allDay.length, overdue: overdue.length, todos: todos.length, bills: bills.length } };
 }
 
 module.exports = { buildBriefing, loadBriefing };

@@ -1223,6 +1223,7 @@ async function loadHomeTab() {
   renderHomeGroups().catch(() => {
     el.homeGroups.hidden = true;
   });
+  if (typeof loadHomeBill === 'function') loadHomeBill(); // money.js: "Next bill" row
   const { year: nowYear, month: nowMonth } = bangkokParts();
   const sixMonthsAgoISO = bangkokMidnight(nowYear, nowMonth - 5, 1).toISOString();
   // This cycle's per-category budgets and spend (hero, Budgets to watch,

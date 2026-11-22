@@ -40,8 +40,14 @@ const mo = {
   goalDelete: document.getElementById('sgoal-delete'),
   subsHeader: document.getElementById('subs-header'),
   subsList: document.getElementById('subs-list'),
+  subsHero: document.getElementById('subs-hero'),
+  subsNext: document.getElementById('subs-next'),
+  subsDue7: document.getElementById('subs-due7'),
+  subsLeft: document.getElementById('subs-left'),
+  subsTotal: document.getElementById('subs-total'),
+  subsSort: document.getElementById('subs-sort'),
 };
-const moState = { csvText: null, mapping: null, goals: [], editingGoal: null, goalSeq: 0, subsSeq: 0 };
+const moState = { csvText: null, mapping: null, goals: [], editingGoal: null, goalSeq: 0, subsSeq: 0, subs: null, subsSort: 'due' };
 const thb = (n) => `฿${Math.round(Number(n) || 0).toLocaleString('en-US')}`;
 const moneyInput = (v) => (String(v || '').trim() === '' ? null : Number(String(v).replace(/[,\s฿]/g, '')));
 
@@ -212,22 +218,105 @@ async function deleteGoal() {
 }
 
 // ---- Subscriptions & bills ----
+// "in 3 days (Fri 27 Nov)" style labels from the API's Bangkok dates.
+const SUBS_WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const SUBS_MO = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function subsDate(ymd) {
+  const d = new Date(`${ymd}T00:00:00Z`);
+  return `${SUBS_WD[d.getUTCDay()]} ${d.getUTCDate()} ${SUBS_MO[d.getUTCMonth()]}`;
+}
+function subsWhen(days) {
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Tomorrow';
+  if (days < 0) return `Overdue ${-days} ${days === -1 ? 'day' : 'days'}`;
+  return `in ${days} days`;
+}
+const SUBS_FREQ = { daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly', yearly: 'Yearly' };
+
+function subsRow(i) {
+  const due = i.status === 'paid'
+    ? '<span class="row-sub subs-paid"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>Paid</span>'
+    : i.next_due ? `<span class="row-sub${i.status === 'overdue' ? ' amount-over' : ''}" data-subs-due>${subsWhen(i.days_until)}</span>` : '';
+  const meta = [SUBS_FREQ[i.frequency] || i.frequency];
+  const last4 = i.account && String(i.account.masked || '').replace(/\D/g, '').slice(-4);
+  if (i.account) meta.push(escapeHtml(last4 ? `${i.account.name} •••${last4}` : i.account.name));
+  meta.push(i.auto ? 'Logs automatically' : 'Track only');
+  const markPaid = i.pay_window && i.status !== 'paid' ? `<button type="button" class="btn btn-outline btn-sm subs-mark-paid" data-subs-paid="${escapeHtml(i.id)}">Mark paid</button>` : '';
+  return `<li class="row subs-row" data-subs-id="${escapeHtml(i.id)}" data-status="${i.status}">${categoryTile(i.category || i.description)}
+    <span class="row-main"><span class="row-title">${escapeHtml(i.description)}</span>
+      <span class="row-meta">${meta.join(' · ')}</span>
+      ${i.increase ? `<span class="row-meta amount-warn">Went up: ${thb(i.increase.from)} to ${thb(i.increase.to)} (${escapeHtml(i.increase.date)})</span>` : ''}
+      ${markPaid}</span>
+    <span class="row-end"><span class="row-value">${formatBaht(i.next_amount)}</span>${due}</span>
+  </li>`;
+}
+
+function renderSubscriptions() {
+  const o = moState.subs;
+  const any = !!(o && o.items.length);
+  for (const n of [mo.subsHeader, mo.subsHero, mo.subsSort, mo.subsList]) n.hidden = !any;
+  if (!any) return;
+  mo.subsNext.textContent = o.next
+    ? `${o.next.description} ${formatBaht(o.next.amount)} · ${subsWhen(o.next.days_until).toLowerCase()} (${subsDate(o.next.next_due)})`
+    : 'Nothing due';
+  mo.subsDue7.textContent = `${formatBaht(o.due_7d.total)} (${o.due_7d.count})`;
+  mo.subsLeft.textContent = `${formatBaht(o.left_this_cycle.total)} (${o.left_this_cycle.count})`;
+  mo.subsTotal.textContent = `${thb(o.monthlyTotal)} a month · ${thb(o.yearlyTotal)} a year`;
+  for (const b of mo.subsSort.querySelectorAll('[data-subs-sort]')) b.setAttribute('aria-pressed', String(b.dataset.subsSort === moState.subsSort));
+  const items = moState.subsSort === 'cost' ? [...o.items].sort((a, b) => b.monthly - a.monthly) : o.items; // API order = next due
+  mo.subsList.innerHTML = items.map(subsRow).join('');
+  if (moState.scrollToSubs) { moState.scrollToSubs = false; mo.subsHeader.scrollIntoView({ block: 'start' }); }
+}
+
 async function loadSubscriptions() {
   const seq = ++moState.subsSeq;
   try {
     const o = await cachedGet(`/recurring/${lineUserId}/overview`);
     if (seq !== moState.subsSeq) return;
-    const any = o.items.length > 0;
-    mo.subsHeader.hidden = !any;
-    mo.subsList.hidden = !any;
-    mo.subsList.innerHTML = o.items.map((i) => `<li class="row">${categoryTile(i.category || i.description)}
-      <span class="row-main"><span class="row-title">${escapeHtml(i.description)}</span>
-        <span class="row-meta">${i.frequency === 'monthly' ? 'Monthly' : i.frequency === 'yearly' ? `Yearly ${thb(i.amount)}` : i.frequency === 'weekly' ? `Weekly ${thb(i.amount)}` : `Daily ${thb(i.amount)}`}${i.category ? ` · ${escapeHtml(i.category)}` : ''}${i.tracked ? ' · not logged' : ''}</span>
-        ${i.increase ? `<span class="row-meta amount-warn">Went up: ${thb(i.increase.from)} to ${thb(i.increase.to)} (${escapeHtml(i.increase.date)})</span>` : ''}</span>
-      <span class="row-end"><span class="row-value">${thb(i.monthly)}</span><span class="row-sub">a month</span></span>
-    </li>`).join('') + (any ? `<li class="row subs-foot"><span class="row-main"><span class="row-title" id="subs-total">${thb(o.monthlyTotal)} a month · ${thb(o.yearlyTotal)} a year</span></span></li>` : '');
+    moState.subs = o;
+    renderSubscriptions();
   } catch {
-    mo.subsHeader.hidden = true; // extra information: never block Budgets
+    if (seq !== moState.subsSeq) return;
+    moState.subs = null;
+    renderSubscriptions(); // extra information: never block Budgets
+  }
+}
+
+async function setSubsPaid(id, paid) {
+  await apiRequest(`/recurring/${lineUserId}/${id}/paid`, { method: 'PATCH', body: JSON.stringify({ paid }) });
+  await loadSubscriptions();
+  if (typeof loadRecurringList === 'function') loadRecurringList();
+}
+
+async function markSubsPaid(button) {
+  const id = button.dataset.subsPaid;
+  button.disabled = true;
+  try {
+    await setSubsPaid(id, true);
+    showToast({ title: 'Marked paid', undo: () => setSubsPaid(id, false) });
+  } catch (error) {
+    button.disabled = false;
+    showToast({ title: "Couldn't update the payment", description: plainError(error), kind: 'bad' });
+  }
+}
+
+// Home: "Next bill: Netflix · in 3 days" (shares the cached overview).
+let homeBillSeq = 0;
+async function loadHomeBill() {
+  const seq = ++homeBillSeq;
+  const box = document.getElementById('home-bill');
+  try {
+    const o = await cachedGet(`/recurring/${lineUserId}/overview`);
+    if (seq !== homeBillSeq) return;
+    const n = o.next;
+    box.hidden = !n;
+    if (!n) return;
+    document.getElementById('home-bill-title').textContent = `Next bill: ${n.description}`;
+    document.getElementById('home-bill-meta').textContent = `${subsWhen(n.days_until)} · ${subsDate(n.next_due)}`;
+    document.getElementById('home-bill-meta').classList.toggle('amount-over', n.status === 'overdue');
+    document.getElementById('home-bill-amount').textContent = formatBaht(n.amount);
+  } catch {
+    if (seq === homeBillSeq) box.hidden = true; // extra information: never block Home
   }
 }
 
@@ -251,6 +340,20 @@ mo.csvMapping.addEventListener('change', (e) => {
 mo.csvImport.addEventListener('click', importCsv);
 mo.csvCancel.addEventListener('click', () => { mo.csvModal.hidden = true; });
 mo.csvClose.addEventListener('click', () => { mo.csvModal.hidden = true; });
+mo.subsSort.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-subs-sort]');
+  if (!b) return;
+  moState.subsSort = b.dataset.subsSort;
+  renderSubscriptions();
+});
+mo.subsList.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-subs-paid]');
+  if (b) markSubsPaid(b);
+});
+document.getElementById('home-bill-row').addEventListener('click', () => {
+  moState.scrollToSubs = true; // renderSubscriptions scrolls once the list is in
+  switchTab('budgets');
+});
 mo.addGoal.addEventListener('click', openAddGoalChooser);
 mo.goalAccount.addEventListener('change', syncGoalAccount);
 mo.goalForm.addEventListener('submit', saveGoal);

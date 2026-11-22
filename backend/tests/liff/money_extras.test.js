@@ -112,7 +112,7 @@ async function openApp(browser, setup) {
     await nf.waitFor({ timeout: 10000 });
     assert((await nf.locator('.recurring-meta').textContent()).includes('tracked only'), 'recurring row says "tracked only"');
     await page.waitForFunction(() => document.getElementById('subs-list').textContent.includes('NETFLIX.COM'), null, { timeout: 10000 }).catch(() => {});
-    assert((await page.locator('#subs-list .row', { hasText: 'NETFLIX.COM' }).textContent()).includes('not logged'), 'Subscriptions row says "not logged"');
+    assert((await page.locator('#subs-list .row', { hasText: 'NETFLIX.COM' }).textContent()).includes('Track only'), 'Subscriptions row says "Track only"');
     await nf.locator('.recurring-more').click();
     await page.waitForSelector('#recurring-actions-modal:not([hidden])');
     assert(!(await page.isChecked('#recurring-active-switch')) && (await page.textContent('#recurring-active-meta')).startsWith('Off. Listed under Subscriptions'), 'sheet: switch off, "Listed under Subscriptions"');

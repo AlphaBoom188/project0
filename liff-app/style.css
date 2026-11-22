@@ -4462,8 +4462,21 @@ select.chip-select:not([value=""]):has(option:checked:not([value=""])) {
 .rec-actions { display: flex; gap: var(--space-2); margin-top: var(--space-4); }
 .rec-actions .btn { flex: 1; }
 
-.subs-foot { background: var(--muted); min-height: 44px; }
-.subs-foot .row-title { font-size: 14px; }
+/* Subscriptions & bills: what's due next */
+.subs-next {
+  margin: var(--space-1) 0 0;
+  font-family: var(--font-serif);
+  font-size: 22px;
+  line-height: 30px;
+  font-variant-numeric: tabular-nums;
+}
+.subs-totals { margin-top: var(--space-4); }
+.subs-sort { margin-bottom: var(--space-2); }
+.subs-sort .chip { min-height: var(--tap-min); }
+.subs-row { align-items: flex-start; padding-top: var(--space-2); padding-bottom: var(--space-2); }
+.subs-row .row-main .row-meta { white-space: normal; }
+.subs-mark-paid { align-self: flex-start; min-height: var(--tap-min); margin-top: var(--space-2); }
+.subs-paid { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--muted-foreground); }
 
 /* Recurring rules */
 .recurring-amount.transaction-amount { font-size: 15px; font-weight: 600; }
