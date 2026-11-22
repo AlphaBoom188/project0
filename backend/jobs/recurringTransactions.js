@@ -44,7 +44,8 @@ async function processDueRecurringTransactions({ lineUserId } = {}) {
     return;
   }
 
-  for (const rule of dueRules || []) {
+  // Track-only rules (migration 026) are listed under Subscriptions but never log.
+  for (const rule of (dueRules || []).filter((r) => !r.track_only)) {
     try {
       await createTransaction({
         lineUserId: rule.line_user_id,

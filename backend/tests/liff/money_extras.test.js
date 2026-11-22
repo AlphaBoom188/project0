@@ -39,6 +39,9 @@ async function openApp(browser, setup) {
   const other = cats.find((c) => c.id !== food.id);
   await api(`/transactions/${U}`, { method: 'POST', body: JSON.stringify({ type: 'expense', amount: 80, category_id: food.id, description: 'Noodles', transaction_date: new Date().toISOString() }) });
   await api(`/recurring/${U}`, { method: 'POST', body: JSON.stringify({ category_id: food.id, amount: 300, type: 'expense', frequency: 'weekly', start_date: '2030-01-01', description: 'Gym' }) });
+  // Three monthly NETFLIX payments -> a real repeat-payment suggestion.
+  const daysAgo = (n) => new Date(Date.now() - n * 86400000).toISOString().replace(/T.*/, 'T05:00:00Z');
+  await db.from('transactions').insert([1, 31, 61].map((d) => ({ line_user_id: U, type: 'expense', amount: 419, category_id: food.id, description: 'NETFLIX.COM', transaction_date: daysAgo(d) })));
 
   const browser = await chromium.launch({ channel: 'chrome' });
   try {
@@ -94,6 +97,29 @@ async function openApp(browser, setup) {
     assert((await page.textContent('#recurring-modal-title')) === 'Add rule' && !(await page.isDisabled('#recurring-field-type')) && (await page.inputValue('#recurring-field-amount')) === '', 'Add rule starts empty with type unlocked');
     await page.click('#recurring-modal .sheet-close');
     await page.locator('#recurring-list').screenshot({ path: `${OUTPUT}/moneyx_recurring.png` });
+
+    // --- Track as a subscription only ---
+    const card = page.locator('.rec-card', { hasText: 'NETFLIX.COM' });
+    await card.waitFor({ timeout: 15000 });
+    const opts = await card.locator('.rec-option').allTextContents();
+    assert(opts.map((t) => t.trim()).join('|') === 'Log it automatically|Remind me to log it|Track as a subscription only', `three options (got ${JSON.stringify(opts)})`);
+    await card.locator('.rec-option', { hasText: 'Track as a subscription only' }).click();
+    await card.screenshot({ path: `${OUTPUT}/moneyx_rec_card.png` });
+    const [acc] = await Promise.all([page.waitForResponse((x) => x.url().includes('/accept')), card.locator('[data-repeat-action="accept"]').click()]);
+    assert(acc.status() === 200 && JSON.parse(acc.request().postData()).mode === 'track', `Accept sends mode "track" (got ${acc.status()})`);
+    assert((await page.textContent('#toast .toast-title')) === 'Tracked as a subscription', 'toast "Tracked as a subscription"');
+    const nf = page.locator('.recurring-row', { hasText: 'NETFLIX.COM' });
+    await nf.waitFor({ timeout: 10000 });
+    assert((await nf.locator('.recurring-meta').textContent()).includes('tracked only'), 'recurring row says "tracked only"');
+    await page.waitForFunction(() => document.getElementById('subs-list').textContent.includes('NETFLIX.COM'), null, { timeout: 10000 }).catch(() => {});
+    assert((await page.locator('#subs-list .row', { hasText: 'NETFLIX.COM' }).textContent()).includes('not logged'), 'Subscriptions row says "not logged"');
+    await nf.locator('.recurring-more').click();
+    await page.waitForSelector('#recurring-actions-modal:not([hidden])');
+    assert(!(await page.isChecked('#recurring-active-switch')) && (await page.textContent('#recurring-active-meta')).startsWith('Off. Listed under Subscriptions'), 'sheet: switch off, "Listed under Subscriptions"');
+    await page.click('.recurring-active-row');
+    await page.waitForFunction(() => [...document.querySelectorAll('.recurring-row')].some((r) => r.textContent.includes('NETFLIX') && r.textContent.includes('next ')), null, { timeout: 8000 }).catch(() => {});
+    const { data: nrule } = await db.from('recurring_transactions').select('track_only, is_active').eq('line_user_id', U).eq('description', 'NETFLIX.COM').single();
+    assert(nrule.track_only === false && nrule.is_active === true && (await nf.locator('.recurring-meta').textContent()).includes('next '), 'switching on makes it a logging rule');
 
     assert(errors.length === 0, `no page errors (got ${JSON.stringify(errors)})`);
   } finally {

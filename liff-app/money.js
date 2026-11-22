@@ -222,7 +222,7 @@ async function loadSubscriptions() {
     mo.subsList.hidden = !any;
     mo.subsList.innerHTML = o.items.map((i) => `<li class="row">${categoryTile(i.category || i.description)}
       <span class="row-main"><span class="row-title">${escapeHtml(i.description)}</span>
-        <span class="row-meta">${i.frequency === 'monthly' ? 'Monthly' : i.frequency === 'yearly' ? `Yearly ${thb(i.amount)}` : i.frequency === 'weekly' ? `Weekly ${thb(i.amount)}` : `Daily ${thb(i.amount)}`}${i.category ? ` · ${escapeHtml(i.category)}` : ''}</span>
+        <span class="row-meta">${i.frequency === 'monthly' ? 'Monthly' : i.frequency === 'yearly' ? `Yearly ${thb(i.amount)}` : i.frequency === 'weekly' ? `Weekly ${thb(i.amount)}` : `Daily ${thb(i.amount)}`}${i.category ? ` · ${escapeHtml(i.category)}` : ''}${i.tracked ? ' · not logged' : ''}</span>
         ${i.increase ? `<span class="row-meta amount-warn">Went up: ${thb(i.increase.from)} to ${thb(i.increase.to)} (${escapeHtml(i.increase.date)})</span>` : ''}</span>
       <span class="row-end"><span class="row-value">${thb(i.monthly)}</span><span class="row-sub">a month</span></span>
     </li>`).join('') + (any ? `<li class="row subs-foot"><span class="row-main"><span class="row-title" id="subs-total">${thb(o.monthlyTotal)} a month · ${thb(o.yearlyTotal)} a year</span></span></li>` : '');

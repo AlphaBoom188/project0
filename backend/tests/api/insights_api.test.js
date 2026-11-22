@@ -15,6 +15,7 @@ require.cache[lp] = { id: lp, filename: lp, loaded: true, exports: {
   async replyMessages() {}, async replyConfirmationCard() {}, async pushText() {}, async getImageBuffer() { return Buffer.alloc(0); }, async getGroupMemberName() { return null; }, async getGroupName() { return null; },
 } };
 const { sendMonthlyReports } = require(`${BACKEND}/jobs/monthlyReport.js`);
+const { processDueRecurringTransactions } = require(`${BACKEND}/jobs/recurringTransactions.js`);
 const controller = require(`${BACKEND}/controllers/lineWebhookController.js`);
 
 const U = `test_insight_${crypto.randomBytes(4).toString('hex')}`;
@@ -31,6 +32,7 @@ const daysAgo = (n) => new Date(Date.now() - n * 86400000).toISOString().replace
       ...[0, 30, 60, 90].map((d) => ({ amount: 419, type: 'expense', category_id: other.id, description: 'NETFLIX.COM', transaction_date: daysAgo(d + 1) })),
       ...[0, 30, 60].map((d) => ({ amount: 799, type: 'expense', category_id: other.id, description: 'TRUEMOVE H 0812345678', transaction_date: daysAgo(d + 2) })),
       ...[0, 30, 60].map((d) => ({ amount: 199, type: 'expense', category_id: other.id, description: 'YouTube Premium', transaction_date: daysAgo(d + 3) })),
+      ...[0, 30, 60].map((d) => ({ amount: 149, type: 'expense', category_id: other.id, description: 'SPOTIFY', transaction_date: daysAgo(d + 6) })),
       { amount: 120, type: 'expense', category_id: other.id, description: 'coffee', transaction_date: daysAgo(4) },
       { amount: 30000, type: 'income', category_id: income.id, description: 'Freelance', transaction_date: daysAgo(5) },
     ];
@@ -54,6 +56,24 @@ const daysAgo = (n) => new Date(Date.now() - n * 86400000).toISOString().replace
     assert(r.status === 200 && r.body.created.reminderId, 'remind -> a reminder');
     const rem = (await db.from('reminders').select('title, repeat, category, importance, details').eq('id', r.body.created.reminderId).single()).data;
     assert(rem.title.startsWith('Pay TRUEMOVE') && rem.repeat === 'monthly' && rem.category === 'finance' && rem.importance === 1 && rem.details.includes('฿799'), 'reminder: monthly, finance, important, amount in details');
+    // --- Track as a subscription only (migration 026) ---
+    const sp = (await call('GET', `/recurring/${U}/suggestions`)).body.suggestions.find((x) => x.description === 'SPOTIFY');
+    r = await call('POST', `/recurring/${U}/suggestions/${sp.key}/accept`, { mode: 'track' });
+    assert(r.status === 200 && r.body.mode === 'track' && r.body.created.recurringId, `track -> a rule (got ${r.status} ${JSON.stringify(r.body.error || '')})`);
+    const trackedId = r.body.created && r.body.created.recurringId;
+    const tracked = (await db.from('recurring_transactions').select('*').eq('id', trackedId).single()).data;
+    assert(tracked && tracked.track_only === true && tracked.is_active === true && Number(tracked.amount) === 149, 'rule is track_only');
+    const ov = (await call('GET', `/recurring/${U}/overview`)).body;
+    assert(ov.items.some((i) => i.description === 'SPOTIFY' && i.tracked === true && i.monthly === 149), 'listed under Subscriptions as tracked');
+    await db.from('recurring_transactions').update({ next_run_date: daysAgo(1) }).eq('id', trackedId);
+    await processDueRecurringTransactions({ lineUserId: U });
+    const logged = (await db.from('transactions').select('id').eq('line_user_id', U).eq('description', 'SPOTIFY')).data.length;
+    assert(logged === 3, `the job never logs a track-only rule (SPOTIFY rows ${logged})`);
+    r = await call('PUT', `/recurring/${U}/${trackedId}`, { track_only: false });
+    assert(r.status === 200 && r.body.recurring.track_only === false, 'PUT track_only false -> a normal rule');
+    await db.from('recurring_transactions').delete().eq('id', trackedId);
+    assert((await call('POST', `/recurring/${U}/suggestions/${sp.key}/accept`, { mode: 'nope' })).status === 404, 'handled suggestion is gone');
+
     r = await call('POST', `/recurring/${U}/suggestions/${yt.key}/dismiss`);
     assert(r.status === 200 && r.body.suggestions.length === 0, 'dismiss');
     r = await call('GET', `/recurring/${U}/suggestions`);

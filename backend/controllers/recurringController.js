@@ -134,7 +134,7 @@ const recurringController = {
   async updateRecurring(req, res) {
     try {
       const { line_user_id, recurring_id } = req.params;
-      const { category_id, amount, description, frequency, is_active, pay_start_day, pay_end_day, next_run_date } = req.body;
+      const { category_id, amount, description, frequency, is_active, pay_start_day, pay_end_day, next_run_date, track_only } = req.body;
 
       const updateData = {};
       if (category_id !== undefined) {
@@ -161,6 +161,7 @@ const recurringController = {
         updateData.frequency = frequency;
       }
       if (is_active !== undefined) updateData.is_active = Boolean(is_active);
+      if (track_only !== undefined) updateData.track_only = Boolean(track_only);
       if (pay_start_day !== undefined || pay_end_day !== undefined) {
         const payWindowError = validatePayWindow(pay_start_day, pay_end_day);
         if (payWindowError) {
@@ -181,6 +182,7 @@ const recurringController = {
       if (error) {
         // .single() on zero matched rows (unknown id, or not this user's) -> PGRST116
         if (error.code === 'PGRST116') return res.status(404).json({ error: 'Recurring rule not found' });
+        if (error.code === 'PGRST204') return res.status(503).json({ error: 'Tracking needs a database update first (migration 026).' });
         throw error;
       }
 

@@ -55,10 +55,10 @@ const insightsController = {
       return res.json({ success: true, suggestions: list.filter((x) => x.key !== key) });
     }
     if (!c) return res.status(404).json({ error: 'That suggestion is no longer available' });
-    const mode = req.body && req.body.mode === 'remind' ? 'remind' : req.body && req.body.mode === 'log' ? 'log' : null;
-    if (!mode) return res.status(400).json({ error: "mode must be 'log' or 'remind'" });
+    const mode = req.body && ['log', 'remind', 'track'].includes(req.body.mode) ? req.body.mode : null;
+    if (!mode) return res.status(400).json({ error: "mode must be 'log', 'remind' or 'track'" });
     let created;
-    if (mode === 'log') {
+    if (mode === 'log' || mode === 'track') {
       let categoryId = c.categoryId;
       if (!categoryId) {
         const { data: cat } = await supabase.from('categories').select('id').eq('line_user_id', u).eq('type', c.type).in('name', c.type === 'income' ? ['Income'] : ['Others']).limit(1).maybeSingle();
@@ -68,7 +68,10 @@ const insightsController = {
       const { data, error } = await supabase.from('recurring_transactions').insert({
         line_user_id: u, category_id: categoryId, amount: c.amount, type: c.type, description: c.description,
         frequency: 'monthly', next_run_date: `${c.nextDate}T12:00:00Z`, is_active: true,
+        ...(mode === 'track' ? { track_only: true } : {}),
       }).select('id, next_run_date').single();
+      // PGRST204: the track_only column isn't there yet (migration 026 not run).
+      if (error && error.code === 'PGRST204') return res.status(503).json({ error: 'Tracking needs a database update first (migration 026).' });
       if (error) throw error;
       created = { recurringId: data.id, nextRunDate: data.next_run_date };
     } else {
@@ -91,7 +94,7 @@ const insightsController = {
     const { overview } = require('../services/subscriptions');
     const since = new Date(Date.now() - 100 * 86400000).toISOString();
     const [rules, tx] = await Promise.all([
-      supabase.from('recurring_transactions').select('id, description, amount, frequency, type, is_active, categories ( name )').eq('line_user_id', u),
+      supabase.from('recurring_transactions').select('*, categories ( name )').eq('line_user_id', u), // '*': track_only exists only after migration 026
       supabase.from('transactions').select('description, amount, transaction_date').eq('line_user_id', u).eq('type', 'expense').gte('transaction_date', since).limit(5000),
     ]);
     for (const r of [rules, tx]) if (r.error) throw r.error;

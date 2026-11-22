@@ -110,7 +110,7 @@ backend/
                         reminderDispatch (every minute), morningBriefing (07:30, opt-in), monthlyReport (08:00 daily,
                         sends on each user's cycle start day), nightlyBackup (03:00, BACKUP=off), taxRulesCheck (10 Jan, 1 Mar: tells the owner
                         when tax rules need the yearly refresh, docs/TAX_RULES_REFRESH.md)
-  supabase/migrations/  001-025 (run in order in the Supabase SQL Editor)
+  supabase/migrations/  001-026 (run in order in the Supabase SQL Editor)
   tests/                see Tests
 liff-app/               index.html, app.js, style.css, tasks.js (Tasks tab), tax.js (Tax tab), insights.js (repeat payments, monthly report), money.js (CSV import, savings goals, subscriptions); bill.html/bill.js = public shared-bill page;
                         privacy(-th).html, terms(-th).html + legal.css = public legal pages (drafts)
@@ -128,7 +128,7 @@ deploy/macos/           LaunchAgents for self-hosting (backend, ngrok tunnel, ke
   - Also `GET|PUT|DELETE /transactions/:u/:transaction_id` and `DELETE /transactions/:u/all`.
   - `POST /transactions/:u/import-csv/preview` (writes nothing) and `POST /transactions/:u/import-csv` (`{ csv, mapping?, createCategories? }`; slip_hash `csv:<hash>` makes re-imports no-ops; no balance changes or alerts).
   - `GET /transactions/:u/export` (CSV with a UTF-8 BOM; Account column last) and `POST /transactions/:u/export/email`, with the same filters as the list.
-- **Recurring:** `GET /recurring/:u/suggestions` (repeat payments found in transactions), `POST /recurring/:u/suggestions/:key/accept` (`mode: 'log'` = recurring rule, `'remind'` = monthly reminder) and `/dismiss`; `GET /recurring/:u/overview` (subscriptions and bills: monthly/yearly totals, price rises); `GET|POST /recurring/:u`, `PUT|DELETE /recurring/:u/:recurring_id`, `PATCH /recurring/:u/:recurring_id/paid`.
+- **Recurring:** `GET /recurring/:u/suggestions` (repeat payments found in transactions), `POST /recurring/:u/suggestions/:key/accept` (`mode: 'log'` = recurring rule, `'remind'` = monthly reminder, `'track'` = track-only rule: listed under Subscriptions, never auto-logged) and `/dismiss`; `GET /recurring/:u/overview` (subscriptions and bills: monthly/yearly totals, price rises); `GET|POST /recurring/:u`, `PUT|DELETE /recurring/:u/:recurring_id` (PUT also takes `next_run_date`, `track_only`; the category must be the user's), `PATCH /recurring/:u/:recurring_id/paid`.
 - **Accounts:** `GET|POST /accounts/:u`, `PUT|DELETE /accounts/:u/:account_id`. Transfers are `POST /transactions/:u` with `type: 'transfer'`.
 - **Bills:** `GET|POST /bills/:u`, `GET|DELETE /bills/:u/:bill_id`, `PATCH /bills/:u/:bill_id/participants/:participant_id`, `POST /bills/:u/scan-items`; public `GET /bills/public/:bill_id`, `PATCH /bills/public/:bill_id/participants/:participant_id`.
 - **Portfolio:**
@@ -176,6 +176,7 @@ deploy/macos/           LaunchAgents for self-hosting (backend, ngrok tunnel, ke
 | 023 | `users.morning_briefing` (opt-in 07:30 briefing) |
 | 024 | `users.recurring_dismissed` (repeat-payment suggestions handled or dismissed) |
 | 025 | `savings_goals` (target, date, linked account or manual amount, monthly reminder) |
+| 026 | `recurring_transactions.track_only` ("Track as a subscription only": listed, never auto-logged) |
 
 ## Features (details in `docs/FEATURES.md`)
 

@@ -4917,7 +4917,7 @@ function renderRecurringList(rules) {
     const meta = [
       rule.type === 'income' ? 'Income' : 'Expense',
       FREQUENCY_LABELS[rule.frequency] || rule.frequency,
-      `next ${formatDate(rule.next_run_date)}`,
+      rule.track_only ? 'tracked only' : `next ${formatDate(rule.next_run_date)}`,
       status ? `pay ${payWindowLabel(status)}` : '',
       status && status.overdue && !status.paid ? 'overdue' : '',
       rule.is_active ? '' : 'Paused',
@@ -4946,8 +4946,9 @@ function fillRecurringActions(rule) {
   recurringSheetRule = rule;
   document.getElementById('recurring-actions-title').textContent = recurringName(rule);
   const sw = document.getElementById('recurring-active-switch');
-  sw.checked = Boolean(rule.is_active);
-  document.getElementById('recurring-active-meta').textContent = rule.is_active ? 'On. Logged on each due date.' : 'Paused. Nothing is logged.';
+  sw.checked = Boolean(rule.is_active) && !rule.track_only;
+  document.getElementById('recurring-active-meta').textContent = rule.track_only ? 'Off. Listed under Subscriptions; nothing is logged.'
+    : rule.is_active ? 'On. Logged on each due date.' : 'Paused. Nothing is logged.';
   document.getElementById('recurring-unpaid-button').hidden = !(rule.pay_status && rule.pay_status.paid);
 }
 
@@ -5060,11 +5061,12 @@ async function handleSetRecurringPaid(recurringId, paid) {
   }
 }
 
-async function handleToggleRecurringActive(recurringId, isActive) {
+// Turning a track-only rule on makes it a normal, logging rule.
+async function handleToggleRecurringActive(recurringId, isActive, trackOnly = false) {
   try {
     await apiRequest(`/recurring/${lineUserId}/${recurringId}`, {
       method: 'PUT',
-      body: JSON.stringify({ is_active: isActive }),
+      body: JSON.stringify(trackOnly && isActive ? { is_active: true, track_only: false } : { is_active: isActive }),
     });
     await loadRecurringList();
     showToast({ title: isActive ? 'Rule turned on' : 'Rule paused' });
@@ -5227,7 +5229,7 @@ document.getElementById('add-goal-modal').addEventListener('click', (e) => {
   else openGoalRow('ef');
 });
 document.getElementById('recurring-active-switch').addEventListener('change', (e) => {
-  if (recurringSheetRule) handleToggleRecurringActive(recurringSheetRule.id, e.target.checked);
+  if (recurringSheetRule) handleToggleRecurringActive(recurringSheetRule.id, e.target.checked, recurringSheetRule.track_only);
 });
 document.getElementById('recurring-unpaid-button').addEventListener('click', () => {
   if (recurringSheetRule) handleSetRecurringPaid(recurringSheetRule.id, false);

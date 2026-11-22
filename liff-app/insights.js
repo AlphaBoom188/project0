@@ -34,8 +34,8 @@ async function loadRepeatPayments() {
 
 // Recommendation cards (spec 4.3 item 5, no confidence meter). The choice
 // is a single-select list; Accept sends it, Not a repeat dismisses.
-// (The spec's third option, "Track as a subscription only", needs a backend
-// mode that doesn't exist yet, so it isn't offered.)
+// "Track as a subscription only" creates a track-only rule (migration 026):
+// listed under Subscriptions & bills, never logged by itself.
 let repeatHadAny = false;
 function renderRepeatPayments(list) {
   const any = list.length > 0;
@@ -56,6 +56,7 @@ function renderRepeatPayments(list) {
       <div class="rec-options" role="radiogroup" aria-label="What should we do with ${escapeHtml(c.description)}?">
         ${opt('log', 'Log it automatically', true)}
         ${opt('remind', 'Remind me to log it', false)}
+        ${opt('track', 'Track as a subscription only', false)}
       </div>
       <div class="rec-actions">
         <button type="button" class="btn btn-outline" data-repeat-action="dismiss">Not a repeat</button>
@@ -80,16 +81,17 @@ async function handleRepeatAction(event) {
     const created = res.created || {};
     if (dismiss) {
       showToast({ title: 'Marked as not a repeat', description: title });
-    } else if (mode === 'log') {
+    } else if (mode === 'log' || mode === 'track') {
       showToast({
-        title: 'Logs itself each month', description: `${title} is in your recurring rules`,
+        title: mode === 'log' ? 'Logs itself each month' : 'Tracked as a subscription',
+        description: mode === 'log' ? `${title} is in your recurring rules` : `${title} is listed under Subscriptions. Nothing is logged.`,
         undo: created.recurringId ? async () => {
           await apiRequest(`/recurring/${lineUserId}/${created.recurringId}`, { method: 'DELETE' });
           showToast({ title: 'Rule removed', description: title });
           loadRecurringList().catch(() => {});
         } : null,
       });
-      if (typeof loadBudgetsTab === 'function') loadBudgetsTab().catch(() => {});
+      TAB_LOADERS.budgets().catch(() => {}); // the wrapped loader also refreshes Subscriptions (money.js)
     } else {
       showToast({
         title: 'Monthly reminder set', description: `${title}: find it under Tasks`,
