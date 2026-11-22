@@ -38,7 +38,10 @@ npm test                  # api + liff suites, free (~6 min)
 npm test -- statement     # only suites whose path contains "statement"
 npm test -- -v            # full output
 npm run test:openai       # tests/openai/: real OpenAI calls (a few cents)
+npm run qa:smoke          # ~25 s deploy smoke test (liff/qa_smoke)
 ```
+
+Exploratory QA through the Playwright MCP, with seeded synthetic data (`npm run qa:seed`, `qa:serve`, `qa:reset`) and the local `DEV_LIFF_STUB` login: see **`docs/QA.md`**.
 
 - **Auth in tests.** Requests for `test_…` users made directly on this machine (loopback, no `X-Forwarded-For`) skip the LINE token check, so suites must use `test_` ids for any HTTP call. Random `U<hex>` ids are fine only for in-process webhook tests.
 - **Real database.** Suites run against the Supabase project in `.env`. Create only `test_`-prefixed or random `U<hex>` users, delete everything you create, and never call a job's all-users entry point unscoped (`processDueRecurringTransactions`, `sendDailyDigest`, `sendActivityReminder` and `sendPayWindowReminders` take `{ lineUserId }`).
