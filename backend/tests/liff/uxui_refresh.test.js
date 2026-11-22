@@ -108,7 +108,7 @@ const toastText = (page) => page.textContent('#toast');
 
     // --- Repeat-payment card: Not a repeat -> toast, then the dashed card ---
     await page.waitForSelector('#repeat-list [data-repeat="spotify"]', { timeout: 15000 });
-    assert((await page.textContent('#repeat-list .rec-card')).includes('SPOTIFY') && (await page.$$('#repeat-list .rec-option')).length === 2 && (await page.$$('#repeat-list .rec-card .confidence, #repeat-list meter')).length === 0, 'recommendation card: two options, no confidence meter');
+    assert((await page.textContent('#repeat-list .rec-card')).includes('SPOTIFY') && (await page.$$('#repeat-list .rec-option')).length === 3 && (await page.$$('#repeat-list .rec-card .confidence, #repeat-list meter')).length === 0, 'recommendation card: three options, no confidence meter');
     await page.click('#repeat-list .rec-option:has-text("Remind")');
     assert(await page.$eval('#repeat-list .rec-option:has-text("Remind") input', (i) => i.checked), 'tapping an option selects it');
     await page.click('#repeat-list [data-repeat-action="dismiss"]');
