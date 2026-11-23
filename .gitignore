@@ -75,3 +75,6 @@ env/
 *.bak
 *.swp
 *~.nib
+
+# Playwright MCP output
+.playwright-mcp/
