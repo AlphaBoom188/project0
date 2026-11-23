@@ -1695,8 +1695,14 @@ async function renderHomeInvestments() {
 
 // ---- Add Expense modal ----
 
+// Opening the sheet loads expense categories; a quick tap on Income starts an
+// income load. Only the newest may render, or a slow expense reply lands last
+// and the Income tab shows expense chips.
+let entryCategorySeq = 0;
 async function renderAddExpenseCategoryOptions() {
+  const seq = ++entryCategorySeq;
   const response = await cachedGet(`/categories/${lineUserId}?type=${entryType}`);
+  if (seq !== entryCategorySeq) return;
   entryCategories = response.categories;
   const autoOption = entryType === 'expense' ? '<option value="">Auto-Categorize</option>' : '<option value="">Choose a category</option>';
   const keep = el.fieldCategory.value;
@@ -1840,6 +1846,9 @@ function renderEntryCategoryChips() {
   const counts = new Map();
   for (const t of homeTxns) if (t.category_id) counts.set(t.category_id, (counts.get(t.category_id) || 0) + 1);
   const top = entryCategories.slice().sort((a, b) => (counts.get(b.id) || 0) - (counts.get(a.id) || 0)).slice(0, 5);
+  // Income has no Auto: with a single income category there's nothing to
+  // choose, so pick it rather than failing Save with "Choose a category".
+  if (entryType === 'income' && !el.fieldCategory.value && entryCategories.length === 1) el.fieldCategory.value = entryCategories[0].id;
   const current = el.fieldCategory.value;
   if (current && !top.some((c) => c.id === current)) {
     const extra = entryCategories.find((c) => c.id === current);
@@ -1886,6 +1895,7 @@ function closeAddExpenseModal() {
 const VOICE_MAX_MS = 60 * 1000;
 const VOICE_TYPES = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'];
 let voice = null; // { recorder, stream, chunks, timer, startedAt, cancelled }
+let voiceStarting = false; // true while getUserMedia is pending
 
 const voiceSupported = () => !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
 
@@ -1907,12 +1917,22 @@ async function toggleVoiceRecording() {
     return;
   }
   clearModalError(el.modalError);
+  if (voiceStarting) return; // a second tap while the permission prompt is up
+  voiceStarting = true;
   let stream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch (error) {
+    voiceStarting = false;
     const blocked = error && (error.name === 'NotAllowedError' || error.name === 'SecurityError');
     setScanStatus(blocked ? 'Microphone access is blocked. Allow it for LINE in your phone\'s settings, then try again.' : `Couldn't start the microphone (${error && error.message ? error.message : 'unknown error'}).`, 'error');
+    return;
+  }
+  voiceStarting = false;
+  // The sheet was closed while the mic was starting (e.g. during the permission
+  // prompt): cancelVoiceRecording had nothing to stop then, so stop here.
+  if (el.addExpenseModal.hidden) {
+    stream.getTracks().forEach((t) => t.stop());
     return;
   }
   const mimeType = VOICE_TYPES.find((t) => window.MediaRecorder.isTypeSupported && window.MediaRecorder.isTypeSupported(t));
@@ -1942,7 +1962,9 @@ async function finishVoiceRecording(rec, mimeType) {
   rec.stream.getTracks().forEach((t) => t.stop());
   if (voice === rec) voice = null;
   setVoiceButton(false);
-  if (rec.cancelled) return;
+  // Cancelled, or the sheet is gone (the 60 s cap can fire after a close):
+  // never upload audio nobody is waiting for.
+  if (rec.cancelled || el.addExpenseModal.hidden) return;
   const blob = new Blob(rec.chunks, { type: mimeType });
   if (Date.now() - rec.startedAt < 600 || blob.size < 500) {
     setScanStatus('That was too short. Hold on a moment longer and try again.', 'error');
@@ -4379,7 +4401,11 @@ async function handleTransferSubmit(event) {
   }
 
   try {
-    await apiRequest(`/transactions/${lineUserId}`, {
+    const fromId = el.transferFieldFrom.value;
+    const toId = el.transferFieldTo.value;
+    const nameOf = (select) => select.options[select.selectedIndex]?.text || '';
+    const route = `${nameOf(el.transferFieldFrom)} → ${nameOf(el.transferFieldTo)}`;
+    const response = await apiRequest(`/transactions/${lineUserId}`, {
       method: 'POST',
       body: JSON.stringify({
         type: 'transfer',
@@ -4390,7 +4416,26 @@ async function handleTransferSubmit(event) {
       }),
     });
     closeTransferModal();
-    await loadNetWorthTab();
+    const amount = Number(response.transaction?.amount ?? el.transferFieldAmount.value);
+    showToast({
+      title: `Moved ${formatBaht(amount)}`,
+      description: route,
+      // Same as an entry's Undo: delete, then put both balances back (DELETE
+      // itself doesn't touch balances).
+      undo: response.transaction?.id ? async () => {
+        await apiRequest(`/transactions/${lineUserId}/${response.transaction.id}`, { method: 'DELETE' });
+        const { accounts } = await apiRequest(`/accounts/${lineUserId}`);
+        for (const [id, delta] of [[fromId, amount], [toId, -amount]]) {
+          const acc = accounts.find((a) => a.id === id);
+          if (acc) await apiRequest(`/accounts/${lineUserId}/${id}`, { method: 'PUT', body: JSON.stringify({ balance: Number(acc.balance) + delta }) });
+        }
+        showToast({ title: 'Transfer removed', description: route });
+        TAB_LOADERS[currentTab]().catch(() => {});
+      } : null,
+    });
+    // Opened from Home or History via the Add sheet: refresh where the user is.
+    TAB_LOADERS[currentTab]().catch(() => {});
+    if (currentTab !== 'networth') loadNetWorthTab().catch(() => {});
   } catch (error) {
     showModalError(el.transferModalError, error.message);
   } finally {
@@ -4542,9 +4587,15 @@ function buildTransactionFilterQuery() {
 
 function renderTxnRangeControls() {
   el.txnRangePills.forEach((pill) => pill.classList.toggle('active', pill.dataset.range === txnRange.mode));
-  el.txnPeriodNav.hidden = txnRange.mode !== 'cycle';
+  // The card stays for every range: it holds the totals line (txn-period-sub).
+  // Only Cycle can step back and forward, so the arrows hide (keeping their
+  // space, so the label stays centred) for the other ranges.
+  const cycle = txnRange.mode === 'cycle';
+  el.txnPeriodPrev.style.visibility = cycle ? '' : 'hidden';
+  el.txnPeriodNext.style.visibility = cycle ? '' : 'hidden';
   el.txnCustomRange.hidden = txnRange.mode !== 'custom';
-  if (txnRange.mode === 'cycle') {
+  if (!cycle) el.txnPeriodLabel.textContent = { '3months': 'Last 3 months', all: 'All time', custom: 'Custom dates' }[txnRange.mode] || '';
+  if (cycle) {
     const { startISO, endISO } = getBillingCycleRange(currentUser.billing_cycle_start_day, txnRange.offset);
     el.txnPeriodLabel.textContent = `${txnRange.offset === 0 ? 'This cycle · ' : ''}${formatCycleLabel(startISO, endISO)}`;
     el.txnPeriodNext.disabled = txnRange.offset >= 0;
@@ -5115,7 +5166,7 @@ async function handleRecurringSubmit(event) {
     }
     const edited = Boolean(editingRecurring);
     closeRecurringModal();
-    await loadRecurringList();
+    await refreshRecurringViews();
     showToast({ title: edited ? 'Rule updated' : 'Rule added' });
   } catch (error) {
     showModalError(el.recurringModalError, plainError(error));
@@ -5124,15 +5175,22 @@ async function handleRecurringSubmit(event) {
   }
 }
 
+// A rule change shows in two places on Budgets: the rules list and
+// Subscriptions & bills (money.js). Refresh both, or one goes stale.
+async function refreshRecurringViews() {
+  await loadRecurringList();
+  if (typeof loadSubscriptions === 'function') loadSubscriptions().catch(() => {});
+}
+
 async function handleSetRecurringPaid(recurringId, paid) {
   try {
     await apiRequest(`/recurring/${lineUserId}/${recurringId}/paid`, { method: 'PATCH', body: JSON.stringify({ paid }) });
-    await loadRecurringList();
+    await refreshRecurringViews();
     showToast({
       title: paid ? 'Marked paid' : 'Marked as not paid',
       undo: async () => {
         await apiRequest(`/recurring/${lineUserId}/${recurringId}/paid`, { method: 'PATCH', body: JSON.stringify({ paid: !paid }) });
-        await loadRecurringList();
+        await refreshRecurringViews();
       },
     });
   } catch (error) {
@@ -5147,11 +5205,11 @@ async function handleToggleRecurringActive(recurringId, isActive, trackOnly = fa
       method: 'PUT',
       body: JSON.stringify(trackOnly && isActive ? { is_active: true, track_only: false } : { is_active: isActive }),
     });
-    await loadRecurringList();
+    await refreshRecurringViews();
     showToast({ title: isActive ? 'Rule turned on' : 'Rule paused' });
   } catch (error) {
     showToast({ title: "Couldn't update the rule", description: plainError(error), kind: 'bad' });
-    await loadRecurringList(); // puts the switch back
+    await refreshRecurringViews(); // puts the switch back
   }
 }
 
@@ -5162,7 +5220,7 @@ async function handleDeleteRecurring(rule) {
   try {
     await apiRequest(`/recurring/${lineUserId}/${rule.id}`, { method: 'DELETE' });
     closeRecurringActions();
-    await loadRecurringList();
+    await refreshRecurringViews();
     showToast({
       title: 'Rule deleted',
       undo: async () => {
@@ -5182,7 +5240,7 @@ async function handleDeleteRecurring(rule) {
         if (!rule.is_active && recurring) {
           await apiRequest(`/recurring/${lineUserId}/${recurring.id}`, { method: 'PUT', body: JSON.stringify({ is_active: false }) });
         }
-        await loadRecurringList();
+        await refreshRecurringViews();
       },
     });
   } catch (error) {

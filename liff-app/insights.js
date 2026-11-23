@@ -79,14 +79,24 @@ async function handleRepeatAction(event) {
     const res = await apiRequest(path, { method: 'POST', body: JSON.stringify(dismiss ? {} : { mode }) });
     renderRepeatPayments(res.suggestions);
     const created = res.created || {};
+    const key = card.dataset.repeat;
+    // Every Undo also forgets the dismissal, so the suggestion comes back.
+    const restore = async () => {
+      const back = await apiRequest(`/recurring/${lineUserId}/suggestions/${key}/restore`, { method: 'POST', body: '{}' });
+      renderRepeatPayments(back.suggestions);
+    };
     if (dismiss) {
-      showToast({ title: 'Marked as not a repeat', description: title });
+      showToast({
+        title: 'Marked as not a repeat', description: title,
+        undo: async () => { await restore(); showToast({ title: 'Suggestion back', description: title }); },
+      });
     } else if (mode === 'log' || mode === 'track') {
       showToast({
         title: mode === 'log' ? 'Logs itself each month' : 'Tracked as a subscription',
         description: mode === 'log' ? `${title} is in your recurring rules` : `${title} is listed under Subscriptions. Nothing is logged.`,
         undo: created.recurringId ? async () => {
           await apiRequest(`/recurring/${lineUserId}/${created.recurringId}`, { method: 'DELETE' });
+          await restore();
           showToast({ title: 'Rule removed', description: title });
           loadRecurringList().catch(() => {});
         } : null,
@@ -97,6 +107,7 @@ async function handleRepeatAction(event) {
         title: 'Monthly reminder set', description: `${title}: find it under Tasks`,
         undo: created.reminderId ? async () => {
           await apiRequest(`/reminders/${lineUserId}/${created.reminderId}`, { method: 'DELETE' });
+          await restore();
           showToast({ title: 'Reminder removed', description: title });
         } : null,
       });

@@ -97,6 +97,40 @@ const stop = async (page) => page.click('#voice-button');
   assert(voiceRequests.length === 1, 'closing the form while recording discards the recording');
   await page.context().close();
 
+  // --- Closed while the mic is still starting (QA 2026-11-23 B1) ---
+  // The permission prompt holds getUserMedia; closing the sheet then used to
+  // let the mic start anyway, hidden, and upload at the 60 s cap.
+  const slow = await openApp(browser, {
+    voiceReply: ok,
+    init: () => {
+      const real = navigator.mediaDevices.getUserMedia;
+      window.__micTracks = [];
+      navigator.mediaDevices.getUserMedia = (c) => new Promise((resolve) => { window.__releaseMic = resolve; })
+        .then(() => real.call(navigator.mediaDevices, c)).then((s) => { window.__micTracks.push(...s.getTracks()); return s; });
+    },
+  });
+  await slow.page.click('#voice-button');
+  await slow.page.waitForFunction(() => typeof window.__releaseMic === 'function', null, { timeout: 5000 });
+  await slow.page.click('#cancel-add-expense');
+  await slow.page.evaluate(() => window.__releaseMic());
+  await slow.page.waitForTimeout(1200);
+  const slowState = await slow.page.evaluate(() => ({ text: document.getElementById('voice-button-text').textContent, live: window.__micTracks.filter((t) => t.readyState === 'live').length, tracks: window.__micTracks.length }));
+  assert(slowState.text === 'Speak' && slowState.tracks > 0 && slowState.live === 0, `closing during the mic prompt: no hidden recording, mic released (got ${JSON.stringify(slowState)})`);
+  await slow.page.click('#fab-add');
+  await slow.page.waitForSelector('#add-expense-modal:not([hidden])');
+  assert((await slow.page.textContent('#voice-button-text')) === 'Speak', 'reopening shows Speak, not a running timer');
+  // A recording that ends after the sheet is hidden (the 60 s cap path) never uploads.
+  await slow.page.evaluate(() => { window.__releaseMic = null; });
+  await slow.page.click('#voice-button');
+  await slow.page.waitForFunction(() => typeof window.__releaseMic === 'function', null, { timeout: 5000 });
+  await slow.page.evaluate(() => window.__releaseMic());
+  await slow.page.waitForFunction(() => document.getElementById('voice-button').classList.contains('recording'), null, { timeout: 5000 });
+  await slow.page.waitForTimeout(1200);
+  await slow.page.evaluate(() => { el.addExpenseModal.hidden = true; voice.recorder.stop(); });
+  await slow.page.waitForTimeout(1200);
+  assert(slow.voiceRequests.length === 0, 'a recording that stops after the sheet is hidden is not uploaded');
+  await slow.page.context().close();
+
   // --- Not an expense ---
   const noAmount = { body: { success: true, transcript: 'สวัสดีครับ', provider: 'openai', expense: { is_expense: false, amount: null, description: null, category_id: null, category_name: null } } };
   const n = await openApp(browser, { voiceReply: noAmount });

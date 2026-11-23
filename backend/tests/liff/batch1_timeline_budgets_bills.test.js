@@ -94,7 +94,8 @@ async function cleanup() {
   await page.click('.range-pill[data-range="all"]');
   // Wait for the re-fetched list, not a fixed delay (a fixed 600ms lost the race under full-suite load).
   await page.waitForFunction(() => document.querySelectorAll('#txn-full-list .transaction-row').length === 4, null, { timeout: 8000 }).catch(() => {});
-  assert(await page.isHidden('#txn-period-nav'), 'All hides the cycle navigator');
+  // The card stays (it carries the totals, QA 2026-11-23 B4); only the cycle arrows hide.
+  assert((await page.$eval('#txn-period-prev', (b) => getComputedStyle(b).visibility)) === 'hidden' && (await page.textContent('#txn-period-label')) === 'All time', 'All hides the cycle arrows and labels the card "All time"');
   assert((await page.$$('#txn-full-list .transaction-row')).length === 4, 'All shows all 4 transactions');
 
   await page.click('.range-pill[data-range="custom"]');

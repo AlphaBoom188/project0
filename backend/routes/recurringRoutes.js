@@ -16,7 +16,7 @@ router.get('/:line_user_id', recurringController.getRecurring);
 router.post('/:line_user_id', recurringController.createRecurring);
 
 // Repeat payments found in transactions (literal paths before /:recurring_id).
-// GET /api/recurring/:line_user_id/suggestions; POST .../suggestions/:key/accept { mode: 'log'|'remind' } | dismiss
+// GET /api/recurring/:line_user_id/suggestions; POST .../suggestions/:key/accept { mode: 'log'|'remind'|'track' } | dismiss | restore
 const insights = require('../controllers/insightsController');
 router.param('key', (req, res, next, value) => (/^[0-9a-f]{12}$/.test(value) ? next() : res.status(400).json({ error: 'Invalid suggestion id' })));
 router.get('/:line_user_id/suggestions', insights.recurringSuggestions);

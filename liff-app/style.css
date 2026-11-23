@@ -754,6 +754,7 @@ body {
 }
 
 .category-budget-fill {
+  display: block; /* a <span>: inline would ignore width/height and draw nothing */
   height: 100%;
   background: var(--brand);
 }
@@ -4950,3 +4951,8 @@ input[type="radio"] { accent-color: var(--primary); }
 #slip-ready { margin-left: 0; margin-right: 0; }
 #slip-skipped { margin: 0; padding: 0; }
 #slip-skipped .row { padding-left: 0; padding-right: 0; }
+
+/* History filters are the main controls on that page: full tap size (QA 2026-11-23 B8). */
+#tab-transactions .chip,
+#tab-transactions select.chip-select,
+#tab-transactions .range-pill { min-height: var(--tap-min); }

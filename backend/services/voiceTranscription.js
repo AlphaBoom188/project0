@@ -1,5 +1,10 @@
 const OpenAI = require('openai');
 const { toFile } = require('openai');
+const { execFile } = require('child_process');
+const fs = require('fs/promises');
+const os = require('os');
+const path = require('path');
+const crypto = require('crypto');
 
 // Speech-to-text for LINE voice messages (m4a/AAC) and the LIFF mic button
 // (whatever the phone's MediaRecorder produces: audio/mp4 on iOS,
@@ -7,8 +12,11 @@ const { toFile } = require('openai');
 //
 // 1. Typhoon ASR (SCB 10X, Thai-first), when TYPHOON_API_KEY is set. Its hosted
 //    API is OpenAI-compatible (base https://api.opentyphoon.ai/v1, model
-//    "typhoon-asr-realtime"). Its docs list wav/mp3/flac/ogg/opus but not m4a;
-//    the m4a is sent as-is, and any rejection falls through to step 2.
+//    "typhoon-asr-realtime"). It accepts only wav/mp3/flac/ogg/opus and rejects
+//    m4a/mp4 with a 400, so anything else is first converted to 16 kHz mono WAV
+//    with macOS's built-in afconvert (production self-hosts on a Mac). When that
+//    isn't possible (webm from Android, a non-Mac host), Typhoon is skipped.
+//    Any Typhoon failure falls through to step 2.
 //    The hosted API is a free, as-is beta that collects usage data (100 req/min).
 // 2. OpenAI transcription with language 'th' (accepts m4a), using the existing
 //    OPENAI_API_KEY. This is the only path when Typhoon isn't configured.
@@ -40,10 +48,43 @@ async function transcribeWith(client, model, buffer, mimeType, extra = {}) {
   return (result.text || '').trim();
 }
 
+// What Typhoon takes as is, and what afconvert can decode (AAC in mp4/m4a).
+const TYPHOON_TYPES = new Set(['audio/wav', 'audio/x-wav', 'audio/mpeg', 'audio/ogg', 'audio/flac', 'audio/opus']);
+const AFCONVERT_TYPES = new Set(['audio/mp4', 'audio/x-m4a', 'audio/m4a', 'audio/aac']);
+const AFCONVERT = '/usr/bin/afconvert';
+
+// m4a -> 16 kHz mono 16-bit WAV through temp files (afconvert can't pipe).
+// The audio is deleted straight after; returns null if it can't convert.
+async function toWav(buffer, mimeType, { convert = AFCONVERT } = {}) {
+  if (!AFCONVERT_TYPES.has(baseType(mimeType))) return null;
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'voice-'));
+  const id = crypto.randomBytes(6).toString('hex');
+  const src = path.join(dir, `${id}.m4a`);
+  const out = path.join(dir, `${id}.wav`);
+  try {
+    await fs.writeFile(src, buffer, { mode: 0o600 });
+    await new Promise((resolve, reject) => {
+      execFile(convert, ['-f', 'WAVE', '-d', 'LEI16@16000', '-c', '1', src, out], { timeout: 15000 }, (error) => (error ? reject(error) : resolve()));
+    });
+    return await fs.readFile(out);
+  } catch {
+    return null;
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+}
+
+async function typhoonInput(buffer, mimeType) {
+  if (TYPHOON_TYPES.has(baseType(mimeType))) return { buffer, mimeType };
+  const wav = await toWav(buffer, mimeType);
+  return wav ? { buffer: wav, mimeType: 'audio/wav' } : null;
+}
+
 async function transcribeVoice(buffer, { mimeType = 'audio/mp4' } = {}) {
-  if (process.env.TYPHOON_API_KEY) {
+  const input = process.env.TYPHOON_API_KEY ? await typhoonInput(buffer, mimeType) : null;
+  if (input) {
     try {
-      const text = await transcribeWith(typhoonClient(), TYPHOON_MODEL, buffer, mimeType);
+      const text = await transcribeWith(typhoonClient(), TYPHOON_MODEL, input.buffer, input.mimeType);
       if (text) return { text, provider: 'typhoon' };
       console.warn('[voice] Typhoon returned an empty transcript; falling back to OpenAI');
     } catch (error) {
@@ -54,4 +95,4 @@ async function transcribeVoice(buffer, { mimeType = 'audio/mp4' } = {}) {
   return { text, provider: 'openai' };
 }
 
-module.exports = { transcribeVoice, isSupportedAudioType };
+module.exports = { transcribeVoice, isSupportedAudioType, toWav, typhoonInput };

@@ -188,7 +188,7 @@ project0/
 │   │   ├── transactionCreate.js # validate category + insert transaction + fire budget check
 │   │   ├── receiptExtraction.js # OpenAI Vision extraction + slip_hash dedup + thumbnail upload
 │   │   ├── textExpenseParser.js # OpenAI text parsing ("coffee 120")
-│   │   ├── voiceTranscription.js # LINE voice (m4a) -> text: Typhoon ASR if TYPHOON_API_KEY, else/fallback OpenAI
+│   │   ├── voiceTranscription.js # voice -> text: Typhoon ASR (m4a converted to WAV) if TYPHOON_API_KEY, else/fallback OpenAI
 │   │   ├── categoryMatch.js     # fetch/match a user's expense categories
 │   │   ├── pendingConfirmations.js # in-memory TTL store for bot Confirm/Cancel
 │   │   ├── lineMessagingClient.js  # @line/bot-sdk wrapper + Flex card builder (with timeouts)
@@ -612,7 +612,7 @@ Spec: `docs/master_uxui_specification_finance.md` Screen 2.4, adapted. Table `in
 ✅ **Voice → expense.** A LINE `audio` message (m4a/AAC) is downloaded, transcribed, and the transcript goes through the same path as a typed message (`handleExpenseText()` in `lineWebhookController.js`): the "summary"/"สรุป" command, `parseExpenseText()`, and the Confirm/Cancel card. That card gets a first **Heard** row showing the transcript (capped at 200 chars), so a misheard amount is visible before anything is saved. A non-expense reply starts with `I heard: "..."`. Messages over 60 s (`event.message.duration`) are refused before download. A transcription failure or an empty transcript gets a plain reply.
 
 ✅ **Transcription (`services/voiceTranscription.js`).**
-- **Typhoon ASR** (SCB 10X, Thai-first) when `TYPHOON_API_KEY` is set. Its hosted API is OpenAI-compatible: base `https://api.opentyphoon.ai/v1`, model `typhoon-asr-realtime`, via the `openai` SDK. Its docs list wav/mp3/flac/ogg/opus but not m4a; the m4a is sent as-is (no ffmpeg dependency). Whether Typhoon accepts it is **unverified until a real key is set**: `tests/openai/voice_message` checks it automatically then. If it rejects m4a, the fallback still answers; adding a conversion step would be the fix.
+- **Typhoon ASR** (SCB 10X, Thai-first) when `TYPHOON_API_KEY` is set. Its hosted API is OpenAI-compatible: base `https://api.opentyphoon.ai/v1`, model `typhoon-asr-realtime`, via the `openai` SDK. It accepts only wav/mp3/flac/ogg/opus: m4a/mp4 gets a 400 ("File type audio/mp4 not supported", found in the QA run of 2026-11-23, so until then every voice message silently used the fallback). `toWav` converts m4a/mp4 (LINE voice, iOS LIFF) to 16 kHz mono 16-bit WAV with macOS's built-in `/usr/bin/afconvert` (production self-hosts on a Mac; no ffmpeg dependency), through 0600 temp files deleted straight after. webm (Android LIFF) or a host without afconvert skips Typhoon and goes straight to OpenAI. Verified: the fixture as m4a → 400, as WAV → "กาแฟหนึ่งร้อยยี่สิบบาท". `tests/api/voice_wav` covers the conversion for free.
 - **Terms:** the hosted Typhoon API is a free, as-is beta (100 req/min) that collects usage data. Its docs ask real production users to go through Together AI or contact them. The model is also Apache-2.0 for self-hosting (`pip install typhoon-asr`).
 - **Fallback / default:** OpenAI `gpt-4o-mini-transcribe` with `language: 'th'` (accepts m4a), using the existing `OPENAI_API_KEY`. Any Typhoon error or empty result falls through to it.
 

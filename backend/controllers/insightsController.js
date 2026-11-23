@@ -45,9 +45,20 @@ const insightsController = {
   //   log: a monthly recurring rule (auto-logged from the next date)
   //   remind: a monthly reminder on that day (nothing is logged)
   // POST /api/recurring/:u/suggestions/:key/dismiss
+  // POST /api/recurring/:u/suggestions/:key/restore -> the app's Undo: forget the
+  //   dismissal so the suggestion can show again (the client deletes what accept made)
   recurringSuggestionAction: handle('recurringSuggestionAction', async (req, res) => {
     const { line_user_id: u, key, action } = req.params;
-    if (!['accept', 'dismiss'].includes(action)) return res.status(404).json({ error: 'Unknown action' });
+    if (!['accept', 'dismiss', 'restore'].includes(action)) return res.status(404).json({ error: 'Unknown action' });
+    if (action === 'restore') {
+      const { data: user, error } = await supabase.from('users').select('recurring_dismissed').eq('line_user_id', u).maybeSingle();
+      if (error) throw error;
+      const next = ((user && user.recurring_dismissed) || []).filter((k) => k !== key);
+      const { error: updateError } = await supabase.from('users').update({ recurring_dismissed: next }).eq('line_user_id', u);
+      if (updateError) throw updateError;
+      const { list } = await candidatesFor(u);
+      return res.json({ success: true, suggestions: list });
+    }
     const { list, dismissed } = await candidatesFor(u);
     const c = list.find((x) => x.key === key);
     if (action === 'dismiss') {
