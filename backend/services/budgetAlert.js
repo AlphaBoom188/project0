@@ -29,13 +29,21 @@ function getPeriodStartISO(period, now = new Date()) {
 // bot/webhook channel (the only way to reach someone who isn't looking at a
 // screen), or an immediate in-app banner for the LIFF channel, built from this
 // same result, with no server push at all (see transactionCreate.js).
-async function evaluateBudgetAlert(lineUserId, categoryId, amount) {
-  const { data: category, error: catError } = await supabase
-    .from('categories')
-    .select('name, budget_amount, budget_period')
-    .eq('id', categoryId)
-    .single();
-  if (catError || !category || !category.budget_amount || !category.budget_period) return null;
+// `prefetched` is the category row (name, budget_amount, budget_period) when the
+// caller already has it (transactionCreate reads it while validating): one
+// round trip fewer on every save.
+async function evaluateBudgetAlert(lineUserId, categoryId, amount, prefetched = null) {
+  let category = prefetched;
+  if (!category) {
+    const { data, error: catError } = await supabase
+      .from('categories')
+      .select('name, budget_amount, budget_period')
+      .eq('id', categoryId)
+      .single();
+    if (catError) return null;
+    category = data;
+  }
+  if (!category || !category.budget_amount || !category.budget_period) return null;
 
   const startISO = getPeriodStartISO(category.budget_period);
   if (!startISO) return null;

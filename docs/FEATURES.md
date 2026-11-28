@@ -997,3 +997,13 @@ Owner asked for a full group view (2026-11-28).
 - **API:** `GET /groups/:u/:group_id` adds `members` (`name, is_me, owes_me, i_owe, unpaid_total, unpaid_bills, rank, firsts`; no LINE ids) and `top_host`. Pure `groupBillMath.memberBalances(bills, me, memberIds)` (open bills, cents-exact); the rank reuses `leaderboard()` over the Bangkok month, like the chat `rank`.
 - **Tests:** `liff/groups_page` (page, hero, sheet members, back, See all, deep link, empty and error states, screenshots `groups_page.png` / `groups_sheet_members.png`), `api/groups_api` (members, no ids, rank, top host), `api/group_bill_math` (memberBalances).
 
+### Faster transaction save (2026-11-28)
+
+A save took 9 sequential Supabase calls (category check, account check, insert, balance read + write, budget category + spend sum, event budgets + spend sum), about 1.5-3 s at ~300 ms per call.
+
+- `createTransaction` runs the category and account checks together. The category read now selects `name, budget_amount, budget_period`, which `evaluateBudgetAlert(..., prefetched)` reuses. `loadEventBudgets` starts alongside. A bad category is still reported before a bad account.
+- After the insert, the balance change, budget spend sum and event spend sum run in parallel. Pushes for non-LIFF channels are still fire-and-forget.
+- Migration 027 `adjust_account_balance(p_account_id, p_delta)`: one `UPDATE ... SET balance = balance + delta` (also ends the read-modify-write race). Execute is granted to `service_role` only. Until it's applied, `accountBalance.js` falls back to read-modify-write and logs once.
+- Result: 3 sequential round trips (validate, insert, post-insert) instead of 9. Measured on the dev Supabase: 2.7-3.6 s became 1.3-2.1 s before 027; 027 removes one more call.
+- Test: `api/txn_save_path` (error order, one categories read, budget crossing from the prefetched category, concurrent-save balance with 027 or the fallback).
+
