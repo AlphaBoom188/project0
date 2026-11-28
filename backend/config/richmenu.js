@@ -31,7 +31,7 @@ function cells(liffId) {
       postback('Today', 'today', 'Today'),
       uri('Quick note', liffId, 'tab=tasks&action=note'),
       uri('To-do list', liffId, 'tab=tasks'),
-      uri('Bills and groups', liffId, 'tab=more&open=groups'),
+      uri('Bills and groups', liffId, 'tab=groups'),
       uri('Open app', liffId),
     ],
   };

@@ -193,7 +193,7 @@ deploy/macos/           LaunchAgents for self-hosting (backend, ngrok tunnel, ke
   - CSV export, plus an email export through an Apps Script relay, to a Google-verified address when one is set.
 - **Receipt OCR:** OpenAI Vision, from the iOS app, the LIFF app and the bot. A `slip_hash` (UNIQUE) stops the same receipt being recorded twice. A ~320px thumbnail goes to a private bucket.
 - **LINE Bot (1:1):**
-  - Rich menu (`config/richmenu.js`, `controllers/lineMenuHandler.js`): Money and Tasks tabs switched by aliases; cells open LIFF deep links (`?action=add|voice|slips`, `?tab=tasks&action=add|note`, `?tab=more&open=groups`) or send postbacks `menu=scan|summary|today` (reply token only, text rate limit).
+  - Rich menu (`config/richmenu.js`, `controllers/lineMenuHandler.js`): Money and Tasks tabs switched by aliases; cells open LIFF deep links (`?action=add|voice|slips`, `?tab=tasks&action=add|note`, `?tab=groups`) or send postbacks `menu=scan|summary|today` (reply token only, text rate limit).
   - Free text ("coffee 120"), receipt photos and Thai voice messages each produce a Confirm/Cancel Flex card. Pending confirmations live in memory for 10 minutes.
   - "summary"/"สรุป" replies with the current cycle's totals.
   - Voice is transcribed by Typhoon ASR when `TYPHOON_API_KEY` is set (it rejects m4a/mp4, so those are converted to 16 kHz WAV with macOS `afconvert` first; webm, or a host without afconvert, skips Typhoon), else OpenAI `gpt-4o-mini-transcribe`, then parsed like text. The card's first row shows what was heard.

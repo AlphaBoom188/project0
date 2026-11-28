@@ -38,7 +38,7 @@ It needs `LINE_MESSAGING_CHANNEL_ACCESS_TOKEN` and `LIFF_ID` in `backend/.env`, 
 | Tasks | Today | postback `menu=today` → the chat "today" briefing |
 | Tasks | Quick note | `https://liff.line.me/<LIFF_ID>?tab=tasks&action=note` |
 | Tasks | To-do list | `https://liff.line.me/<LIFF_ID>?tab=tasks` |
-| Tasks | Bills and groups | `https://liff.line.me/<LIFF_ID>?tab=more&open=groups` |
+| Tasks | Bills and groups | `https://liff.line.me/<LIFF_ID>?tab=groups` (the Groups page) |
 | Tasks | Open app | `https://liff.line.me/<LIFF_ID>` |
 
 Postback replies use the reply token, so they cost no push quota. They share the bot free-text rate limit (60 per 10 min).

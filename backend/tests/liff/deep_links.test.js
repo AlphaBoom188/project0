@@ -51,8 +51,12 @@ const api = (p, opts = {}) => fetch(`${BASE}/api${p}`, { ...opts, headers: { 'Co
   assert((await activeTab(page)) === 'tab-tasks' && !(await page.evaluate(() => [...document.querySelectorAll('.modal')].some((m) => !m.hidden))), 'tab=tasks: Tasks, no sheet');
   await page.context().close();
 
+  page = await open('?tab=groups');
+  assert((await activeTab(page)) === 'tab-groups', `tab=groups (rich menu Bills and groups): the Groups page (got ${await activeTab(page)})`);
+  await page.context().close();
+
   page = await open('?tab=more&open=groups');
-  assert((await activeTab(page)) === 'tab-home', `tab=more&open=groups: lands on the groups section (got ${await activeTab(page)})`);
+  assert((await activeTab(page)) === 'tab-groups', `older tab=more&open=groups links: the Groups page too (got ${await activeTab(page)})`);
   await page.context().close();
 
   page = await open('?action=bogus&open=nothing');

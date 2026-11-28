@@ -35,7 +35,7 @@ for (const m of menus) {
 const money = menus[0].body.areas.map((a) => a.action.uri || a.action.data);
 assert(money.includes('https://liff.line.me/1234567890-abcdefgh?action=add') && money.includes('menu=scan') && money.includes('menu=summary'), 'money cells: add, scan, summary');
 const tasks = menus[1].body.areas.map((a) => a.action.uri || a.action.data);
-assert(tasks.includes('https://liff.line.me/1234567890-abcdefgh?tab=tasks&action=note') && tasks.includes('menu=today') && tasks.includes('https://liff.line.me/1234567890-abcdefgh?tab=more&open=groups'), 'tasks cells: note, today, groups');
+assert(tasks.includes('https://liff.line.me/1234567890-abcdefgh?tab=tasks&action=note') && tasks.includes('menu=today') && tasks.includes('https://liff.line.me/1234567890-abcdefgh?tab=groups'), 'tasks cells: note, today, groups');
 let threw = false; try { buildMenus('', 'x'); } catch { threw = true; }
 assert(threw, 'missing LIFF_ID is a clear error');
 process.exit(failures ? 1 : 0);
