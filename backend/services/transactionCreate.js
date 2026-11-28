@@ -1,6 +1,6 @@
 const supabase = require('../config/supabase');
 const { evaluateBudgetAlert, pushBudgetAlertIfEnabled } = require('./budgetAlert');
-const { evaluateEventBudgetAlerts, pushEventBudgetAlertsIfEnabled } = require('./eventBudgetAlert');
+const { evaluateEventBudgetAlerts, loadEventBudgets, pushEventBudgetAlertsIfEnabled } = require('./eventBudgetAlert');
 const { adjustAccountBalance } = require('./accountBalance');
 
 const { isOwnThumbnailPath } = require('./receiptThumbnail');
@@ -42,6 +42,11 @@ async function createTransaction({
   if (thumbnailUrl && !isOwnThumbnailPath(lineUserId, thumbnailUrl)) {
     throw new InvalidThumbnailError('thumbnail_url must be a receipt thumbnail returned for this user by the scan endpoint');
   }
+  // Validation reads run together (one round trip instead of two). The
+  // category read also brings the budget fields the alert check needs below,
+  // and an expense's event budgets load alongside (they don't need the insert).
+  let category = null;
+  const eventsPromise = type === 'expense' ? loadEventBudgets(lineUserId, categoryId, transactionDate).catch(() => []) : null;
   if (type === 'transfer') {
     if (!fromAccountId || !toAccountId) {
       throw new InvalidAccountError('A transfer requires both fromAccountId and toAccountId');
@@ -51,23 +56,24 @@ async function createTransaction({
     }
     await verifyAccountsBelongToUser(lineUserId, [fromAccountId, toAccountId]);
   } else {
-    const { data: category, error: categoryError } = await supabase
-      .from('categories')
-      .select('id')
-      .eq('id', categoryId)
-      .eq('line_user_id', lineUserId)
-      .single();
-
-    if (categoryError || !category) {
-      throw new InvalidCategoryError('Invalid category or category does not belong to user');
-    }
-
     // Optional: an expense/income can still be attributed to an account (e.g.
     // "lunch paid from BBL account") without that making it a transfer.
     const accountIdsToVerify = [fromAccountId, toAccountId].filter(Boolean);
-    if (accountIdsToVerify.length > 0) {
-      await verifyAccountsBelongToUser(lineUserId, accountIdsToVerify);
+    const [categoryResult, accountError] = await Promise.all([
+      supabase
+        .from('categories')
+        .select('id, name, budget_amount, budget_period')
+        .eq('id', categoryId)
+        .eq('line_user_id', lineUserId)
+        .single(),
+      accountIdsToVerify.length > 0 ? verifyAccountsBelongToUser(lineUserId, accountIdsToVerify).then(() => null, (err) => err) : null,
+    ]);
+    // Same order as before: a bad category is reported ahead of a bad account.
+    if (categoryResult.error || !categoryResult.data) {
+      throw new InvalidCategoryError('Invalid category or category does not belong to user');
     }
+    if (accountError) throw accountError;
+    category = categoryResult.data;
   }
 
   const { data: transaction, error } = await supabase
@@ -105,6 +111,9 @@ async function createTransaction({
     throw error;
   }
 
+  // Everything after the insert runs in parallel (balances, budget check,
+  // event-budget check touch different rows), so a save costs three
+  // sequential round trips (validate, insert, this) instead of nine.
   // Balance effects, best-effort after the transaction row is already committed:
   // losing the balance update on a rare failure is preferable to losing the
   // transaction record itself, so these are logged loudly rather than rolled back.
@@ -117,41 +126,36 @@ async function createTransaction({
   } else if (type === 'income' && toAccountId) {
     balanceUpdates.push(adjustAccountBalance(toAccountId, amount));
   }
-  if (balanceUpdates.length > 0) {
-    await Promise.all(balanceUpdates).catch((err) =>
-      console.error('Failed to update account balance for transaction', transaction.id, ':', err.message)
+  const balances = balanceUpdates.length > 0
+    ? Promise.all(balanceUpdates).catch((err) =>
+      console.error('Failed to update account balance for transaction', transaction.id, ':', err.message))
+    : null;
+
+  // Cheap DB-only reads, safe to await (unlike the push itself) -- this is
+  // what lets the LIFF channel get the alert back in this same response.
+  const isExpense = type === 'expense';
+  const [budgetAlert, eventBudgetAlerts] = await Promise.all([
+    isExpense
+      ? evaluateBudgetAlert(lineUserId, categoryId, amount, category).catch((err) => { console.error('evaluateBudgetAlert failed:', err.message); return null; })
+      : null,
+    isExpense
+      ? eventsPromise.then((events) => evaluateEventBudgetAlerts(lineUserId, categoryId, amount, transaction.transaction_date, events)).catch((err) => { console.error('evaluateEventBudgetAlerts failed:', err.message); return []; })
+      : [],
+    balances,
+  ]);
+
+  // Routing: 'liff' shows these in-app; every other channel pushes via LINE.
+  // Fire-and-forget: never let a push failure affect the response.
+  if (budgetAlert && channel !== 'liff') {
+    pushBudgetAlertIfEnabled(lineUserId, budgetAlert).catch((err) =>
+      console.error('pushBudgetAlertIfEnabled failed:', err.message)
     );
   }
-
-  let budgetAlert = null;
-  let eventBudgetAlerts = [];
-  if (type === 'expense') {
-    // Cheap DB-only reads, safe to await (unlike the push itself) -- this is
-    // what lets the LIFF channel get the alert back in this same response.
-    try {
-      budgetAlert = await evaluateBudgetAlert(lineUserId, categoryId, amount);
-    } catch (err) {
-      console.error('evaluateBudgetAlert failed:', err.message);
-    }
-
-    if (budgetAlert && channel !== 'liff') {
-      // Fire-and-forget: never let a push failure affect the response.
-      pushBudgetAlertIfEnabled(lineUserId, budgetAlert).catch((err) =>
-        console.error('pushBudgetAlertIfEnabled failed:', err.message)
-      );
-    }
-
-    // Event/occasion buckets for this category + month: same routing rule.
-    try {
-      eventBudgetAlerts = await evaluateEventBudgetAlerts(lineUserId, categoryId, amount, transaction.transaction_date);
-    } catch (err) {
-      console.error('evaluateEventBudgetAlerts failed:', err.message);
-    }
-    if (eventBudgetAlerts.length > 0 && channel !== 'liff') {
-      pushEventBudgetAlertsIfEnabled(lineUserId, eventBudgetAlerts).catch((err) =>
-        console.error('pushEventBudgetAlertsIfEnabled failed:', err.message)
-      );
-    }
+  // Event/occasion buckets for this category + month: same routing rule.
+  if (eventBudgetAlerts.length > 0 && channel !== 'liff') {
+    pushEventBudgetAlertsIfEnabled(lineUserId, eventBudgetAlerts).catch((err) =>
+      console.error('pushEventBudgetAlertsIfEnabled failed:', err.message)
+    );
   }
 
   return { ...transaction, budget_alert: budgetAlert, event_budget_alerts: eventBudgetAlerts };

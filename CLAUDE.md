@@ -77,7 +77,8 @@ Exploratory QA through the Playwright MCP, with seeded synthetic data (`npm run 
 - **Body size.** `express.json({ limit: '10mb' })` for base64 photos and audio. The LINE webhook route is mounted *before* `express.json()` because signature verification needs the raw body.
 - **Shared paths.** All transaction inserts go through `services/transactionCreate.js` (category validation, budget alerts, account attribution). Bot and REST OCR share `services/receiptExtraction.js`.
 - **Budget alerts route by channel, never both.** `channel: 'liff'` returns `budget_alert` / `event_budget_alerts` in the response (shown as an in-app banner); any other channel pushes via LINE (gated by `notifications_enabled`).
-- **Account balances** are a read-modify-write in `services/accountBalance.js`: best-effort, after the insert. Statement imports never adjust balances.
+- **Account balances** change through the atomic `adjust_account_balance()` function (migration 027; falls back to a read-modify-write until it's applied) in `services/accountBalance.js`: best-effort, after the insert. Statement imports never adjust balances.
+- **Save path speed:** `createTransaction` runs its validation reads together (the category read also feeds the budget check; event budgets load alongside) and everything after the insert in parallel: 3 sequential round trips per save. Each Supabase call costs ~300 ms from here, so keep new work on this path parallel.
 - **Thumbnails.** `transactions.thumbnail_url` stores a private Storage *path*, signed fresh (1 h) on every read. It must be `<own line_user_id>/<ms>-<8 hex>.jpg` (`isOwnThumbnailPath`).
 - **Outbound calls** (OpenAI, LINE, Yahoo, CoinGecko, Typhoon) always have a 10-45 s timeout and degrade to a logged failure.
 - **LINE groups.** Events with `source.type` `group`/`room` go to `controllers/lineGroupHandler.js`, never the 1:1 flows. In groups the bot answers only exact commands, or expenses starting with `+` or @mentioning it.
@@ -114,7 +115,7 @@ backend/
                         reminderDispatch (every minute), morningBriefing (07:30, opt-in), monthlyReport (08:00 daily,
                         sends on each user's cycle start day), nightlyBackup (03:00, BACKUP=off), taxRulesCheck (10 Jan, 1 Mar: tells the owner
                         when tax rules need the yearly refresh, docs/TAX_RULES_REFRESH.md)
-  supabase/migrations/  001-026 (run in order in the Supabase SQL Editor)
+  supabase/migrations/  001-027 (run in order in the Supabase SQL Editor)
   tests/                see Tests
 liff-app/               index.html, app.js, style.css, tasks.js (Tasks tab), tax.js (Tax tab), insights.js (repeat payments, monthly report), money.js (CSV import, savings goals, subscriptions), slips.js (bulk slip import); bill.html/bill.js = public shared-bill page;
                         privacy(-th).html, terms(-th).html + legal.css = public legal pages (drafts)
@@ -182,6 +183,7 @@ deploy/macos/           LaunchAgents for self-hosting (backend, ngrok tunnel, ke
 | 024 | `users.recurring_dismissed` (repeat-payment suggestions handled or dismissed) |
 | 025 | `savings_goals` (target, date, linked account or manual amount, monthly reminder) |
 | 026 | `recurring_transactions.track_only` ("Track as a subscription only": listed, never auto-logged) |
+| 027 | `adjust_account_balance(uuid, numeric)`: atomic balance change, service role only |
 
 ## Features (details in `docs/FEATURES.md`)
 

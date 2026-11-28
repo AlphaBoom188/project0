@@ -977,3 +977,14 @@ From the owner's `SLIP_BULK_IMPORT.md`. No migration. Entry points: History › 
 - **Privacy:** privacy.html / privacy-th.html list bank slips (sent to OpenAI, images not stored, fields kept only for imported slips, a fingerprint kept for dedupe).
 - **Tests:** `api/slip_qr` (TLV, CRC, PromptPay and garbage rejected, per-user keys), `api/slips_api` (pure direction/account/date/alerts, 401, duplicate reads without OpenAI incl. legacy and image keys, single scan 409 on a bulk key, import validation, one combined alert, balances incl. transfer, re-import no-op, undo keeps the edited and non-slip rows and restores balances, 429), `liff/slip_import` (Home Scan chooser, 6 stubbed images incl. a 500 and Try again, groups and counts, duplicate unticked, type change, inline edit, import body, toast, banner, Undo, jsQR blocked, screenshots light/dark), `openai/slip_read` (synthetic slip `tests/fixtures/slip.js`: amount, Buddhist-year date, time, names, then the endpoint's direction and category; a receipt is not a slip).
 - **Not verified:** QR decoding of a real bank slip (no real slips in tests; the TLV layout follows the BOT slip-verification format and should be checked once against a real slip by the owner).
+
+### Faster transaction save (2026-11-28)
+
+A save took 9 sequential Supabase calls (category check, account check, insert, balance read + write, budget category + spend sum, event budgets + spend sum), about 1.5-3 s at ~300 ms per call.
+
+- `createTransaction` runs the category and account checks together. The category read now selects `name, budget_amount, budget_period`, which `evaluateBudgetAlert(..., prefetched)` reuses. `loadEventBudgets` starts alongside. A bad category is still reported before a bad account.
+- After the insert, the balance change, budget spend sum and event spend sum run in parallel. Pushes for non-LIFF channels are still fire-and-forget.
+- Migration 027 `adjust_account_balance(p_account_id, p_delta)`: one `UPDATE ... SET balance = balance + delta` (also ends the read-modify-write race). Execute is granted to `service_role` only. Until it's applied, `accountBalance.js` falls back to read-modify-write and logs once.
+- Result: 3 sequential round trips (validate, insert, post-insert) instead of 9. Measured on the dev Supabase: 2.7-3.6 s became 1.3-2.1 s before 027; 027 removes one more call.
+- Test: `api/txn_save_path` (error order, one categories read, budget crossing from the prefetched category, concurrent-save balance with 027 or the fallback).
+

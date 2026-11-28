@@ -26,16 +26,23 @@ function monthOf(transactionDateISO) {
 // alert per bucket that this expense pushed across a line -- only the highest
 // line crossed, so a single expense jumping from 50% to 120% says "over", not
 // both "80%" and "over".
-async function evaluateEventBudgetAlerts(lineUserId, categoryId, amount, transactionDateISO) {
-  const { periodMonth, startISO, endISO } = monthOf(transactionDateISO);
-
-  const { data: events, error: eventsError } = await supabase
+// The month's event buckets for a category. transactionCreate loads these while
+// it validates (they don't depend on the insert) and passes them in below.
+async function loadEventBudgets(lineUserId, categoryId, transactionDateISO) {
+  const { data, error } = await supabase
     .from('budget_events')
     .select('id, title, amount')
     .eq('line_user_id', lineUserId)
     .eq('category_id', categoryId)
-    .eq('period_month', periodMonth);
-  if (eventsError || !events || events.length === 0) return [];
+    .eq('period_month', monthOf(transactionDateISO).periodMonth);
+  return error ? [] : data || [];
+}
+
+async function evaluateEventBudgetAlerts(lineUserId, categoryId, amount, transactionDateISO, prefetchedEvents = null) {
+  const { startISO, endISO } = monthOf(transactionDateISO);
+
+  const events = prefetchedEvents || (await loadEventBudgets(lineUserId, categoryId, transactionDateISO));
+  if (events.length === 0) return [];
 
   const { data: transactions, error: txError } = await supabase
     .from('transactions')
@@ -82,4 +89,4 @@ async function pushEventBudgetAlertsIfEnabled(lineUserId, alerts) {
   }
 }
 
-module.exports = { evaluateEventBudgetAlerts, pushEventBudgetAlertsIfEnabled };
+module.exports = { evaluateEventBudgetAlerts, loadEventBudgets, pushEventBudgetAlertsIfEnabled };
