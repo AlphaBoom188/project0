@@ -95,4 +95,20 @@ assert(cancelled.includes('Collection cancelled') && cancelled.includes('Cancell
 const full = JSON.stringify(flex.fullyPaidCard({ bill: { id: 'b', description: 'กระเพรา', amount: 128 }, payers: [{ name: 'gene', share: 64, position: 1 }] }));
 assert(full.includes('Fully paid') && full.includes('"text":"1st"') && full.includes('View details'), 'fully-paid card');
 
+// --- Member balances (Groups page) ---
+{
+  const bills = [
+    bill('rice', 'A', 600, [share('A', 200, 0), share('B', 200, 5), share('C', 200)]),
+    bill('taxi', 'C', 90, [share('C', 45, 0), share('B', 45)]),
+    bill('old', 'B', 100, [share('B', 50, 0), share('A', 50)], 'paid'),
+    bill('gone', 'A', 100, [share('A', 50, 0), share('C', 50)], 'cancelled'),
+  ];
+  const rows = m.memberBalances(bills, 'C', ['A', 'B', 'C']);
+  assert(eq(rows.map((r) => [r.line_user_id, r.owes_me, r.i_owe, r.unpaid_total, r.unpaid_bills]), [['A', 0, 200, 0, 0], ['B', 45, 0, 45, 1], ['C', 0, 0, 200, 1]]), `balances from C's side, open bills only (got ${JSON.stringify(rows)})`);
+  const fromA = m.memberBalances(bills, 'A', ['A', 'B', 'C']);
+  assert(fromA.find((r) => r.line_user_id === 'C').owes_me === 200 && fromA.find((r) => r.line_user_id === 'B').owes_me === 0, 'A is owed 200 by C, nothing by B (paid)');
+  assert(eq(m.memberBalances(bills, 'C', ['B']).map((r) => r.line_user_id), ['B']), 'only the members asked for');
+  assert(m.memberBalances([bill('x', 'A', 0.3, [share('A', 0.1, 0), share('B', 0.1), share('C', 0.1)])], 'A', ['B', 'C']).every((r) => r.owes_me === 0.1), 'cents stay exact');
+}
+
 process.exit(failures ? 1 : 0);

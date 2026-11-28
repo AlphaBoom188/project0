@@ -44,6 +44,14 @@ let seed;
   assert(taxi.is_owner && taxi.my_status === 'owner' && taxi.paid_count === 0 && taxi.owe_count === 1, 'taxi from Cee\'s side: owner, 0 of 1 paid');
   assert(!rice.is_owner && rice.my_status === 'unpaid' && rice.my_share === 200 && rice.owner_name === 'Ann' && rice.paid_count === 1 && rice.owe_count === 2, 'rice from Cee\'s side: unpaid 200 to Ann, 1 of 2 paid');
 
+  // --- Members (Groups page) ---
+  const mem = d.body.members.map((x) => [x.name, x.is_me, x.owes_me, x.i_owe, x.unpaid_total, x.unpaid_bills]);
+  assert(JSON.stringify(mem) === JSON.stringify([['Cee', true, 0, 0, 200, 1], ['Bo', false, 45, 0, 45, 1], ['Ann', false, 0, 200, 0, 0]]), `members from Cee's side: me first, then who owes most (got ${JSON.stringify(mem)})`);
+  assert(d.body.members.every((x) => !('line_user_id' in x)), 'member rows carry no LINE ids');
+  const boRow = d.body.members.find((x) => x.name === 'Bo');
+  assert(boRow.rank >= 1 && boRow.firsts >= 1, `Bo paid first on a bill this month: ranked (got ${JSON.stringify(boRow)})`);
+  assert(d.body.top_host && typeof d.body.top_host.name === 'string' && d.body.top_host.bills >= 1, `top host this month (got ${JSON.stringify(d.body.top_host)})`);
+
   // --- Bill detail ---
   let b = await get(`/groups/${ids.C}/bills/${bills.rice}`);
   assert(b.status === 200 && b.body.bill.description === 'ข้าว' && b.body.bill.my_status === 'unpaid' && b.body.bill.unpaid_total === 200, 'bill: Cee owes, 200 to go');

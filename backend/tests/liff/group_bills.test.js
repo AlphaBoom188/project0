@@ -59,7 +59,7 @@ let seed;
   const closed = await parts(page, '#group-detail-closed li');
   assert(JSON.stringify(closed) === JSON.stringify(['เค้ก | Fully paid']), `closed bills (got ${JSON.stringify(closed)})`);
   assert((await page.textContent('#group-detail-open li >> nth=1 >> .category-bar-label-row')).startsWith('You paid ฿600.00'), 'my own bill says "You paid"');
-  assert((await page.textContent('#group-detail-modal .group-hint')).includes('+ข้าว 600'), 'the sheet explains bills start in the chat');
+  assert((await page.textContent('#group-detail-modal .group-hint:not(#group-detail-host)')).includes('+ข้าว 600'), 'the sheet explains bills start in the chat');
   await page.context().close();
 
   // --- Cee arrives from the card's Pay button (deep link) ---

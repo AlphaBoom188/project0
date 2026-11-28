@@ -77,4 +77,25 @@ function memberStatus(bill, id) {
 
 const unpaidTotal = (bill) => fromCents(unpaidShares(bill).reduce((sum, s) => sum + toCents(s.share), 0));
 
-module.exports = { owesOn, unpaidShares, isFullyPaid, paidPositions, reminderDigest, leaderboard, memberStatus, unpaidTotal };
+// The Groups page's member list, from `me`'s side, over open bills only.
+// For each member id in `memberIds`: what they still owe me on my bills
+// (owes_me), what I still owe them on theirs (i_owe), and their unpaid total
+// and bill count across everyone's open bills.
+// -> [{ line_user_id, owes_me, i_owe, unpaid_total, unpaid_bills }] in memberIds order
+function memberBalances(bills, me, memberIds) {
+  const rows = new Map(memberIds.map((id) => [id, { line_user_id: id, owesMe: 0, iOwe: 0, unpaid: 0, unpaidBills: 0 }]));
+  for (const bill of bills) {
+    if (bill.status !== 'open') continue;
+    for (const s of unpaidShares(bill)) {
+      const row = rows.get(s.line_user_id);
+      if (row) { row.unpaid += toCents(s.share); row.unpaidBills += 1; }
+      if (bill.payer_line_user_id === me && row) row.owesMe += toCents(s.share);
+      if (s.line_user_id === me && rows.has(bill.payer_line_user_id)) rows.get(bill.payer_line_user_id).iOwe += toCents(s.share);
+    }
+  }
+  return [...rows.values()].map((r) => ({
+    line_user_id: r.line_user_id, owes_me: fromCents(r.owesMe), i_owe: fromCents(r.iOwe), unpaid_total: fromCents(r.unpaid), unpaid_bills: r.unpaidBills,
+  }));
+}
+
+module.exports = { owesOn, unpaidShares, isFullyPaid, paidPositions, reminderDigest, leaderboard, memberStatus, unpaidTotal, memberBalances };
