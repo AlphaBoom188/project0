@@ -1670,12 +1670,24 @@ function readDeepLink() {
   let params = new URLSearchParams(window.location.search);
   const state = params.get('liff.state');
   if (state) params = new URLSearchParams(state.replace(/^[^?]*\?/, ''));
-  deepLink = { bill: params.get('groupbill'), group: params.get('group'), tab: params.get('tab'), report: params.get('report') };
+  deepLink = { bill: params.get('groupbill'), group: params.get('group'), tab: params.get('tab'), report: params.get('report'), action: params.get('action'), open: params.get('open') };
 }
+
+// Rich menu cells (backend/config/richmenu.js): ?action= and ?open=. Unknown values are ignored.
+const DEEP_LINK_ACTIONS = {
+  add: () => { switchTab('home'); openAddExpenseModal('expense'); },
+  // The mic needs the user's own tap, so the sheet opens with Speak ready instead of recording.
+  voice: () => { switchTab('home'); openAddExpenseModal('expense').then(() => el.voiceButton.focus()).catch(() => {}); },
+  slips: () => { switchTab('transactions'); openSlipImport(); },
+};
+const DEEP_LINK_TASK_ACTIONS = { add: () => openTaskModal(null), note: () => openNoteModal(null) };
 
 function openDeepLink() {
   if (deepLink.tab && el.tabPanels[deepLink.tab]) switchTab(deepLink.tab); // e.g. the morning briefing's "Open Tasks"
   if (deepLink.report) openReport(-1); // the monthly report push's "Open report" (insights.js)
+  if (deepLink.tab === 'tasks' && Object.hasOwn(DEEP_LINK_TASK_ACTIONS, deepLink.action)) DEEP_LINK_TASK_ACTIONS[deepLink.action]();
+  else if (!deepLink.tab && Object.hasOwn(DEEP_LINK_ACTIONS, deepLink.action)) DEEP_LINK_ACTIONS[deepLink.action]();
+  if (deepLink.tab === 'more' && deepLink.open === 'groups') document.getElementById('more-groups').click();
 
   if (deepLink.bill && /^[0-9a-f-]{36}$/i.test(deepLink.bill)) openGroupBill(deepLink.bill);
   else if (deepLink.group && /^[CR][0-9a-f]{32}$/.test(deepLink.group)) openGroupDetail(deepLink.group);

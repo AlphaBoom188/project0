@@ -7,6 +7,7 @@ const { parseExpenseText } = require('../services/textExpenseParser');
 const { transcribeVoice } = require('../services/voiceTranscription');
 const { handleGroupEvent } = require('./lineGroupHandler');
 const reminders = require('./lineReminderHandler');
+const { handleMenuPostback } = require('./lineMenuHandler');
 const { allow, LIMITS } = require('../services/rateLimit');
 
 const RATE_LIMITED_REPLY = "You're sending a lot right now. Please wait a few minutes and try again.";
@@ -296,6 +297,10 @@ async function handleImageMessage(event) {
 
 async function handlePostback(event) {
   const params = new URLSearchParams(event.postback.data);
+  if (params.get('menu')) { // rich menu cells (controllers/lineMenuHandler.js); unknown values are ignored
+    await handleMenuPostback(event, params.get('menu'), { summary: handleSummaryCommand });
+    return;
+  }
   if (params.get('rem')) return reminders.handlePostback(event, params);
   const action = params.get('action');
   const token = params.get('token');
