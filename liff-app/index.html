@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#06c755" />
   <title>Expense Tracker</title>
-  <link rel="stylesheet" href="style.css?v=20261128c" />
+  <link rel="stylesheet" href="style.css?v=20261128d" />
   <script>
     // Set data-theme before first paint to avoid a flash of the wrong theme.
     (function () {
@@ -65,7 +65,7 @@
         </div>
 
         <section id="home-groups" hidden>
-          <div class="section-head"><h2>LINE groups</h2></div>
+          <div class="section-head"><h2>LINE groups</h2><button type="button" id="home-groups-all" class="section-action">See all</button></div>
           <ul id="groups-list" class="card card-flush row-list"></ul>
         </section>
 
@@ -472,6 +472,35 @@
         </div>
         <p class="group-hint tax-disclaimer">An estimate from what you entered, using the Revenue Department's rules for this year. It isn't tax advice: check your figures when you file at efiling.rd.go.th.</p>
       </section>
+      <section id="tab-groups" class="tab-panel" hidden>
+        <header class="page-head page-head-back">
+          <button type="button" class="icon-button" id="groups-back" aria-label="Back to More"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+          <h1 class="page-title">Groups</h1>
+        </header>
+        <section class="hero" id="groups-hero" aria-label="Across your LINE groups">
+          <p class="hero-label">Across your LINE groups</p>
+          <p class="hero-amount" id="groups-hero-amount"><span class="skeleton skeleton-amount" aria-label="Loading"></span></p>
+          <p class="hero-sub" id="groups-hero-sub"><span class="skeleton skeleton-line"></span></p>
+          <div class="hero-stats">
+            <div><span class="hero-stat-label">You owe</span><span class="hero-stat-value" id="groups-owe"></span></div>
+            <div><span class="hero-stat-label">Owed to you</span><span class="hero-stat-value" id="groups-owed"></span></div>
+          </div>
+        </section>
+        <div class="section-head"><h2>Your groups</h2></div>
+        <ul id="groups-page-list" class="card card-flush row-list"></ul>
+        <div id="groups-empty" class="empty-dashed" hidden>
+          <p class="row-title">No LINE groups yet</p>
+          <p class="row-meta">Add the bot to a LINE group, then type "+ข้าว 600" to split a bill with everyone, or "+taxi 300 @name" for one person. Members pay here with PromptPay or a slip.</p>
+        </div>
+        <div id="groups-error" hidden>
+          <div class="alert-card" role="alert">
+            <span class="alert-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h.01"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/><path d="M5 12.859a10 10 0 0 1 5.17-2.69"/><path d="M19 12.859a10 10 0 0 0-2.007-1.523"/><path d="M2 8.82a15 15 0 0 1 4.177-2.643"/><path d="M22 8.82a15 15 0 0 0-11.288-3.764"/><path d="m2 2 20 20"/></svg></span>
+            <div><p class="alert-title">Couldn't load your groups</p><p class="alert-body">Check your connection and try again.</p></div>
+          </div>
+          <button type="button" class="btn btn-block txn-retry" id="groups-retry">Try again</button>
+        </div>
+      </section>
+
       <section id="tab-settings" class="tab-panel" hidden>
         <header class="page-head page-head-back">
           <button type="button" class="icon-button" id="settings-back" aria-label="Back to More"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
@@ -1444,6 +1473,9 @@
       <h2 class="section-title" id="group-detail-title"></h2>
       <p id="group-detail-meta" class="transaction-date"></p>
       <p id="group-detail-mine" class="group-mine"></p>
+      <h3 class="group-subtitle">Members</h3>
+      <ul id="group-detail-members" class="card card-flush row-list"></ul>
+      <p id="group-detail-host" class="group-hint" hidden></p>
       <h3 class="group-subtitle">Open bills</h3>
       <ul id="group-detail-open" class="categories-list"></ul>
       <h3 class="group-subtitle">Closed</h3>
@@ -1776,11 +1808,11 @@
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script src="/liff-config.js"></script>
   <!-- Chart.js for the Net Worth performance chart; app.js renders everything else without it if this is blocked. -->
-  <script src="app.js?v=20261128c"></script>
-  <script src="tasks.js?v=20261128c"></script>
-  <script src="tax.js?v=20261128c"></script>
-  <script src="insights.js?v=20261128c"></script>
-  <script src="money.js?v=20261128c"></script>
-  <script src="slips.js?v=20261128c"></script>
+  <script src="app.js?v=20261128d"></script>
+  <script src="tasks.js?v=20261128d"></script>
+  <script src="tax.js?v=20261128d"></script>
+  <script src="insights.js?v=20261128d"></script>
+  <script src="money.js?v=20261128d"></script>
+  <script src="slips.js?v=20261128d"></script>
 </body>
 </html>

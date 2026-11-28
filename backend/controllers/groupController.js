@@ -5,7 +5,8 @@
 const supabase = require('../config/supabase');
 const ledger = require('../services/groupLedger');
 const notify = require('../services/groupBillNotify');
-const { memberStatus, paidPositions, unpaidShares, unpaidTotal, owesOn } = require('../services/groupBillMath');
+const { memberStatus, paidPositions, unpaidShares, unpaidTotal, owesOn, memberBalances, leaderboard } = require('../services/groupBillMath');
+const { bangkokParts, bangkokMidnight } = require('../services/bangkokDay');
 const { promptPayPayload, formatPromptPayId } = require('../services/promptpay');
 const { fromCents, toCents } = require('../services/billSplit');
 
@@ -83,6 +84,35 @@ const fail = (res, label) => (error) => {
   res.status(500).json({ error: error.message });
 };
 
+
+// The Groups page's member list (current members; ids stay server-side):
+// open-bill balances from the viewer's side, plus this Bangkok month's
+// fastest-payer counts (same window and math as the chat "rank").
+function groupMembers(bills, members, names, me, now = new Date()) {
+  const { year, month } = bangkokParts(now);
+  const board = leaderboard(bills, bangkokMidnight(year, month, 1).toISOString(), bangkokMidnight(year, month + 1, 1).toISOString());
+  const ranks = new Map(board.rows.map((r, i) => [r.line_user_id, { ...r, rank: i + 1 }]));
+  const rows = memberBalances(bills, me, members.map((m) => m.line_user_id)).map((r) => {
+    const rk = ranks.get(r.line_user_id);
+    return {
+      name: nameOf(names, r.line_user_id),
+      is_me: r.line_user_id === me,
+      owes_me: r.owes_me,
+      i_owe: r.i_owe,
+      unpaid_total: r.unpaid_total,
+      unpaid_bills: r.unpaid_bills,
+      rank: rk ? rk.rank : null,
+      firsts: rk ? rk.first : 0,
+    };
+  });
+  // Me first, then whoever owes the most, then by name.
+  rows.sort((a, b) => Number(b.is_me) - Number(a.is_me) || Number(b.unpaid_total) - Number(a.unpaid_total) || a.name.localeCompare(b.name));
+  return {
+    members: rows,
+    top_host: board.topHost ? { name: nameOf(names, board.topHost.line_user_id), bills: board.topHost.bills } : null,
+  };
+}
+
 const groupController = {
   // GET /api/groups/:line_user_id -- every group the user is (or was) in, with
   // open-bill totals. Newest activity first.
@@ -132,6 +162,7 @@ const groupController = {
           member_count: members.length,
         },
         ...myTotals(bills, line_user_id),
+        ...groupMembers(bills, members, names, line_user_id),
         open_bills: open.map((b) => billSummary(b, names, line_user_id)),
         closed_bills: closed.map((b) => billSummary(b, names, line_user_id)),
       });

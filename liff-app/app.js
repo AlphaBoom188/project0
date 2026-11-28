@@ -73,6 +73,7 @@ const el = {
     networth: document.getElementById('tab-networth'),
     settings: document.getElementById('tab-settings'),
     more: document.getElementById('tab-more'),
+    groups: document.getElementById('tab-groups'),
   },
 
   // Home tab
@@ -984,13 +985,14 @@ const TAB_LOADERS = {
   budgets: loadBudgetsTab,
   networth: loadNetWorthTab,
   settings: loadSettingsTab,
+  groups: () => loadGroupsTab(),
 };
 
 let currentTab = 'home';
 // v5 nav: 5 items. Every panel keeps its id; budgets/networth light up
 // Money (last one used is remembered), tax/settings/more light up More.
-const NAV_FOR_TAB = { budgets: 'money', networth: 'money', tax: 'more', settings: 'more', more: 'more' };
-const NO_FAB_TABS = new Set(['budgets', 'networth', 'more', 'settings']);
+const NAV_FOR_TAB = { budgets: 'money', networth: 'money', tax: 'more', settings: 'more', more: 'more', groups: 'more' };
+const NO_FAB_TABS = new Set(['budgets', 'networth', 'more', 'settings', 'groups']);
 function lastMoneyView() {
   try { return localStorage.getItem('moneyView') === 'networth' ? 'networth' : 'budgets'; } catch { return 'budgets'; }
 }
@@ -1362,11 +1364,9 @@ const onActivate = (node, fn) => {
   node.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(); } });
 };
 
-// Groups section on Home: hidden until the user is in a LINE group with the bot.
-async function renderHomeGroups() {
-  const { groups } = await cachedGet(`/groups/${lineUserId}`);
-  el.homeGroups.hidden = groups.length === 0;
-  el.groupsList.innerHTML = groups.map((g, i) => {
+// One row per group (Home card and the Groups page).
+function groupRowsHtml(groups) {
+  return groups.map((g, i) => {
     const status = groupTotalsStatus(g);
     const detail = `${g.open_bills} open bill${g.open_bills === 1 ? '' : 's'} · ${g.member_count} member${g.member_count === 1 ? '' : 's'}`;
     return `<li class="row group-row" data-i="${i}" role="button" tabindex="0">
@@ -1375,7 +1375,67 @@ async function renderHomeGroups() {
       <span class="row-end"><span class="row-value bill-status-pill ${status.cls}">${escapeHtml(status.text)}</span>${g.my_owe > 0 ? '<span class="row-sub">Pay now</span>' : ''}</span>
     </li>`;
   }).join('');
-  el.groupsList.querySelectorAll('.group-row').forEach((row) => onActivate(row, () => openGroupDetail(groups[Number(row.dataset.i)].group_id)));
+}
+const bindGroupRows = (list, groups) => list.querySelectorAll('.group-row').forEach((row) => onActivate(row, () => openGroupDetail(groups[Number(row.dataset.i)].group_id)));
+
+// Groups section on Home: hidden until the user is in a LINE group with the bot.
+async function renderHomeGroups() {
+  const { groups } = await cachedGet(`/groups/${lineUserId}`);
+  el.homeGroups.hidden = groups.length === 0;
+  el.groupsList.innerHTML = groupRowsHtml(groups);
+  bindGroupRows(el.groupsList, groups);
+}
+
+// ---- Groups page (More > LINE groups, Home "See all", ?tab=groups) ----
+let groupsLoadSeq = 0;
+async function loadGroupsTab() {
+  const seq = ++groupsLoadSeq;
+  const list = document.getElementById('groups-page-list');
+  const empty = document.getElementById('groups-empty');
+  const errorBox = document.getElementById('groups-error');
+  errorBox.hidden = true;
+  let groups;
+  try {
+    ({ groups } = await cachedGet(`/groups/${lineUserId}`));
+  } catch (error) {
+    if (seq !== groupsLoadSeq) return;
+    console.error('[groups] load failed', error.message);
+    errorBox.hidden = false;
+    list.hidden = true;
+    document.getElementById('groups-hero-amount').textContent = '—';
+    document.getElementById('groups-hero-sub').textContent = '';
+    return;
+  }
+  if (seq !== groupsLoadSeq) return;
+  const owe = groups.reduce((sum, g) => sum + Number(g.my_owe || 0), 0);
+  const owed = groups.reduce((sum, g) => sum + Number(g.my_owed || 0), 0);
+  const net = Math.round((owed - owe) * 100) / 100;
+  document.getElementById('groups-hero-amount').textContent = formatBaht(net, { sign: true });
+  const open = groups.reduce((sum, g) => sum + g.open_bills, 0);
+  document.getElementById('groups-hero-sub').textContent = !groups.length ? 'No groups yet'
+    : net > 0 ? `Owed to you overall · ${open} open bill${open === 1 ? '' : 's'}`
+      : net < 0 ? `You owe overall · ${open} open bill${open === 1 ? '' : 's'}`
+        : open ? `Even overall · ${open} open bill${open === 1 ? '' : 's'}` : 'All settled up';
+  document.getElementById('groups-owe').textContent = formatBaht(owe);
+  document.getElementById('groups-owed').textContent = formatBaht(owed);
+  list.hidden = groups.length === 0;
+  empty.hidden = groups.length > 0;
+  list.innerHTML = groupRowsHtml(groups);
+  bindGroupRows(list, groups);
+}
+
+// One member row in the group sheet, from the viewer's side.
+function memberRowHtml(m) {
+  const initial = escapeHtml((m.name || '?').trim().charAt(0).toUpperCase() || '?');
+  const owes = m.unpaid_bills ? `Owes ${formatBaht(m.unpaid_total)} · ${m.unpaid_bills} bill${m.unpaid_bills === 1 ? '' : 's'}` : 'All paid up';
+  const speed = m.rank === 1 ? ' · Fastest payer' : m.rank ? ` · ${ORD[m.rank - 1] || `${m.rank}th`} fastest` : '';
+  const end = m.is_me ? '' : Number(m.owes_me) > 0 ? `<span class="row-end"><span class="row-value bill-status-pill paid">Owes you ${escapeHtml(formatBaht(m.owes_me))}</span></span>`
+    : Number(m.i_owe) > 0 ? `<span class="row-end"><span class="row-value bill-status-pill unpaid">You owe ${escapeHtml(formatBaht(m.i_owe))}</span></span>` : '';
+  return `<li class="row member-row">
+    <span class="cat-tile member-initial" aria-hidden="true">${initial}</span>
+    <span class="row-main"><span class="row-title">${escapeHtml(m.name)}${m.is_me ? ' (you)' : ''}</span><span class="row-meta">${escapeHtml(owes + speed)}</span></span>
+    ${end}
+  </li>`;
 }
 
 // One bill row's status pill, from the viewer's side.
@@ -1416,6 +1476,8 @@ async function openGroupDetail(groupId) {
   el.groupDetailMine.textContent = '';
   el.groupDetailOpen.innerHTML = '';
   el.groupDetailClosed.innerHTML = '';
+  document.getElementById('group-detail-members').innerHTML = '';
+  document.getElementById('group-detail-host').hidden = true;
   el.groupDetailModal.hidden = false;
   try {
     const d = await cachedGet(`/groups/${lineUserId}/${groupId}`);
@@ -1425,6 +1487,11 @@ async function openGroupDetail(groupId) {
     const status = groupTotalsStatus(d);
     el.groupDetailMine.textContent = status.text;
     el.groupDetailMine.className = `group-mine ${status.cls}`;
+    document.getElementById('group-detail-members').innerHTML = (d.members || []).map(memberRowHtml).join('');
+    const host = document.getElementById('group-detail-host');
+    const ranked = (d.members || []).some((m) => m.rank);
+    host.hidden = !d.top_host && !ranked;
+    host.textContent = [ranked ? 'Fastest counts this month\'s payments.' : '', d.top_host ? `Top host this month: ${d.top_host.name} (${d.top_host.bills} bill${d.top_host.bills === 1 ? '' : 's'}).` : ''].filter(Boolean).join(' ');
     el.groupDetailOpen.innerHTML = billRows(d.open_bills, 'No open bills.');
     el.groupDetailClosed.innerHTML = billRows(d.closed_bills, 'Nothing closed yet.');
     [el.groupDetailOpen, el.groupDetailClosed].forEach((list) => list.querySelectorAll('.gbill-row').forEach((row) => onActivate(row, () => openGroupBill(row.dataset.bill))));
@@ -5320,7 +5387,10 @@ const moreActions = {
   'more-settings': () => switchTab('settings'),
   'more-tax': () => switchTab('tax'),
   'more-recurring': () => openTabAt('budgets', '#subs-header:not([hidden]), #advanced-toggle'),
-  'more-groups': () => openTabAt('home', '#home-groups:not([hidden]), #bills-list'),
+  'more-groups': () => switchTab('groups'),
+  'groups-back': () => switchTab('more'),
+  'groups-retry': () => { getCache.delete(`/groups/${lineUserId}`); loadGroupsTab(); },
+  'home-groups-all': () => switchTab('groups'),
   'more-bills': () => openTabAt('home', '#bills-list'),
   'more-export': () => { switchTab('transactions'); openDataSheet(); },
   'more-import': () => { switchTab('transactions'); openDataSheet(); },

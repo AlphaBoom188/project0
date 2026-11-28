@@ -988,3 +988,12 @@ From the owner's `RICH_MENU_SETUP.md` brief. Setup and the cell table: `docs/RIC
 - **LIFF deep links** (`app.js` `openDeepLink`, plain query or `liff.state`): `action=add` (Home + Add entry, Expense), `action=voice` (Add entry with Speak focused; it doesn't record until tapped, because the mic needs a user gesture), `action=slips` (History + bulk slip picker), `tab=tasks&action=add|note` (reminder / note sheet), `tab=more&open=groups` (the More › LINE groups action). Unknown values are ignored.
 - **Tests:** `api/richmenu_config` (areas tile the image with no gaps or overlaps, LIFF uris, handled postbacks, image size), `api/line_menu_postback` (in-process webhook with stubs), `liff/deep_links`.
 
+### Groups page (2026-11-28)
+
+Owner asked for a full group view (2026-11-28).
+
+- **Page** `tab-groups` (nav: More; no Add button), opened from More › LINE groups (was a scroll to the Home card), Home's LINE groups "See all", and `?tab=groups`. It has a hero "Across your LINE groups": net (owed − owe, signed), "You owe / Owed to you overall · N open bills" (or "All settled up"), and You owe / Owed to you stats. Below that, one row per group (same rows as the Home card, `groupRowsHtml`) opening the group sheet. With no groups it shows a dashed how-to ("Add the bot to a LINE group, then type +ข้าว 600 ..."). A failed load shows the alert card with Try again. `groupsLoadSeq` stale guard.
+- **Group sheet › Members:** current members, me first, then whoever owes most. Each row has an initial tile, the name ("(you)"), "Owes ฿X · N bills" or "All paid up", and this month's paying rank ("Fastest payer", "2nd fastest"); on the right, "Owes you ฿X" or "You owe ฿X" from the viewer's side, over open bills. Under it: "Fastest counts this month's payments. Top host this month: Ann (3 bills)."
+- **API:** `GET /groups/:u/:group_id` adds `members` (`name, is_me, owes_me, i_owe, unpaid_total, unpaid_bills, rank, firsts`; no LINE ids) and `top_host`. Pure `groupBillMath.memberBalances(bills, me, memberIds)` (open bills, cents-exact); the rank reuses `leaderboard()` over the Bangkok month, like the chat `rank`.
+- **Tests:** `liff/groups_page` (page, hero, sheet members, back, See all, deep link, empty and error states, screenshots `groups_page.png` / `groups_sheet_members.png`), `api/groups_api` (members, no ids, rank, top host), `api/group_bill_math` (memberBalances).
+
