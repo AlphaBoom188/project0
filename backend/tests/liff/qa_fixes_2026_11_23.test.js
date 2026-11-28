@@ -18,7 +18,7 @@ const U = `test_qafix_${Date.now().toString(36)}`;
 let failures = 0;
 const assert = (c, l) => { console.log(`${c ? 'PASS' : 'FAIL'}: ${l}`); if (!c) failures += 1; };
 const api = (p, o = {}) => fetch(`${BASE}/api${p}`, { headers: { 'Content-Type': 'application/json' }, ...o }).then((r) => r.json());
-const seed = (...extra) => execFileSync(process.execPath, [path.join(BACKEND, 'scripts/qa-seed.js'), '--user', U, '--base', BASE, ...extra], { stdio: 'ignore', timeout: 120000 });
+const seed = (...extra) => execFileSync(process.execPath, [path.join(BACKEND, 'scripts/qa-seed.js'), '--user', U, '--base', BASE, ...extra], { stdio: 'ignore', timeout: 360000 });
 
 async function waitToast(page, title) {
   await page.waitForFunction((t) => { const n = document.getElementById('toast'); return n && !n.hidden && n.innerText.includes(t); }, title, { timeout: 15000 });
@@ -57,6 +57,21 @@ async function waitToast(page, title) {
   // --- B2: repeat-payment Undo ---
   await page.waitForSelector('[data-repeat]', { timeout: 15000 });
   const key = await page.getAttribute('[data-repeat]', 'data-repeat');
+  // B9 (QA re-run): Undo after "Log it automatically" also refreshes the
+  // Subscriptions total (it kept counting the removed rule).
+  // Anchor to the API's own figure and wait for the screen to show it at each step.
+  const apiTotal = async () => Math.round((await api(`/recurring/${U}/overview`)).monthlyTotal);
+  const shown = (n) => page.waitForFunction((t) => document.getElementById('tab-budgets').innerText.includes(t), `฿${n.toLocaleString('en-US')} a month`, { timeout: 10000 }).then(() => true, () => false);
+  const totalBefore = await apiTotal();
+  const beforeShown = await shown(totalBefore);
+  await page.click('[data-repeat] [data-repeat-action="accept"]'); // default: Log it automatically
+  await waitToast(page, 'Logs itself each month');
+  const totalWithRule = await apiTotal();
+  const withShown = await shown(totalWithRule);
+  await page.click('#toast .toast-undo');
+  await page.waitForSelector(`[data-repeat="${key}"]`, { timeout: 15000 }).catch(() => {});
+  const afterShown = await shown(totalBefore);
+  assert(totalWithRule > totalBefore && beforeShown && withShown && afterShown, `Undo after "Log it" puts the Subscriptions total back (฿${totalBefore} -> ฿${totalWithRule} -> shown again: ${afterShown})`);
   await page.click('[data-repeat] label:has(input[value="remind"])');
   await page.click('[data-repeat] [data-repeat-action="accept"]');
   await waitToast(page, 'Monthly reminder set');

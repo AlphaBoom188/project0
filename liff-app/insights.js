@@ -98,7 +98,7 @@ async function handleRepeatAction(event) {
           await apiRequest(`/recurring/${lineUserId}/${created.recurringId}`, { method: 'DELETE' });
           await restore();
           showToast({ title: 'Rule removed', description: title });
-          loadRecurringList().catch(() => {});
+          refreshRecurringViews().catch(() => {}); // rules list + Subscriptions
         } : null,
       });
       TAB_LOADERS.budgets().catch(() => {}); // the wrapped loader also refreshes Subscriptions (money.js)

@@ -917,7 +917,7 @@ body {
 }
 
 .assign-chip {
-  min-height: 36px;
+  min-height: var(--tap-min);
   padding: var(--space-2) var(--space-4);
   border-radius: var(--radius-full);
   border: 1px solid var(--border);
@@ -1121,7 +1121,7 @@ body {
 
 .range-pill {
   flex: 0 0 auto;
-  min-height: 36px;
+  min-height: var(--tap-min);
   padding: var(--space-2) var(--space-4);
   border-radius: var(--radius-full);
   border: 1px solid var(--border);
@@ -2418,7 +2418,7 @@ body {
 
 .segment {
   flex: 1;
-  min-height: 36px;
+  min-height: var(--tap-min);
   border: none;
   border-radius: var(--radius-md);
   background: none;
@@ -2517,7 +2517,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  min-height: 36px;
+  min-height: var(--tap-min);
   padding: 0 var(--space-4);
   border: 1px solid var(--border);
   border-radius: var(--radius-full);
@@ -3472,7 +3472,7 @@ body {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  min-height: 36px;
+  min-height: var(--tap-min);
   padding: 0 var(--space-4);
   border: 1px solid var(--border);
   border-radius: var(--radius-full);
@@ -3802,7 +3802,7 @@ button.row {
 
 .btn:disabled { opacity: 0.5; }
 .btn-lg { min-height: 52px; width: 100%; }
-.btn-sm { min-height: 36px; padding: 0 var(--space-4); font-size: 14px; }
+.btn-sm { min-height: var(--tap-min); padding: 0 var(--space-4); font-size: 14px; }
 .btn-secondary { background: var(--muted); color: var(--foreground); border-color: var(--border); }
 .btn-outline { background: var(--card); color: var(--foreground); border-color: var(--border); }
 .btn-ghost { background: none; color: var(--brand-text); }
@@ -3820,7 +3820,7 @@ button.row {
 
 .seg > button {
   flex: 1;
-  min-height: 36px;
+  min-height: var(--tap-min);
   padding: 0 var(--space-2);
   border: 1px solid transparent;
   border-radius: var(--radius-md);
@@ -3844,7 +3844,7 @@ button.row {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  min-height: 36px;
+  min-height: var(--tap-min);
   padding: 0 var(--space-4);
   border: 1px solid var(--border);
   border-radius: var(--radius-full);
@@ -4257,7 +4257,7 @@ input[type="checkbox"][role="switch"]:checked::after {
 select.chip-select {
   appearance: none;
   -webkit-appearance: none;
-  min-height: 36px;
+  min-height: var(--tap-min);
   padding: 0 32px 0 var(--space-4);
   font-size: 16px; /* iOS: no zoom on focus */
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%237f7d77' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
@@ -4773,7 +4773,7 @@ input[type="radio"] { accent-color: var(--primary); }
 .switch-row .row-title { font-size: 15px; }
 
 .task-kind.seg { margin-bottom: var(--space-4); }
-.task-kind.seg .segment { flex: 1; min-height: 36px; border: 1px solid transparent; border-radius: var(--radius-md); background: none; color: var(--muted-foreground); font: inherit; font-size: 14px; font-weight: 600; }
+.task-kind.seg .segment { flex: 1; min-height: var(--tap-min); border: 1px solid transparent; border-radius: var(--radius-md); background: none; color: var(--muted-foreground); font: inherit; font-size: 14px; font-weight: 600; }
 .task-kind.seg .segment.active { background: var(--card); color: var(--foreground); border-color: var(--border); }
 
 #task-importance { display: flex; flex-direction: column; gap: var(--space-2); }
@@ -4818,13 +4818,13 @@ input[type="radio"] { accent-color: var(--primary); }
 /* ---- v5 Settings (spec 4.8) ---- */
 
 .settings-profile { margin: 0 var(--space-page) var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--card); }
-.theme-toggle.seg .theme-toggle-button { flex: 1; min-height: 36px; border: 1px solid transparent; border-radius: var(--radius-md); background: none; color: var(--muted-foreground); font: inherit; font-size: 14px; font-weight: 600; }
+.theme-toggle.seg .theme-toggle-button { flex: 1; min-height: var(--tap-min); border: 1px solid transparent; border-radius: var(--radius-md); background: none; color: var(--muted-foreground); font: inherit; font-size: 14px; font-weight: 600; }
 .theme-toggle.seg .theme-toggle-button.active { background: var(--card); color: var(--foreground); border-color: var(--border); }
 .toggle-row { gap: var(--space-4); }
 .toggle-row > span { display: flex; flex-direction: column; gap: 2px; }
 .toggle-sub { font-size: 12px; color: var(--muted-foreground); font-weight: 400; }
 .settings-jump.chip-row { padding: 0 var(--space-page); margin: 0 0 var(--space-4); }
-.settings-jump.chip-row a { flex: 0 0 auto; display: inline-flex; align-items: center; min-height: 36px; padding: 0 var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-full); background: var(--card); color: var(--foreground); font-size: 14px; font-weight: 500; text-decoration: none; }
+.settings-jump.chip-row a { flex: 0 0 auto; display: inline-flex; align-items: center; min-height: var(--tap-min); padding: 0 var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-full); background: var(--card); color: var(--foreground); font-size: 14px; font-weight: 500; text-decoration: none; }
 
 /* ---- v5 review fixes ---- */
 
@@ -4874,8 +4874,8 @@ input[type="radio"] { accent-color: var(--primary); }
   margin: 0 var(--space-page) var(--space-6);
 }
 .tasks-filter-chip {
-  height: 36px;
-  min-height: 36px;
+  height: var(--tap-min);
+  min-height: var(--tap-min);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -4924,7 +4924,7 @@ input[type="radio"] { accent-color: var(--primary); }
 .bill-row { cursor: pointer; }
 .bill-row .bill-status-pill { padding: 0; background: none; font-size: 12px; font-weight: 400; }
 
-/* B7: every text field is at least 44px (chips and segments stay 36px). */
+/* B7: every text field is at least 44px (chips and segments: --tap-min since 2026-11-23). */
 #txn-search,
 .task-title-input,
 .bill-participant-name { min-height: var(--tap-min); }
@@ -4952,7 +4952,3 @@ input[type="radio"] { accent-color: var(--primary); }
 #slip-skipped { margin: 0; padding: 0; }
 #slip-skipped .row { padding-left: 0; padding-right: 0; }
 
-/* History filters are the main controls on that page: full tap size (QA 2026-11-23 B8). */
-#tab-transactions .chip,
-#tab-transactions select.chip-select,
-#tab-transactions .range-pill { min-height: var(--tap-min); }

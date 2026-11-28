@@ -93,7 +93,7 @@ const tomorrow = bkkYmd(new Date(Date.now() + 86400000));
     assert((await page.textContent('#task-importance-help')).includes('15, 45, 90 and 180 minutes'), 'importance help text');
     // Visible ones only: "This evening 18:00" hides itself after 17:30.
     const optH = await page.$$eval('.importance-option, .preset, .category-chip', (bs) => Math.min(...bs.filter((b) => b.offsetParent !== null).map((b) => b.getBoundingClientRect().height)));
-    assert(optH >= 36, 'controls are tappable');
+    assert(optH >= 44, `controls are tappable: >= 44px (got ${optH})`);
     await Promise.all([page.waitForResponse((r) => r.url().includes(`/reminders/${U}`) && r.request().method() === 'POST'), page.click('#task-save')]);
     await page.waitForSelector('#task-modal', { state: 'hidden', timeout: 10000 });
     const rent = (await db.from('reminders').select('*').eq('line_user_id', U).eq('title', 'Pay rent').single()).data;

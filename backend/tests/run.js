@@ -30,7 +30,7 @@ const suites = groups.flatMap((group) => {
 // Each suite runs in its own process group, so a timeout also kills the
 // Chrome it launched. (spawnSync's timeout killed only the Node process; the
 // browser kept the output pipe open and the whole run stalled.)
-const SUITE_TIMEOUT_MS = 5 * 60 * 1000;
+const SUITE_TIMEOUT_MS = 10 * 60 * 1000; // qa-seed suites take ~4 min on a slow Supabase day
 function runSuite(rel) {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [path.join(__dirname, rel)], { cwd: __dirname, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });

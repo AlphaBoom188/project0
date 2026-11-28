@@ -118,7 +118,7 @@ const shot = (page, name) => page.screenshot({ path: `${OUTPUT}/v5fix_${name}.pn
     await openTab(page, 'tasks');
     await page.waitForFunction(() => document.getElementById('tasks-summary-repeat').textContent.includes('Repeating'), null, { timeout: 15000 });
     const chips = await page.$$eval('#tasks-summary .tasks-filter-chip', (bs) => bs.map((b) => ({ t: b.textContent.trim(), h: b.getBoundingClientRect().height, tag: b.tagName })));
-    assert(chips.length === 3 && chips.every((c) => c.h === 36 && c.tag === 'BUTTON'), `three 36px chip buttons (got ${JSON.stringify(chips)})`);
+    assert(chips.length === 3 && chips.every((c) => c.h === 44 && c.tag === 'BUTTON'), `three 44px (--tap-min) chip buttons (got ${JSON.stringify(chips)})`);
     assert(chips[0].t === 'Repeating 2' && chips[1].t.startsWith('Upcoming') && chips[2].t.startsWith('Done'), `chip labels (got ${chips.map((c) => c.t)})`);
     assert(!(await page.textContent('#tab-tasks')).includes('Set\n') && (await page.$('.tasks-summary-label')) === null, 'no "Set" label');
     for (const [id, list] of [['repeat', 'repeat'], ['next', 'next'], ['done', 'done']]) {
